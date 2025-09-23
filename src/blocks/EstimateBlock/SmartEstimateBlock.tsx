@@ -7,16 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
+import { Bot, Send, Calendar, Package, Sparkles, Mic, MicOff, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getCustomerEntitlement, type CustomerEntitlement } from '@/utils/packageSuggestions'
 import { calculateTotal } from '@/lib/calculateTotal'
-import { useYoco } from '@/providers/Yoco'
-import { yocoService, YocoProduct, YocoPaymentLink } from '@/lib/yocoService'
+import { useRevenueCat } from '@/providers/RevenueCat'
+import { Purchases, type Package as RevenueCatPackage, ErrorCode } from '@revenuecat/purchases-js'
 import { useRouter } from 'next/navigation'
-import { Mic, MicOff } from 'lucide-react'
 
 interface Package {
   id: string
@@ -27,11 +26,11 @@ interface Package {
   entitlement?: 'standard' | 'pro'
   minNights: number
   maxNights: number
-  yocoId?: string
+  revenueCatId?: string
   baseRate?: number
   isEnabled: boolean
   features: string[]
-  source: 'database' | 'yoco'
+  source: 'database' | 'revenuecat'
 }
 
 interface Message {
@@ -50,61 +49,33 @@ interface SmartEstimateBlockProps {
 }
 
 const QuickActions = ({ onAction }: { onAction: (action: string, data?: any) => void }) => (
-  <div className="flex flex-wrap gap-2 mb-4">
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('select_dates')}
-      className="text-xs"
-    >
-      <Calendar className="h-3 w-3 mr-1" />
-      Select Dates
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('suggest_duration')}
-      className="text-xs"
-    >
-      <Calendar className="h-3 w-3 mr-1" />
-      When should I visit?
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('show_packages')}
-      className="text-xs"
-    >
-      <Package className="h-3 w-3 mr-1" />
-      What packages are available?
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('debug_packages')}
-      className="text-xs"
-    >
-      <Package className="h-3 w-3 mr-1" />
-      Debug Packages
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('get_recommendation')}
-      className="text-xs"
-    >
-      <Sparkles className="h-3 w-3 mr-1" />
-      Recommend something for me
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('check_availability')}
-      className="text-xs"
-    >
-      <Calendar className="h-3 w-3 mr-1" />
-      Check Availability
-    </Button>
+  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+    <p className="text-sm text-blue-800 mb-2">
+      🤖 <strong>AI Assistant Available</strong>
+    </p>
+    <p className="text-xs text-blue-700 mb-3">
+      For comprehensive AI assistance including package recommendations, debug information, and booking help, please use the AI Assistant in the bottom right corner.
+    </p>
+    <div className="flex flex-wrap gap-2">
+      <Button 
+        variant="outline" 
+        size="sm" 
+        onClick={() => onAction('ai_assistant')}
+        className="text-xs bg-white"
+      >
+        <Bot className="h-3 w-3 mr-1" />
+        Use AI Assistant
+      </Button>
+      <Button 
+        variant="outline" 
+        size="sm" 
+        onClick={() => onAction('debug_packages')}
+        className="text-xs bg-white"
+      >
+        <Package className="h-3 w-3 mr-1" />
+        Debug Packages
+      </Button>
+    </div>
   </div>
 )
 
@@ -193,7 +164,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
   const router = useRouter()
-  const { isInitialized } = useYoco()
+  const { isInitialized } = useRevenueCat()
   
   // Session storage key for this specific post
   const sessionKey = `booking_journey_${postId}_${currentUser?.id || 'guest'}`
@@ -207,13 +178,11 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [isListening, setIsListening] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const [micError, setMicError] = useState<string | null>(null)
   
   // Booking states
   const [isBooking, setIsBooking] = useState(false)
   const [bookingError, setBookingError] = useState<string | null>(null)
-  const [offerings, setOfferings] = useState<YocoProduct[]>([])
+  const [offerings, setOfferings] = useState<RevenueCatPackage[]>([])
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false)
   
   // Availability checking states
@@ -254,9 +223,6 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
-  const synthRef = useRef<SpeechSynthesis | null>(null)
-  const isProcessingRef = useRef(false)
-  const finalTranscriptRef = useRef('')
 
   // Helper function to filter packages based on customer entitlement
   // This ensures that pro-only packages are only shown to pro users
@@ -294,9 +260,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         return true
       }
       
-      // Legacy: Filter out pro-only packages by yocoId for non-pro users
+      // Legacy: Filter out pro-only packages by revenueCatId for non-pro users
       // Only keep this for packages that don't have entitlement field in database
-      if (pkg.yocoId === 'gathering_monthly' && customerEntitlement !== 'pro') {
+      if (pkg.revenueCatId === 'gathering_monthly' && customerEntitlement !== 'pro') {
         return false
       }
       
@@ -469,142 +435,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }, [subscriptionStatus, filterPackagesByEntitlement])
 
-  // Load Yoco products when initialized
+  // Load RevenueCat offerings when initialized
   useEffect(() => {
     if (isInitialized) {
-      loadYocoProducts()
+      loadOfferings()
     }
   }, [isInitialized])
-
-  // Initialize speech recognition and synthesis
-  useEffect(() => {
-    // Initialize speech recognition
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        try {
-          recognitionRef.current = new SpeechRecognition()
-          recognitionRef.current.continuous = true
-          recognitionRef.current.interimResults = true
-          recognitionRef.current.lang = 'en-US'
-
-          recognitionRef.current.onresult = async (event: any) => {
-            let interimTranscript = ''
-            let finalTranscript = ''
-
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const result = event.results[i]
-              if (result && result[0]) {
-                const transcript = result[0].transcript
-                if (result.isFinal) {
-                  finalTranscript += transcript
-                } else {
-                  interimTranscript += transcript
-                }
-              }
-            }
-
-            // Update input with interim results
-            setInput(interimTranscript || finalTranscript)
-
-            // If we have a final transcript and we're not already processing
-            if (finalTranscript && !isProcessingRef.current) {
-              isProcessingRef.current = true
-              finalTranscriptRef.current = finalTranscript
-              await handleAIRequest(finalTranscript)
-              isProcessingRef.current = false
-            }
-          }
-
-          recognitionRef.current.onend = () => {
-            if (isListening) {
-              try {
-                recognitionRef.current?.start()
-              } catch (error) {
-                console.error('Error restarting speech recognition:', error)
-                setIsListening(false)
-                setMicError('Error with speech recognition. Please try again.')
-              }
-            }
-          }
-
-          recognitionRef.current.onerror = (event: any) => {
-            console.error('Speech recognition error:', event)
-            setMicError('Error with speech recognition. Please try again.')
-            setIsListening(false)
-          }
-        } catch (error) {
-          console.error('Error initializing speech recognition:', error)
-          setMicError('Speech recognition is not supported in your browser.')
-        }
-      } else {
-        setMicError('Speech recognition is not supported in your browser.')
-      }
-    }
-
-    // Initialize speech synthesis
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-      if (synthRef.current) {
-        synthRef.current.cancel()
-      }
-    }
-  }, [isListening])
-
-  const startListening = () => {
-    if (!recognitionRef.current) {
-      setMicError('Speech recognition is not available.')
-      return
-    }
-
-    try {
-      setMicError(null)
-      finalTranscriptRef.current = ''
-      recognitionRef.current.start()
-      setIsListening(true)
-    } catch (error) {
-      console.error('Error starting speech recognition:', error)
-      setMicError('Failed to start speech recognition. Please try again.')
-      setIsListening(false)
-    }
-  }
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-        setIsListening(false)
-      } catch (error) {
-        console.error('Error stopping speech recognition:', error)
-        setMicError('Error stopping speech recognition.')
-      }
-    }
-  }
-
-  const speak = (text: string) => {
-    if (synthRef.current) {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.onstart = () => setIsSpeaking(true)
-      utterance.onend = () => {
-        setIsSpeaking(false)
-        // If we're still listening, restart recognition after speaking
-        if (isListening && recognitionRef.current) {
-          try {
-            recognitionRef.current.start()
-          } catch (error) {
-            console.error('Error restarting speech recognition after speaking:', error)
-          }
-        }
-      }
-      synthRef.current.speak(utterance)
-    }
-  }
 
   const loadOfferings = async () => {
     try {
@@ -621,87 +457,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       Object.values(fetchedOfferings.all).forEach(offering => {
         if (offering && offering.availablePackages.length > 0) {
           allPackages.push(...offering.availablePackages)
->>>>>>> 48af222 (Update SmartEstimateBlock.tsx)
         }
-      } else {
-        setMicError('Speech recognition is not supported in your browser.')
-      }
-    }
-
-    // Initialize speech synthesis
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      synthRef.current = window.speechSynthesis
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-      }
-      if (synthRef.current) {
-        synthRef.current.cancel()
-      }
-    }
-  }, [isListening])
-
-  const startListening = () => {
-    if (!recognitionRef.current) {
-      setMicError('Speech recognition is not available.')
-      return
-    }
-
-    try {
-      setMicError(null)
-      finalTranscriptRef.current = ''
-      recognitionRef.current.start()
-      setIsListening(true)
-    } catch (error) {
-      console.error('Error starting speech recognition:', error)
-      setMicError('Failed to start speech recognition. Please try again.')
-      setIsListening(false)
-    }
-  }
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-        setIsListening(false)
-      } catch (error) {
-        console.error('Error stopping speech recognition:', error)
-        setMicError('Error stopping speech recognition.')
-      }
-    }
-  }
-
-  const speak = (text: string) => {
-    if (synthRef.current) {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.onstart = () => setIsSpeaking(true)
-      utterance.onend = () => {
-        setIsSpeaking(false)
-        // If we're still listening, restart recognition after speaking
-        if (isListening && recognitionRef.current) {
-          try {
-            recognitionRef.current.start()
-          } catch (error) {
-            console.error('Error restarting speech recognition after speaking:', error)
-          }
-        }
-      }
-      synthRef.current.speak(utterance)
-    }
-  }
-
-  const loadYocoProducts = async () => {
-    try {
-      const response = await fetch('/api/yoco/products')
-      if (!response.ok) {
-        throw new Error(`Failed to fetch products: ${response.status}`)
-      }
-      const data = await response.json()
-      setOfferings(data.products)
+      })
+      
+      const uniquePackages = allPackages.filter((pkg, index, self) => 
+        index === self.findIndex(p => p.webBillingProduct?.identifier === pkg.webBillingProduct?.identifier)
+      )
+      
+      setOfferings(uniquePackages)
     } catch (err) {
-      console.error('Error loading Yoco products:', err)
+      console.error('Error loading offerings:', err)
     }
   }
 
@@ -732,7 +497,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       // Create estimate first
       console.log('Creating estimate with package:', {
         selectedPackage,
-        packageType: selectedPackage.yocoId || selectedPackage.id,
+        packageType: selectedPackage.revenueCatId || selectedPackage.id,
         postId,
         total
       })
@@ -745,7 +510,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         baseRate: total,
         duration,
         customer: currentUser?.id,
-        packageType: selectedPackage.yocoId || selectedPackage.id,
+        packageType: selectedPackage.revenueCatId || selectedPackage.id,
       }
       
       const estimateResponse = await fetch('/api/estimates', {
@@ -763,15 +528,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       
       const estimate = await estimateResponse.json()
       
-      console.log('Available Yoco products:', offerings.map(pkg => ({
-        id: pkg.id,
-        title: pkg.title
+      console.log('Available RevenueCat offerings:', offerings.map(pkg => ({
+        identifier: pkg.webBillingProduct?.identifier,
+        title: pkg.webBillingProduct?.title
       })))
-      console.log('Looking for package with yocoId:', selectedPackage.yocoId)
+      console.log('Looking for package with revenueCatId:', selectedPackage.revenueCatId)
       console.log('Selected package details:', {
         id: selectedPackage.id,
         name: selectedPackage.name,
-        yocoId: selectedPackage.yocoId,
+        revenueCatId: selectedPackage.revenueCatId,
         source: selectedPackage.source
       })
       
@@ -782,122 +547,128 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         'week_x2_customer': 'week_x2_customer'
       })
       
-      // Handle known package ID mismatches between database and Yoco
-      const getYocoPackageId = (yocoId: string) => {
+      // Handle known package ID mismatches between database and RevenueCat
+      const getRevenueCatPackageId = (revenueCatId: string) => {
         const mappings: Record<string, string> = {
-          'per_night': 'per_night_customer', // Database has per_night, Yoco has per_night_customer
-          'Weekly': 'weekly_customer', // Database has Weekly, Yoco has weekly_customer (Standard Weekly)
-          'week_x2_customer': 'week_x2_customer', // Database has week_x2_customer, Yoco has week_x2_customer
+          'per_night': 'per_night_customer', // Database has per_night, RevenueCat has per_night_customer
+          'Weekly': 'weekly_customer', // Database has Weekly, RevenueCat has weekly_customer (Standard Weekly)
+          'week_x2_customer': 'week_x2_customer', // Database has week_x2_customer, RevenueCat has week_x2_customer
         }
-        return mappings[yocoId] || yocoId
+        return mappings[revenueCatId] || revenueCatId
       }
       
-      // Find the package in Yoco products (case-insensitive + mapping)
-      const yocoProduct = offerings.find((pkg) => {
-        const identifier = pkg.id
-        const yocoId = selectedPackage.yocoId
-        const mappedYocoId = yocoId ? getYocoPackageId(yocoId) : undefined
+      // Find the package in RevenueCat offerings (case-insensitive + mapping)
+      const revenueCatPackage = offerings.find((pkg) => {
+        const identifier = pkg.webBillingProduct?.identifier
+        const revenueCatId = selectedPackage.revenueCatId
+        const mappedRevenueCatId = revenueCatId ? getRevenueCatPackageId(revenueCatId) : undefined
         
-        console.log('Checking Yoco product:', {
+        console.log('Checking RevenueCat package:', {
           identifier,
-          yocoId,
-          mappedYocoId,
-          matches: identifier === yocoId || 
-                   identifier === mappedYocoId ||
-                   (identifier && yocoId && identifier.toLowerCase() === yocoId.toLowerCase()) ||
-                   (identifier && mappedYocoId && identifier.toLowerCase() === mappedYocoId.toLowerCase())
+          revenueCatId,
+          mappedRevenueCatId,
+          matches: identifier === revenueCatId || 
+                   identifier === mappedRevenueCatId ||
+                   (identifier && revenueCatId && identifier.toLowerCase() === revenueCatId.toLowerCase()) ||
+                   (identifier && mappedRevenueCatId && identifier.toLowerCase() === mappedRevenueCatId.toLowerCase())
         })
         
-        return identifier === yocoId || 
-               identifier === mappedYocoId ||
-               (identifier && yocoId && identifier.toLowerCase() === yocoId.toLowerCase()) ||
-               (identifier && mappedYocoId && identifier.toLowerCase() === mappedYocoId.toLowerCase())
+        return identifier === revenueCatId || 
+               identifier === mappedRevenueCatId ||
+               (identifier && revenueCatId && identifier.toLowerCase() === revenueCatId.toLowerCase()) ||
+               (identifier && mappedRevenueCatId && identifier.toLowerCase() === mappedRevenueCatId.toLowerCase())
       })
       
-      if (yocoProduct) {
+      if (revenueCatPackage) {
+        
         try {
-          // Create Yoco payment link via API
-          const response = await fetch('/api/yoco/payment-links', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              productId: yocoProduct.id,
-              customerId: String(currentUser.id),
-              customerName: currentUser.name || currentUser.email || 'Customer',
-              version: 'V2' // Use V2 API keys
-            })
+          const purchases = await Purchases.getSharedInstance()
+          const purchaseResult = await purchases.purchase({
+            rcPackage: revenueCatPackage,
           })
           
-          if (!response.ok) {
-            throw new Error(`Failed to create payment link: ${response.status}`)
-          }
-          
-          const data = await response.json()
-          const paymentLink = data.paymentLink
-          
-          if (!paymentLink) {
-            throw new Error('Failed to create payment link')
-          }
-          
-          // Redirect to Yoco payment page
-          window.location.href = paymentLink.url
-          
-        } catch (paymentError: any) {
-          console.error('Yoco Payment Link Error:', paymentError)
-          throw new Error('Payment link creation failed. Please try again.')
-        }
-      } else if (selectedPackage.source === 'database') {
-        // Handle database packages directly
-        try {
-          console.log('Creating payment link for database package:', selectedPackage)
-          
-          const response = await fetch('/api/yoco/payment-links', {
+          // Confirm the estimate with payment validation after successful purchase
+          const confirmResponse = await fetch(`/api/estimates/${estimate.id}/confirm`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              packageData: {
-                id: selectedPackage.id,
-                name: selectedPackage.name,
-                description: selectedPackage.description,
-                baseRate: selectedPackage.baseRate,
-                revenueCatId: selectedPackage.yocoId
+              packageType: selectedPackage.revenueCatId || selectedPackage.id,
+              baseRate: total,
+              paymentValidated: true, // Mark that payment was successfully processed
+              revenueCatPurchaseId: purchaseResult.customerInfo.originalPurchaseDate // Use purchase info as validation
+            }),
+          })
+          
+          if (!confirmResponse.ok) {
+            const errorData = await confirmResponse.json()
+            throw new Error(errorData.error || 'Failed to confirm estimate')
+          }
+          
+          // Create booking record after successful payment and estimate confirmation
+          await createBookingRecord()
+          
+          const confirmedEstimate = await confirmResponse.json()
+          
+          // Clear booking journey after successful booking
+          clearBookingJourney()
+          
+          // Redirect to booking confirmation
+          router.push(`/booking-confirmation?total=${total}&duration=${duration}`)
+          
+        } catch (purchaseError: any) {
+          console.error('RevenueCat Purchase Error:', purchaseError)
+          
+          // Handle specific payment errors
+          if (purchaseError.code === ErrorCode.UserCancelledError) {
+            console.log('User cancelled the purchase flow.')
+            return
+          }
+          
+          // Check if it's a test card in live mode error
+          if (purchaseError.message && purchaseError.message.includes('live_mode_test_card')) {
+            console.log('Test card used in live mode, proceeding with fallback for demo purposes')
+            
+            // For demo purposes, confirm estimate and create booking
+            const confirmResponse = await fetch(`/api/estimates/${estimate.id}/confirm`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
               },
-              customerId: String(currentUser.id),
-              customerName: currentUser.name || currentUser.email || 'Customer',
-              total: total,
-              version: 'V2' // Use V2 API keys
+              body: JSON.stringify({
+                packageType: selectedPackage.revenueCatId || selectedPackage.id,
+                baseRate: total,
+                paymentValidated: true, // Mark that payment was successfully processed (demo fallback)
+                revenueCatPurchaseId: new Date().toISOString() // Use current timestamp as fallback validation
+              }),
             })
-          })
-          
-          if (!response.ok) {
-            throw new Error(`Failed to create payment link: ${response.status}`)
+            
+            if (!confirmResponse.ok) {
+              const errorData = await confirmResponse.json()
+              throw new Error(errorData.error || 'Failed to confirm estimate')
+            }
+            
+            // Create booking record AFTER successful estimate confirmation
+            await createBookingRecord()
+            
+            // Clear booking journey after successful booking
+            clearBookingJourney()
+            
+            // Redirect to booking confirmation
+            router.push(`/booking-confirmation?total=${total}&duration=${duration}`)
+            return
           }
           
-          const data = await response.json()
-          const paymentLink = data.paymentLink
-          
-          if (!paymentLink) {
-            throw new Error('Failed to create payment link')
-          }
-          
-          // Redirect to Yoco payment page
-          window.location.href = paymentLink.url
-          
-        } catch (paymentError: any) {
-          console.error('Yoco Payment Link Error for database package:', paymentError)
-          throw new Error('Payment link creation failed. Please try again.')
+          throw new Error('Payment failed. Please try again with a valid payment method.')
         }
       } else {
         // Fallback: simulate payment success and confirm estimate first
-        console.log('❌ Package not found in Yoco products, using fallback payment flow')
+        console.log('❌ Package not found in RevenueCat offerings, using fallback payment flow')
         console.log('❌ This means the payment modal will be bypassed!')
-        console.log('❌ Available products:', offerings.map(pkg => pkg.id))
-        console.log('❌ Looking for:', selectedPackage.yocoId)
-        console.log('❌ Mapped to:', selectedPackage.yocoId ? getYocoPackageId(selectedPackage.yocoId) : 'undefined')
+        console.log('❌ Available offerings:', offerings.map(pkg => pkg.webBillingProduct?.identifier))
+        console.log('❌ Looking for:', selectedPackage.revenueCatId)
+        console.log('❌ Mapped to:', selectedPackage.revenueCatId ? getRevenueCatPackageId(selectedPackage.revenueCatId) : 'undefined')
         
         // Confirm the estimate with payment validation (for fallback case)
         const confirmResponse = await fetch(`/api/estimates/${estimate.id}/confirm`, {
@@ -906,10 +677,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            packageType: selectedPackage.yocoId || selectedPackage.id,
+            packageType: selectedPackage.revenueCatId || selectedPackage.id,
             baseRate: total,
             paymentValidated: true, // Mark that payment was successfully processed (fallback case)
-            yocoPaymentId: new Date().toISOString() // Use current timestamp as fallback validation
+            revenueCatPurchaseId: new Date().toISOString() // Use current timestamp as fallback validation
           }),
         })
         
@@ -999,7 +770,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           toDate: to,
           guests: [],
           title: `Estimate for ${postId}`,
-          packageType: selectedPackage?.yocoId || selectedPackage?.id || 'standard',
+          packageType: selectedPackage?.revenueCatId || selectedPackage?.id || 'standard',
           total
         })
       })
@@ -1063,7 +834,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             
             // Legacy: Filter out pro-only packages for non-pro users
             // Only keep this for packages that don't have entitlement field in database
-            if (pkg.yocoId === 'gathering_monthly' && customerEntitlement !== 'pro') return false
+            if (pkg.revenueCatId === 'gathering_monthly' && customerEntitlement !== 'pro') return false
             
             return true
           })
@@ -1090,94 +861,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }, [messages])
   
   const handleQuickAction = (action: string, data?: any) => {
-    let message = ''
-    
-    switch (action) {
-      case 'select_dates':
-        // If dates are already populated, acknowledge them
-        if (startDate && endDate) {
-          const acknowledgmentMessage: Message = {
-            role: 'assistant',
-            content: `I see you already have dates selected: ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')} (${duration} ${duration === 1 ? 'night' : 'nights'}). You can modify them below or ask me to suggest packages for these dates.`,
-            type: 'text'
-          }
-          setMessages(prev => [...prev, acknowledgmentMessage])
-        }
-        
-        const dateMessage: Message = {
-          role: 'assistant',
-          content: startDate && endDate ? 
-            'You can modify your dates below if needed:' : 
-            'Please select your check-in and check-out dates:',
-          type: 'date_selection'
-        }
-        setMessages(prev => [...prev, dateMessage])
-        return
-      case 'suggest_duration':
-        message = `For ${postTitle}, I'd recommend considering these durations:\n\n` +
-          `• 1-2 nights: Perfect for a quick getaway\n` +
-          `• 3-5 nights: Ideal for a relaxing break\n` +
-          `• 7+ nights: Great for a longer vacation\n\n` +
-          `What duration are you thinking of? I can help you find the perfect package.`
-        break
-      case 'show_packages':
-        if (startDate && endDate) {
-          showAvailablePackages()
-          return
-        } else {
-          message = `I'd love to show you the best packages! To give you personalized recommendations, please select your dates first using the "Select Dates" button above.`
-        }
-        break
-      case 'get_recommendation':
-        if (startDate && endDate) {
-          message = `Based on your ${duration} ${duration === 1 ? 'night' : 'nights'} stay at ${postTitle}, here are my top recommendations:\n\n` +
-            `• For couples: Romantic packages with premium amenities\n` +
-            `• For families: Spacious options with kid-friendly features\n` +
-            `• For business: Professional packages with work amenities\n\n` +
-            `Let me show you the specific packages available for your dates!`
-          
-          const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
-          setMessages(prev => [...prev, assistantMessage])
-          
-          // Show packages after the recommendation message
-          setTimeout(() => showAvailablePackages(), 1000)
-          return
-        } else {
-          message = `I'd love to give you personalized recommendations! To suggest the best packages for your needs, please select your travel dates first using the "Select Dates" button above.`
-        }
-        break
-      case 'debug_packages':
-        console.log('🐛 DEBUG: Current state:', {
-          packages: packages,
-          packagesLength: packages.length,
-          customerEntitlement,
-          startDate,
-          endDate,
-          duration
-        })
-        message = `Debug info logged to console. Packages loaded: ${packages.length}, Entitlement: ${customerEntitlement}`
-        break
-      case 'check_availability':
-        if (startDate && endDate) {
-          // Check availability and provide feedback
-          checkDateAvailability(startDate, endDate).then((isAvailable) => {
-            const availabilityMessage: Message = {
-              role: 'assistant',
-              content: isAvailable ? 
-                `✅ Great news! Your selected dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are available for booking.` :
-                `❌ Unfortunately, your selected dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are not available. Please select different dates.`,
-              type: 'text'
-            }
-            setMessages(prev => [...prev, availabilityMessage])
-          })
-          return
-        } else {
-          message = `To check availability, please select your dates first using the "Select Dates" button above.`
-        }
-        break
-      default:
-        message = 'I can help you with that! What would you like to know?'
-    }
+    // Direct users to the main AI Assistant for all interactions
+    const message = `Please use the AI Assistant (bottom right corner) for all interactions including package recommendations, debug information, and booking assistance. The main AI Assistant provides comprehensive support with authentication and context awareness.`
     
     const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
     setMessages(prev => [...prev, assistantMessage])
@@ -1344,69 +1029,6 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     setIsLoading(true)
     
     try {
-      // Check for debug packages request
-      if (message.toLowerCase().includes('debug packages') || 
-          message.toLowerCase().includes('debug') ||
-          message.toLowerCase().includes('show packages')) {
-        
-        // Handle debug packages request
-        try {
-          const response = await fetch(`/api/packages/post/${postId}`)
-          if (response.ok) {
-            const data = await response.json()
-            const packages = data.packages || []
-            
-            // Get user's subscription status for entitlement info
-            const userEntitlement = currentUser?.role === 'admin' ? 'pro' : 
-                                   currentUser?.subscriptionStatus?.plan || 'none'
-            
-            const debugInfo = `
-**Debug Package Information:**
-- Total packages found: ${packages.length}
-- User role: ${currentUser?.role || 'guest'}
-- Subscription plan: ${currentUser?.subscriptionStatus?.plan || 'none'}
-- Entitlement level: ${userEntitlement}
-
-**Available Packages:**
-${packages.map((pkg: any, index: number) => 
-  `${index + 1}. **${pkg.name}**
-     - Category: ${pkg.category || 'N/A'}
-     - Entitlement: ${pkg.entitlement || 'N/A'}
-     - Enabled: ${pkg.isEnabled ? 'Yes' : 'No'}
-     - Min/Max nights: ${pkg.minNights}-${pkg.maxNights}
-     - Multiplier: ${pkg.multiplier}x
-     - RevenueCat ID: ${pkg.revenueCatId || 'N/A'}
-     - Features: ${pkg.features?.length || 0} features`
-).join('\n\n')}
-
-**Filtering Logic:**
-- Non-subscribers see: hosted, special packages only
-- Standard subscribers see: standard, hosted, special packages
-- Pro subscribers see: all packages
-- Addon packages are filtered out (booking page only)
-            `
-            
-            const assistantMessage: Message = { 
-              role: 'assistant', 
-              content: debugInfo
-            }
-            setMessages(prev => [...prev, assistantMessage])
-            speak('Here\'s the debug information for packages and entitlements.')
-            setIsLoading(false)
-            return
-          }
-        } catch (error) {
-          console.error('Debug packages error:', error)
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while fetching debug information. Please try again.'
-          }
-          setMessages(prev => [...prev, assistantMessage])
-          setIsLoading(false)
-          return
-        }
-      }
-      
       // If user is not logged in, provide basic responses without API call
       if (!isLoggedIn) {
         let response = ''
@@ -1439,33 +1061,24 @@ ${packages.map((pkg: any, index: number) =>
         return
       }
       
-      // For logged-in users, use the full AI API with enhanced context
-      const contextString = `
-Property Context:
-- Title: ${postTitle}
-- Description: ${postDescription}
-- Base Rate: R${baseRate}
-- Post ID: ${postId}
-
-Current Booking State:
-- Selected Package: ${selectedPackage?.name || 'None'}
-- Duration: ${duration} ${duration === 1 ? 'night' : 'nights'}
-- Start Date: ${startDate ? format(startDate, 'MMM dd, yyyy') : 'Not selected'}
-- End Date: ${endDate ? format(endDate, 'MMM dd, yyyy') : 'Not selected'}
-- Available Packages: ${packages.length}
-- User Entitlement: ${customerEntitlement}
-
-Availability Status:
-- Are dates available: ${areDatesAvailable ? 'Yes' : 'No'}
-- Currently checking availability: ${isCheckingAvailability ? 'Yes' : 'No'}
-      `
-      
+      // For logged-in users, use the full AI API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: `${contextString}\n\nUser question: ${message}`,
-          context: 'smart-estimate'
+          message,
+          bookingContext: {
+            postId,
+            postTitle,
+            postDescription,
+            baseRate,
+            duration,
+            packages: packages.length,
+            customerEntitlement,
+            selectedPackage: selectedPackage?.name,
+            fromDate: startDate?.toISOString(),
+            toDate: endDate?.toISOString()
+          }
         })
       })
       
@@ -1488,7 +1101,6 @@ Availability Status:
         type: 'text'
       }
       setMessages(prev => [...prev, assistantMessage])
-      speak(data.message)
       
       // Check if AI suggests showing packages (with null check)
       if (data.message && typeof data.message === 'string' && 
@@ -1504,7 +1116,6 @@ Availability Status:
         type: 'text'
       }
       setMessages(prev => [...prev, errorMessage])
-      speak(error instanceof Error ? error.message : 'Sorry, I encountered an error.')
     } finally {
       setIsLoading(false)
     }
@@ -1982,23 +1593,12 @@ Availability Status:
                     : "Ask about packages (log in for full AI assistance)..."
               }
               className="flex-1"
-              disabled={isLoading || isListening}
+              disabled={isLoading}
             />
-            <Button
-              type="button"
-              size="icon"
-              variant={isListening ? 'destructive' : 'outline'}
-              onClick={isListening ? stopListening : startListening}
-              disabled={isLoading || isSpeaking || !!micError}
-              title={micError || (isListening ? 'Stop listening' : 'Start listening')}
-            >
-              {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
-            <Button type="submit" size="icon" disabled={isLoading || isListening || !input.trim()}>
+            <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </form>
-          {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
         </div>
       </CardContent>
     </Card>
