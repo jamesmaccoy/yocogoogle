@@ -606,6 +606,92 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }
 
+  const loadOfferings = async () => {
+    try {
+      const purchases = await Purchases.getSharedInstance()
+      const fetchedOfferings = await purchases.getOfferings()
+      
+      // Collect all packages from all offerings
+      const allPackages: RevenueCatPackage[] = []
+      
+      if (fetchedOfferings.current && fetchedOfferings.current.availablePackages.length > 0) {
+        allPackages.push(...fetchedOfferings.current.availablePackages)
+      }
+      
+      Object.values(fetchedOfferings.all).forEach(offering => {
+        if (offering && offering.availablePackages.length > 0) {
+          allPackages.push(...offering.availablePackages)
+>>>>>>> 48af222 (Update SmartEstimateBlock.tsx)
+        }
+      } else {
+        setMicError('Speech recognition is not supported in your browser.')
+      }
+    }
+
+    // Initialize speech synthesis
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+      if (synthRef.current) {
+        synthRef.current.cancel()
+      }
+    }
+  }, [isListening])
+
+  const startListening = () => {
+    if (!recognitionRef.current) {
+      setMicError('Speech recognition is not available.')
+      return
+    }
+
+    try {
+      setMicError(null)
+      finalTranscriptRef.current = ''
+      recognitionRef.current.start()
+      setIsListening(true)
+    } catch (error) {
+      console.error('Error starting speech recognition:', error)
+      setMicError('Failed to start speech recognition. Please try again.')
+      setIsListening(false)
+    }
+  }
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+        setIsListening(false)
+      } catch (error) {
+        console.error('Error stopping speech recognition:', error)
+        setMicError('Error stopping speech recognition.')
+      }
+    }
+  }
+
+  const speak = (text: string) => {
+    if (synthRef.current) {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.onstart = () => setIsSpeaking(true)
+      utterance.onend = () => {
+        setIsSpeaking(false)
+        // If we're still listening, restart recognition after speaking
+        if (isListening && recognitionRef.current) {
+          try {
+            recognitionRef.current.start()
+          } catch (error) {
+            console.error('Error restarting speech recognition after speaking:', error)
+          }
+        }
+      }
+      synthRef.current.speak(utterance)
+    }
+  }
+
   const loadYocoProducts = async () => {
     try {
       const response = await fetch('/api/yoco/products')
@@ -1289,7 +1375,7 @@ ${packages.map((pkg: any, index: number) =>
      - Enabled: ${pkg.isEnabled ? 'Yes' : 'No'}
      - Min/Max nights: ${pkg.minNights}-${pkg.maxNights}
      - Multiplier: ${pkg.multiplier}x
-     - Yoco ID: ${pkg.yocoId || 'N/A'}
+     - RevenueCat ID: ${pkg.revenueCatId || 'N/A'}
      - Features: ${pkg.features?.length || 0} features`
 ).join('\n\n')}
 
