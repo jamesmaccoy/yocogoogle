@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
 export default function LoginPage() {
-  const [mode, setMode] = React.useState<'password' | 'email'>('email')
+  const [mode, setMode] = React.useState<'password' | 'email'>('password')
 
   return (
     <div className="container my-20">
@@ -17,19 +17,19 @@ export default function LoginPage() {
           <p className="text-muted-foreground text-lg">Login as a customer</p>
         </div>
         <div className="flex gap-2 mb-6">
-        <Button
-            variant={mode === 'email' ? 'secondary' : 'outline'}
-            className="w-1/2"
-            onClick={() => setMode('email')}
-          >
-             Magic Link/Email
-          </Button>
           <Button
-            variant={mode === 'password' ? 'secondary' : 'outline'}
+            variant={mode === 'password' ? 'default' : 'outline'}
             className="w-1/2"
             onClick={() => setMode('password')}
           >
             Password Login
+          </Button>
+          <Button
+            variant={mode === 'email' ? 'default' : 'outline'}
+            className="w-1/2"
+            onClick={() => setMode('email')}
+          >
+            Email Link / OTP
           </Button>
         </div>
         {mode === 'password' ? <EmailPasswordForm /> : <EmailAuthForm />}

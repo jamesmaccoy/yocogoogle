@@ -75,6 +75,7 @@ export interface Config {
     categories: Category;
     users: User;
     packages: Package;
+    authRequests: AuthRequest;
     redirects: Redirect;
     forms: Form;
     'form-submissions': FormSubmission;
@@ -94,6 +95,7 @@ export interface Config {
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     packages: PackagesSelect<false> | PackagesSelect<true>;
+    authRequests: AuthRequestsSelect<false> | AuthRequestsSelect<true>;
     redirects: RedirectsSelect<false> | RedirectsSelect<true>;
     forms: FormsSelect<false> | FormsSelect<true>;
     'form-submissions': FormSubmissionsSelect<false> | FormSubmissionsSelect<true>;
@@ -854,6 +856,18 @@ export interface Estimate {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "authRequests".
+ */
+export interface AuthRequest {
+  id: string;
+  email: string;
+  code: string;
+  expiresAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "redirects".
  */
 export interface Redirect {
@@ -1056,6 +1070,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'packages';
         value: string | Package;
+      } | null)
+    | ({
+        relationTo: 'authRequests';
+        value: string | AuthRequest;
       } | null)
     | ({
         relationTo: 'redirects';
@@ -1523,6 +1541,17 @@ export interface PackagesSelect<T extends boolean = true> {
   relatedPage?: T;
   isEnabled?: T;
   baseRate?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "authRequests_select".
+ */
+export interface AuthRequestsSelect<T extends boolean = true> {
+  email?: T;
+  code?: T;
+  expiresAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
