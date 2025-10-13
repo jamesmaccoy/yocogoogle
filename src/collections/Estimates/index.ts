@@ -220,35 +220,35 @@ export const Estimate: CollectionConfig = {
     },
   ],
   access: {
-    create: ({ req: { user } }) => {
-      if (!user) return false
-      const roles = (user as any).role || []
-      return roles.includes('admin') || roles.includes('customer')
-    },
-    read: ({ req: { user } }) => {
-      if (!user) return false
-      if ((user as any).role?.includes('admin')) return true
-      if ((user as any).role?.includes('customer')) {
-        return { customer: { equals: user.id } }
-      }
-      return false
-    },
-    update: ({ req: { user } }) => {
-      if (!user) return false
-      if ((user as any).role?.includes('admin')) return true
-      if ((user as any).role?.includes('customer')) {
-        return { customer: { equals: user.id } }
-      }
-      return false
-    },
-    delete: ({ req: { user } }) => {
-      if (!user) return false
-      if ((user as any).role?.includes('admin')) return true
-      if ((user as any).role?.includes('customer')) {
-        return { customer: { equals: user.id } }
-      }
-      return false
-    },
+    // create: ({ req: { user } }) => {
+    //   if (!user) return false
+    //   const roles = (user as any).role || []
+    //   return roles.includes('admin') || roles.includes('customer')
+    // },
+    // read: ({ req: { user } }) => {
+    //   if (!user) return false
+    //   if ((user as any).role?.includes('admin')) return true
+    //   if ((user as any).role?.includes('customer')) {
+    //     return { customer: { equals: user.id } }
+    //   }
+    //   return false
+    // },
+    // update: ({ req: { user } }) => {
+    //   if (!user) return false
+    //   if ((user as any).role?.includes('admin')) return true
+    //   if ((user as any).role?.includes('customer')) {
+    //     return { customer: { equals: user.id } }
+    //   }
+    //   return false
+    // },
+    // delete: ({ req: { user } }) => {
+    //   if (!user) return false
+    //   if ((user as any).role?.includes('admin')) return true
+    //   if ((user as any).role?.includes('customer')) {
+    //     return { customer: { equals: user.id } }
+    //   }
+    //   return false
+    // },
   },
   fields: [
     {
@@ -417,4 +417,4 @@ export const Estimate: CollectionConfig = {
       },
     ],
   },
-} 
+}

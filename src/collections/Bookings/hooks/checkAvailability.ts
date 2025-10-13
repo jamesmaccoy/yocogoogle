@@ -5,7 +5,12 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   data,
   req: { payload },
   req,
+  operation,
 }) => {
+  if (operation === 'update') {
+    return data
+  }
+
   if (!('fromDate' in data && 'toDate' in data && 'post' in data)) {
     throw new APIError('Start date, end date, and post are required.', 400, undefined, true)
   }
@@ -39,16 +44,6 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     depth: 0,
     req,
   })
-
-  console.log('Availability check for post:', data.post)
-  console.log('Requested dates:', { fromDate: formattedFromDate, toDate: formattedToDate })
-  console.log('Conflicting bookings found:', bookings.docs.length)
-  console.log('Conflicting bookings:', bookings.docs.map(b => ({
-    slug: b.slug,
-    fromDate: b.fromDate,
-    toDate: b.toDate,
-    title: b.title
-  })))
 
   const isAvailable = bookings.docs.length === 0
 

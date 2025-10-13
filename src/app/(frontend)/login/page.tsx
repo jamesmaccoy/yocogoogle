@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import LoginPage from './page.client'
 
 // You can now add Next.js metadata here for SEO
@@ -7,5 +8,9 @@ export const metadata = {
 }
 
 export default function Page() {
-  return <LoginPage />
+  return (
+    <Suspense>
+      <LoginPage />
+    </Suspense>
+  )
 }

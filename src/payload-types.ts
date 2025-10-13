@@ -159,12 +159,19 @@ export interface Booking {
   customer?: (string | null) | User;
   token?: string | null;
   guests?: (string | User)[] | null;
+  total: number;
+  selectedPackage?: {
+    package?: (string | null) | Package;
+    customName?: string | null;
+    enabled?: boolean | null;
+  };
   slug?: string | null;
   slugLock?: boolean | null;
   post: string | Post;
   paymentStatus?: ('paid' | 'unpaid') | null;
   fromDate: string;
   toDate: string;
+  packageType?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -210,6 +217,36 @@ export interface User {
   loginAttempts?: number | null;
   lockUntil?: string | null;
   password?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "packages".
+ */
+export interface Package {
+  id: string;
+  post: string | Post;
+  name: string;
+  description?: string | null;
+  multiplier?: number | null;
+  features?:
+    | {
+        feature?: string | null;
+        id?: string | null;
+      }[]
+    | null;
+  category?: ('standard' | 'hosted' | 'addon' | 'special') | null;
+  entitlement?: ('standard' | 'pro') | null;
+  minNights?: number | null;
+  maxNights?: number | null;
+  revenueCatId?: string | null;
+  /**
+   * Link to a page containing sensitive information like check-in instructions or house manual
+   */
+  relatedPage?: (string | null) | Page;
+  isEnabled?: boolean | null;
+  baseRate?: number | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -380,43 +417,6 @@ export interface Category {
         id?: string | null;
       }[]
     | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "packages".
- */
-export interface Package {
-  id: string;
-  post: string | Post;
-  name: string;
-  description?: string | null;
-  multiplier?: number | null;
-  features?:
-    | {
-        feature?: string | null;
-        id?: string | null;
-      }[]
-    | null;
-  category?: ('standard' | 'hosted' | 'addon' | 'special') | null;
-  entitlement?: ('standard' | 'pro') | null;
-  minNights?: number | null;
-  maxNights?: number | null;
-  /**
-   * Legacy RevenueCat product ID (deprecated, use yocoId instead)
-   */
-  revenueCatId?: string | null;
-  /**
-   * Yoco product ID for payment processing
-   */
-  yocoId?: string | null;
-  /**
-   * Link to a page containing sensitive information like check-in instructions or house manual
-   */
-  relatedPage?: (string | null) | Page;
-  isEnabled?: boolean | null;
-  baseRate?: number | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1146,12 +1146,21 @@ export interface BookingsSelect<T extends boolean = true> {
   customer?: T;
   token?: T;
   guests?: T;
+  total?: T;
+  selectedPackage?:
+    | T
+    | {
+        package?: T;
+        customName?: T;
+        enabled?: T;
+      };
   slug?: T;
   slugLock?: T;
   post?: T;
   paymentStatus?: T;
   fromDate?: T;
   toDate?: T;
+  packageType?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1537,7 +1546,6 @@ export interface PackagesSelect<T extends boolean = true> {
   minNights?: T;
   maxNights?: T;
   revenueCatId?: T;
-  yocoId?: T;
   relatedPage?: T;
   isEnabled?: T;
   baseRate?: T;

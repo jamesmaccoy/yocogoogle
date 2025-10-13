@@ -525,6 +525,36 @@ export const Booking: CollectionConfig = {
         isSortable: true,
       },
     },
+    {
+      name: 'total',
+      type: 'number',
+      required: true,
+      access: {
+        update: isAdminField,
+      },
+    },
+    {
+      name: 'selectedPackage',
+      type: 'group',
+      fields: [
+        {
+          name: 'package',
+          type: 'relationship',
+          relationTo: 'packages',
+          required: false,
+        },
+        {
+          name: 'customName',
+          type: 'text',
+          required: false,
+        },
+        {
+          name: 'enabled',
+          type: 'checkbox',
+          defaultValue: true,
+        },
+      ],
+    },
     ...slugField('title', {
       checkboxOverrides: {
         access: {
@@ -596,6 +626,14 @@ export const Booking: CollectionConfig = {
       },
       access: {
         update: isAdminField,
+      },
+    },
+    {
+      name: 'packageType',
+      type: 'text',
+      required: false,
+      admin: {
+        position: 'sidebar',
       },
     },
   ],
