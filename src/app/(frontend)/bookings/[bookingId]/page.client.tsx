@@ -225,11 +225,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         <TabsList className="mb-6 bg-muted p-2 rounded-full flex flex-row gap-2">
           <TabsTrigger value="details" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
             <FileText className="h-5 w-5" />
-            <span className="hidden sm:inline">Booking Details</span>
-          </TabsTrigger>
-          <TabsTrigger value="guests" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-            <UserIcon className="h-5 w-5" />
-            <span className="hidden sm:inline">Guests</span>
+            <span className="hidden sm:inline">Booking & Guests</span>
           </TabsTrigger>
           {relatedPages.length > 0 && (
             <TabsTrigger value="sensitive" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
@@ -240,116 +236,121 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         </TabsList>
         <TabsContent value="details">
           {data && 'post' in data && typeof data?.post !== 'string' ? (
-            <div className="flex items-start flex-col md:flex-row gap-5 md:gap-10">
-              <div className="md:py-5 py-3">
-                <h1 className="text-4xl mb-3 font-bold">{data?.post.title}</h1>
-                <div className="flex flex-col gap-2">
-                  <label className="text-lg font-medium">Booking Dates:</label>
-                  <Calendar
-                    mode="range"
-                    selected={{
-                      from: data?.fromDate ? new Date(data.fromDate) : undefined,
-                      to: data?.toDate ? new Date(data.toDate) : undefined,
-                    }}
-                    numberOfMonths={2}
-                    className="max-w-md"
-                    disabled={() => true}
-                  />
-                  <div className="text-muted-foreground text-sm mt-1">
-                    {data?.fromDate && data?.toDate
-                      ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
-                      : 'Select a start and end date'}
+            <div className="space-y-8">
+              {/* Booking Details Section */}
+              <div className="flex items-start flex-col md:flex-row gap-5 md:gap-10">
+                <div className="md:py-5 py-3">
+                  <h1 className="text-4xl mb-3 font-bold">{data?.post.title}</h1>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-lg font-medium">Booking Dates:</label>
+                    <Calendar
+                      mode="range"
+                      selected={{
+                        from: data?.fromDate ? new Date(data.fromDate) : undefined,
+                        to: data?.toDate ? new Date(data.toDate) : undefined,
+                      }}
+                      numberOfMonths={2}
+                      className="max-w-md"
+                      disabled={() => true}
+                    />
+                    <div className="text-muted-foreground text-sm mt-1">
+                      {data?.fromDate && data?.toDate
+                        ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
+                        : 'Select a start and end date'}
+                    </div>
+                  </div>
+                </div>
+                <div className="w-full rounded-md overflow-hidden bg-muted p-2 flex items-center gap-3">
+                  {!!data?.post.meta?.image && (
+                    <div className="w-24 h-24 flex-shrink-0 rounded-md overflow-hidden border border-border bg-white">
+                      <Media
+                        resource={data?.post.meta?.image || undefined}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col text-white">
+                    <span className="font-medium">Date Booked: {formatDateTime(data?.post.createdAt)}</span>
+                    <span className="font-medium">Guests: {Array.isArray(data?.guests) ? data.guests.length : 0}</span>
                   </div>
                 </div>
               </div>
-              <div className="w-full rounded-md overflow-hidden bg-muted p-2 flex items-center gap-3">
-                {!!data?.post.meta?.image && (
-                  <div className="w-24 h-24 flex-shrink-0 rounded-md overflow-hidden border border-border bg-white">
-                    <Media
-                      resource={data?.post.meta?.image || undefined}
-                      className="w-full h-full object-cover"
-                    />
+
+              {/* Guests Section */}
+              <div className="border-t pt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-2xl font-bold">Guests</h2>
+                  {data &&
+                    'customer' in data &&
+                    typeof data?.customer !== 'string' &&
+                    data.customer?.id === user.id && (
+                      <InviteUrlDialog
+                        bookingId={data.id}
+                        trigger={
+                          <Button>
+                            <PlusCircleIcon className="size-4 mr-2" />
+                            <span>Invite</span>
+                          </Button>
+                        }
+                      />
+                    )}
+                </div>
+                <div className="mt-2 space-y-3">
+                  <div className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2">
+                    <div className="p-2 border border-border rounded-full">
+                      <UserIcon className="size-6" />
+                    </div>
+                    <div>
+                      <div>{typeof data.customer === 'string' ? 'Customer' : data.customer?.name}</div>
+                      <div className="font-medium text-sm">Customer</div>
+                    </div>
                   </div>
-                )}
-                <div className="flex flex-col text-white">
-                  <span className="font-medium">Date Booked: {formatDateTime(data?.post.createdAt)}</span>
-                  <span className="font-medium">Guests: {Array.isArray(data?.guests) ? data.guests.length : 0}</span>
+                  {data.guests
+                    ?.filter((guest) =>
+                      typeof guest === 'string'
+                        ? !removedGuests.includes(guest)
+                        : !removedGuests.includes(guest.id),
+                    )
+                    ?.map((guest) => {
+                      if (typeof guest === 'string') {
+                        return <div key={guest}>{guest}</div>
+                      }
+                      return (
+                        <div
+                          key={guest.id}
+                          className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2 justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 border border-border rounded-full">
+                              <UserIcon className="size-6" />
+                            </div>
+                            <div>
+                              <div>{guest.name}</div>
+                              <div className="font-medium text-sm">Guest</div>
+                            </div>
+                          </div>
+                          {data &&
+                            'customer' in data &&
+                            typeof data?.customer !== 'string' &&
+                            data.customer?.id === user.id && (
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                onClick={() => removeGuestHandler(guest.id)}
+                              >
+                                <TrashIcon className="size-4" />
+                                <span className="sr-only">Remove Guest</span>
+                              </Button>
+                            )}
+                        </div>
+                      )
+                    })}
                 </div>
               </div>
             </div>
           ) : (
             <div>Error loading booking details</div>
           )}
-        </TabsContent>
-        <TabsContent value="guests">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">Guests</h2>
-            {data &&
-              'customer' in data &&
-              typeof data?.customer !== 'string' &&
-              data.customer?.id === user.id && (
-                <InviteUrlDialog
-                  bookingId={data.id}
-                  trigger={
-                    <Button>
-                      <PlusCircleIcon className="size-4 mr-2" />
-                      <span>Invite</span>
-                    </Button>
-                  }
-                />
-              )}
-          </div>
-          <div className="mt-2 space-y-3">
-            <div className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2">
-              <div className="p-2 border border-border rounded-full">
-                <UserIcon className="size-6" />
-              </div>
-              <div>
-                <div>{typeof data.customer === 'string' ? 'Customer' : data.customer?.name}</div>
-                <div className="font-medium text-sm">Customer</div>
-              </div>
-            </div>
-            {data.guests
-              ?.filter((guest) =>
-                typeof guest === 'string'
-                  ? !removedGuests.includes(guest)
-                  : !removedGuests.includes(guest.id),
-              )
-              ?.map((guest) => {
-                if (typeof guest === 'string') {
-                  return <div key={guest}>{guest}</div>
-                }
-                return (
-                  <div
-                    key={guest.id}
-                    className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2 justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 border border-border rounded-full">
-                        <UserIcon className="size-6" />
-                      </div>
-                      <div>
-                        <div>{guest.name}</div>
-                        <div className="font-medium text-sm">Guest</div>
-                      </div>
-                    </div>
-                    {data &&
-                      'customer' in data &&
-                      typeof data?.customer !== 'string' &&
-                      data.customer?.id === user.id && (
-                        <Button
-                          variant="secondary"
-                          size="icon"
-                          onClick={() => removeGuestHandler(guest.id)}
-                        >
-                          <TrashIcon className="size-4" />
-                          <span className="sr-only">Remove Guest</span>
-                        </Button>
-                      )}
-                  </div>
-                )
-              })}
-          </div>
         </TabsContent>
         {relatedPages.length > 0 && (
           <TabsContent value="sensitive">

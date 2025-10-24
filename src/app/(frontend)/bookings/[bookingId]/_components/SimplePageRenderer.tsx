@@ -4,6 +4,7 @@ import React from 'react'
 import RichText from '@/components/RichText'
 import { Media } from '@/components/Media'
 import { CMSLink } from '@/components/Link'
+import { FormBlock } from '@/blocks/Form/Component'
 
 interface SimplePageRendererProps {
   page: any
@@ -119,6 +120,17 @@ export default function SimplePageRenderer({ page }: SimplePageRendererProps) {
     )
   }
 
+  // Render form block
+  const renderFormBlock = (block: any) => {
+    if (!block.form) return null
+
+    return (
+      <div className="mb-6">
+        <FormBlock {...block} />
+      </div>
+    )
+  }
+
   if (!page) {
     return (
       <div className="text-sm text-muted-foreground">
@@ -154,6 +166,13 @@ export default function SimplePageRenderer({ page }: SimplePageRendererProps) {
             return (
               <div key={index}>
                 {renderCallToActionBlock(block)}
+              </div>
+            )
+          
+          case 'formBlock':
+            return (
+              <div key={index}>
+                {renderFormBlock(block)}
               </div>
             )
           
