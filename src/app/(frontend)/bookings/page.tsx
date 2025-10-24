@@ -123,9 +123,18 @@ const getBookings = async (type: 'upcoming' | 'past', currentUser: User) => {
           },
         },
         {
-          customer: {
-            equals: currentUser.id,
-          },
+          or: [
+            {
+              customer: {
+                equals: currentUser.id,
+              },
+            },
+            {
+              guests: {
+                contains: currentUser.id,
+              },
+            },
+          ],
         },
       ],
     }
@@ -138,9 +147,18 @@ const getBookings = async (type: 'upcoming' | 'past', currentUser: User) => {
           },
         },
         {
-          customer: {
-            equals: currentUser.id,
-          },
+          or: [
+            {
+              customer: {
+                equals: currentUser.id,
+              },
+            },
+            {
+              guests: {
+                contains: currentUser.id,
+              },
+            },
+          ],
         },
       ],
     }
