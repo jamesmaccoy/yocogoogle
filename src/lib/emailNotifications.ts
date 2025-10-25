@@ -76,7 +76,7 @@ function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): st
         <div style="padding: 30px 20px;">
           <p style="font-size: 16px; margin-bottom: 20px;">Hello ${data.hostName},</p>
           
-          <p style="font-size: 16px; margin-bottom: 25px;">A customer has requested a new estimate for your property. Here are the details:</p>
+          <p style="font-size: 16px; margin-bottom: 25px;">A customer has requested a new estimate for your property with all available packages. Here are the details:</p>
           
           <!-- Property Details Card -->
           <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 25px; margin: 25px 0;">
@@ -101,7 +101,7 @@ function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): st
           
           <!-- Call to Action -->
           <div style="text-align: center; margin: 30px 0;">
-            <p style="font-size: 16px; margin-bottom: 20px; color: #495057;">Please log into your admin panel to review and respond to this estimate request.</p>
+            <p style="font-size: 16px; margin-bottom: 20px; color: #495057;">Please log into your admin panel to review all available packages and respond to this estimate request.</p>
             <div style="background-color: #007bff; color: #ffffff; padding: 12px 24px; border-radius: 6px; display: inline-block; text-decoration: none; font-weight: 600; font-size: 16px;">
               View Estimate Request
             </div>

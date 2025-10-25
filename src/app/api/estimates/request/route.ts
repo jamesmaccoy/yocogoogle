@@ -63,6 +63,11 @@ export async function POST(req: NextRequest) {
       // Create estimate request in Payload CMS
       console.log('Creating estimate request with post:', { postId: post.id, title: post.title })
       
+      // Get available packages for this post to include in the request
+      const packagesResponse = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/packages/post/${post.id}`)
+      const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
+      const availablePackages = packagesData.packages || []
+      
       const estimateRequest = await payload.create({
         collection: "estimates",
         data: {
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
           originalBooking: bookingId,
           customerName,
           customerEmail,
-          notes: `Customer ${customerName} (${customerEmail}) is requesting a new estimate for different dates. Original booking ID: ${bookingId}`
+          notes: `Customer ${customerName} (${customerEmail}) is requesting a new estimate for different dates. Original booking ID: ${bookingId}. Available packages: ${availablePackages.length} packages including ${availablePackages.filter((pkg: any) => pkg.isEnabled).map((pkg: any) => pkg.name).join(', ')}`
         },
       })
 
