@@ -3,7 +3,7 @@
 import { Media } from '@/components/Media'
 import { Booking, User } from '@/payload-types'
 import { formatDateTime } from '@/utilities/formatDateTime'
-import { PlusCircleIcon, TrashIcon, UserIcon, FileText, Lock } from 'lucide-react'
+import { PlusCircleIcon, TrashIcon, UserIcon, FileText, Lock, Package, Calendar as CalendarIcon } from 'lucide-react'
 import React, { useEffect, useState } from 'react'
 import InviteUrlDialog from './_components/invite-url-dialog'
 import SimplePageRenderer from './_components/SimplePageRenderer'
@@ -13,6 +13,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Calendar } from '@/components/ui/calendar'
 import { DateRange } from 'react-day-picker'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
+import { format } from 'date-fns'
 
 type Props = {
   data: Booking
@@ -67,6 +70,12 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   // Related pages state
   const [relatedPages, setRelatedPages] = useState<any[]>([])
   const [loadingPages, setLoadingPages] = useState(true)
+  
+  // Date picker states for new estimate requests
+  const [selectedDates, setSelectedDates] = useState<DateRange | undefined>()
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
+  const [isSubmittingEstimate, setIsSubmittingEstimate] = useState(false)
+  const [estimateRequestSuccess, setEstimateRequestSuccess] = useState(false)
 
   useEffect(() => {
     const loadPackages = async () => {
@@ -168,6 +177,55 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     setRemovedGuests((prev) => [...prev, guestId])
   }
 
+  const handleEstimateRequest = async () => {
+    if (!selectedDates?.from || !selectedDates?.to) return
+    
+    setIsSubmittingEstimate(true)
+    setEstimateRequestSuccess(false)
+    
+    try {
+      const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+      if (!postId) {
+        throw new Error('No post ID found')
+      }
+      
+      const response = await fetch('/api/estimates/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          postId,
+          fromDate: selectedDates.from.toISOString(),
+          toDate: selectedDates.to.toISOString(),
+          customerId: user.id,
+          customerName: user.name,
+          customerEmail: user.email,
+          bookingId: data.id,
+          propertyTitle: typeof data?.post === 'object' ? data.post.title : 'Property'
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to submit estimate request')
+      }
+      
+      setEstimateRequestSuccess(true)
+      setSelectedDates(undefined)
+      
+      // Reset success message after 5 seconds
+      setTimeout(() => {
+        setEstimateRequestSuccess(false)
+      }, 5000)
+      
+    } catch (error) {
+      console.error('Error submitting estimate request:', error)
+      // You could add error state handling here
+    } finally {
+      setIsSubmittingEstimate(false)
+    }
+  }
+
   // Create booking context for AI Assistant
   const getBookingContext = () => {
     const booking = data
@@ -257,6 +315,106 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                       {data?.fromDate && data?.toDate
                         ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
                         : 'Select a start and end date'}
+                    </div>
+                    
+                    {/* Package Information Display */}
+                    {data?.selectedPackage && (
+                      <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Package className="h-5 w-5 text-primary" />
+                          <h3 className="font-semibold">Selected Package</h3>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">
+                              {data.selectedPackage.customName || 
+                               (typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.name) || 
+                               'Package'}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {data.total ? `R${data.total.toFixed(2)}` : 'Price not available'}
+                            </span>
+                          </div>
+                          {typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.description && (
+                            <p className="text-sm text-muted-foreground">
+                              {data.selectedPackage.package.description}
+                            </p>
+                          )}
+                          {typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.features && 
+                           data.selectedPackage.package.features.length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">Features:</p>
+                              <ul className="text-xs text-muted-foreground space-y-1">
+                                {data.selectedPackage.package.features.map((feature: any, index: number) => (
+                                  <li key={index} className="flex items-center gap-1">
+                                    <span className="w-1 h-1 bg-primary rounded-full"></span>
+                                    {feature.feature || feature}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Request New Estimate Button */}
+                    <div className="mt-4">
+                      <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {selectedDates?.from ? (
+                              selectedDates.to ? (
+                                <>
+                                  {format(selectedDates.from, "LLL dd, y")} -{" "}
+                                  {format(selectedDates.to, "LLL dd, y")}
+                                </>
+                              ) : (
+                                format(selectedDates.from, "LLL dd, y")
+                              )
+                            ) : (
+                              <span>Request new estimate for different dates</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={selectedDates?.from}
+                            selected={selectedDates}
+                            onSelect={(range) => {
+                              setSelectedDates(range)
+                              if (range?.from && range?.to) {
+                                setIsDatePickerOpen(false)
+                              }
+                            }}
+                            numberOfMonths={2}
+                            disabled={(date) => date < new Date()}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      
+                      {selectedDates?.from && selectedDates?.to && (
+                        <div className="mt-3 space-y-2">
+                          <div className="text-sm text-muted-foreground">
+                            Requesting estimate for: {format(selectedDates.from, "LLL dd, y")} to {format(selectedDates.to, "LLL dd, y")}
+                          </div>
+                          <Button 
+                            onClick={handleEstimateRequest}
+                            disabled={isSubmittingEstimate}
+                            className="w-full"
+                          >
+                            {isSubmittingEstimate ? 'Submitting Request...' : 'Request New Estimate'}
+                          </Button>
+                          {estimateRequestSuccess && (
+                            <div className="text-sm text-green-600">
+                              Estimate request submitted! The host will be notified.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

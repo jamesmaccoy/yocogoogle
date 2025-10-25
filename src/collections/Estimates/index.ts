@@ -402,6 +402,68 @@ export const Estimate: CollectionConfig = {
         position: 'sidebar',
       },
     },
+    {
+      name: 'status',
+      type: 'select',
+      options: [
+        { label: 'Pending', value: 'pending' },
+        { label: 'Approved', value: 'approved' },
+        { label: 'Rejected', value: 'rejected' },
+        { label: 'Completed', value: 'completed' },
+      ],
+      defaultValue: 'pending',
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'requestType',
+      type: 'select',
+      options: [
+        { label: 'Initial Request', value: 'initial' },
+        { label: 'New Estimate', value: 'new_estimate' },
+        { label: 'Modification', value: 'modification' },
+      ],
+      defaultValue: 'initial',
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'originalBooking',
+      type: 'relationship',
+      relationTo: 'bookings',
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Original booking this estimate request is based on'
+      },
+    },
+    {
+      name: 'customerName',
+      type: 'text',
+      required: false,
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'customerEmail',
+      type: 'email',
+      required: false,
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'notes',
+      type: 'textarea',
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Additional notes about this estimate request'
+      },
+    },
   ],
   hooks: {
     beforeChange: [
