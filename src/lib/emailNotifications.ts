@@ -68,15 +68,15 @@ function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): st
       <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 20px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">New Estimate Request</h1>
-          <p style="color: #e8f4f8; margin: 10px 0 0 0; font-size: 16px;">A customer is interested in your property</p>
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">New Estimate Created</h1>
+          <p style="color: #e8f4f8; margin: 10px 0 0 0; font-size: 16px;">A customer has requested a new estimate for different dates</p>
         </div>
         
         <!-- Content -->
         <div style="padding: 30px 20px;">
           <p style="font-size: 16px; margin-bottom: 20px;">Hello ${data.hostName},</p>
           
-          <p style="font-size: 16px; margin-bottom: 25px;">A customer has requested a new estimate for your property with all available packages. Here are the details:</p>
+          <p style="font-size: 16px; margin-bottom: 25px;">A customer has requested a new estimate for your property for different dates. A new estimate has been created with all available packages. Here are the details:</p>
           
           <!-- Property Details Card -->
           <div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 12px; padding: 25px; margin: 25px 0;">
@@ -101,7 +101,7 @@ function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): st
           
           <!-- Call to Action -->
           <div style="text-align: center; margin: 30px 0;">
-            <p style="font-size: 16px; margin-bottom: 20px; color: #495057;">Please log into your admin panel to review all available packages and respond to this estimate request.</p>
+            <p style="font-size: 16px; margin-bottom: 20px; color: #495057;">Please log into your admin panel to review the new estimate and configure package options for the customer.</p>
             <div style="background-color: #007bff; color: #ffffff; padding: 12px 24px; border-radius: 6px; display: inline-block; text-decoration: none; font-weight: 600; font-size: 16px;">
               View Estimate Request
             </div>
@@ -139,11 +139,11 @@ function generateEstimateRequestEmailText(data: EstimateRequestNotification): st
   })
 
   return `
-NEW ESTIMATE REQUEST
+NEW ESTIMATE CREATED
 
 Hello ${data.hostName},
 
-A customer has requested a new estimate for your property.
+A customer has requested a new estimate for your property for different dates. A new estimate has been created with all available packages.
 
 PROPERTY DETAILS:
 - Property: ${data.propertyTitle}
@@ -151,9 +151,9 @@ PROPERTY DETAILS:
 - Customer: ${data.customerName}
 - Customer Email: ${data.customerEmail}
 
-Please log into your admin panel to review and respond to this estimate request.
+Please log into your admin panel to review the new estimate and configure package options for the customer.
 
 This is an automated notification from your Betaplek booking system.
-Estimate Request ID: ${data.estimateRequestId}
+Estimate ID: ${data.estimateRequestId}
   `.trim()
 }

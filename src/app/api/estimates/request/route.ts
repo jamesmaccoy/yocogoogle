@@ -63,29 +63,39 @@ export async function POST(req: NextRequest) {
       // Create estimate request in Payload CMS
       console.log('Creating estimate request with post:', { postId: post.id, title: post.title })
       
-      // Get available packages for this post to include in the request
+      // Get available packages for this post to include in the estimate
       const packagesResponse = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/api/packages/post/${post.id}`)
       const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
       const availablePackages = packagesData.packages || []
       
-      const estimateRequest = await payload.create({
+      // Calculate duration for the new estimate
+      const fromDateObj = new Date(fromDate)
+      const toDateObj = new Date(toDate)
+      const duration = Math.max(1, Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)))
+      
+      // Use the post's base rate for initial calculation
+      const baseRate = post.baseRate || 150
+      const initialTotal = baseRate * duration
+      
+      const newEstimate = await payload.create({
         collection: "estimates",
         data: {
-          title: `New estimate request for ${propertyTitle}`,
+          title: `New estimate for ${propertyTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
           post: post.id,
           fromDate,
           toDate,
           customer: currentUser.user.id,
+          total: initialTotal,
           status: 'pending',
           requestType: 'new_estimate',
           originalBooking: bookingId,
           customerName,
           customerEmail,
-          notes: `Customer ${customerName} (${customerEmail}) is requesting a new estimate for different dates. Original booking ID: ${bookingId}. Available packages: ${availablePackages.length} packages including ${availablePackages.filter((pkg: any) => pkg.isEnabled).map((pkg: any) => pkg.name).join(', ')}`
+          notes: `Customer ${customerName} (${customerEmail}) requested a new estimate for different dates. Original booking ID: ${bookingId}. Duration: ${duration} nights. Available packages: ${availablePackages.filter((pkg: any) => pkg.isEnabled).map((pkg: any) => pkg.name).join(', ')}`
         },
       })
 
-      console.log('Created estimate request:', { id: estimateRequest.id })
+      console.log('Created new estimate:', { id: newEstimate.id })
 
       // Send notification email to host
       try {
@@ -104,7 +114,7 @@ export async function POST(req: NextRequest) {
             propertyTitle,
             fromDate,
             toDate,
-            estimateRequestId: estimateRequest.id
+            estimateRequestId: newEstimate.id
           })
         }
       } catch (emailError) {
@@ -112,19 +122,19 @@ export async function POST(req: NextRequest) {
         // Don't fail the request if email fails
       }
 
-      // Fetch the created estimate request with populated relationships
-      const populatedEstimateRequest = await payload.findByID({
+      // Fetch the created estimate with populated relationships
+      const populatedEstimate = await payload.findByID({
         collection: 'estimates',
-        id: estimateRequest.id,
+        id: newEstimate.id,
         depth: 2,
       })
 
-      console.log('Fetched populated estimate request:', { id: populatedEstimateRequest.id })
+      console.log('Fetched populated estimate:', { id: populatedEstimate.id })
 
       return NextResponse.json({
         success: true,
-        estimateRequest: populatedEstimateRequest,
-        message: 'Estimate request submitted successfully. The host will be notified.'
+        estimate: populatedEstimate,
+        message: 'New estimate created successfully. The host will be notified and can review all available packages.'
       })
     } catch (error) {
       console.error('Error in estimate request operation:', error)

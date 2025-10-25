@@ -382,7 +382,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                 format(selectedDates.from, "LLL dd, y")
                               )
                             ) : (
-                              <span>Request new estimate with all available packages</span>
+                              <span>Request new estimate for different dates</span>
                             )}
                           </Button>
                         </PopoverTrigger>
@@ -418,7 +418,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                           </Button>
                           {estimateRequestSuccess && (
                             <div className="text-sm text-green-600">
-                              Estimate request submitted! The host will review all available packages for your selected dates.
+                              New estimate request submitted! The host will create a new estimate with all available packages for your selected dates.
                             </div>
                           )}
                         </div>
@@ -427,89 +427,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                   </div>
                 </div>
                 
-                {/* Available Packages Section */}
-                <div className="mt-6">
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <Package className="h-5 w-5 text-primary" />
-                    All Available Packages
-                  </h3>
-                  {loadingPackages ? (
-                    <div className="text-sm text-muted-foreground">Loading packages...</div>
-                  ) : availablePackages.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No packages available for this property.</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {availablePackages
-                        .filter(pkg => pkg.isEnabled)
-                        .map((pkg) => {
-                          const isSelected = data?.selectedPackage && 
-                            (typeof data.selectedPackage.package === 'object' && 
-                             data.selectedPackage.package?.id === pkg.id)
-                          
-                          // Calculate price based on base rate and multiplier
-                          const baseRate = pkg.baseRate || (typeof data?.post === 'object' ? data.post.baseRate : 150) || 150
-                          const price = baseRate * pkg.multiplier
-                          const priceString = `R${price.toFixed(2)}`
-                          
-                          return (
-                            <div 
-                              key={pkg.id} 
-                              className={`border rounded-lg p-4 transition-all duration-200 ${
-                                isSelected 
-                                  ? 'border-primary bg-primary/5 shadow-md' 
-                                  : 'border-border hover:border-primary/50 hover:shadow-sm'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between mb-3">
-                                <div>
-                                  <h4 className="font-semibold text-sm">
-                                    {pkg.name}
-                                    {isSelected && (
-                                      <span className="ml-2 text-xs bg-primary text-primary-foreground px-2 py-1 rounded-full">
-                                        Selected
-                                      </span>
-                                    )}
-                                  </h4>
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    {pkg.category} • {pkg.minNights}-{pkg.maxNights} nights
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  <div className="font-bold text-sm">{priceString}</div>
-                                  <div className="text-xs text-muted-foreground">per night</div>
-                                </div>
-                              </div>
-                              
-                              {pkg.description && (
-                                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
-                                  {pkg.description}
-                                </p>
-                              )}
-                              
-                              {pkg.features && pkg.features.length > 0 && (
-                                <div className="space-y-1">
-                                  <p className="text-xs font-medium text-muted-foreground">Features:</p>
-                                  <ul className="text-xs text-muted-foreground space-y-1">
-                                    {pkg.features.slice(0, 3).map((feature: any, index: number) => (
-                                      <li key={index} className="flex items-center gap-1">
-                                        <span className="w-1 h-1 bg-primary rounded-full flex-shrink-0"></span>
-                                        <span className="truncate">{feature.feature || feature}</span>
-                                      </li>
-                                    ))}
-                                    {pkg.features.length > 3 && (
-                                      <li className="text-xs text-muted-foreground">
-                                        +{pkg.features.length - 3} more features
-                                      </li>
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                    </div>
-                  )}
-                </div>
                 
                 <div className="w-full rounded-md overflow-hidden bg-muted p-2 flex items-center gap-3">
                   {!!data?.post.meta?.image && (
