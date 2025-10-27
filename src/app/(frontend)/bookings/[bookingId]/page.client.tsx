@@ -251,6 +251,16 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       // Get base rate from the post
       const baseRate = typeof data?.post === 'object' ? data.post.baseRate || 150 : 150
       
+      // Get the first available package to use as default
+      const packagesResponse = await fetch(`/api/packages/post/${postId}`)
+      const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
+      const availablePackages = packagesData.packages || []
+      const firstPackage = availablePackages.find((pkg: any) => pkg.isEnabled)
+      
+      if (!firstPackage) {
+        throw new Error('No packages available for this property')
+      }
+      
       // Create a minimal estimate and navigate to it (like Share Estimate button)
       const resp = await fetch('/api/estimates', {
         method: 'POST',
@@ -261,7 +271,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
           toDate: selectedDates.to.toISOString(),
           guests: [],
           title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
-          packageType: 'standard', // Default package type
+          packageType: firstPackage.id, // Use the first available package
           total: calculateTotal(baseRate, duration, 1) // Base rate calculation
         })
       })
