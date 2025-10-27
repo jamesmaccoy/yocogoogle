@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
-import { Bot, Send, Calendar, Package, Sparkles, Mic, MicOff, Loader2 } from 'lucide-react'
+import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -16,6 +16,8 @@ import { calculateTotal } from '@/lib/calculateTotal'
 import { useRevenueCat } from '@/providers/RevenueCat'
 import { Purchases, type Package as RevenueCatPackage, ErrorCode } from '@revenuecat/purchases-js'
 import { useRouter } from 'next/navigation'
+import { Mic, MicOff } from 'lucide-react'
+import { PackageDisplay } from '@/components/PackageDisplay'
 
 interface Package {
   id: string
@@ -49,33 +51,61 @@ interface SmartEstimateBlockProps {
 }
 
 const QuickActions = ({ onAction }: { onAction: (action: string, data?: any) => void }) => (
-  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-    <p className="text-sm text-blue-800 mb-2">
-      🤖 <strong>AI Assistant Available</strong>
-    </p>
-    <p className="text-xs text-blue-700 mb-3">
-      For comprehensive AI assistance including package recommendations, debug information, and booking help, please use the AI Assistant in the bottom right corner.
-    </p>
-    <div className="flex flex-wrap gap-2">
-      <Button 
-        variant="outline" 
-        size="sm" 
-        onClick={() => onAction('ai_assistant')}
-        className="text-xs bg-white"
-      >
-        <Bot className="h-3 w-3 mr-1" />
-        Use AI Assistant
-      </Button>
-      <Button 
-        variant="outline" 
-        size="sm" 
-        onClick={() => onAction('debug_packages')}
-        className="text-xs bg-white"
-      >
-        <Package className="h-3 w-3 mr-1" />
-        Debug Packages
-      </Button>
-    </div>
+  <div className="flex flex-wrap gap-2 mb-4">
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('select_dates')}
+      className="text-xs"
+    >
+      <Calendar className="h-3 w-3 mr-1" />
+      Select Dates
+    </Button>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('suggest_duration')}
+      className="text-xs"
+    >
+      <Calendar className="h-3 w-3 mr-1" />
+      When should I visit?
+    </Button>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('show_packages')}
+      className="text-xs"
+    >
+      <Package className="h-3 w-3 mr-1" />
+      What packages are available?
+    </Button>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('debug_packages')}
+      className="text-xs"
+    >
+      <Package className="h-3 w-3 mr-1" />
+      Debug Packages
+    </Button>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('get_recommendation')}
+      className="text-xs"
+    >
+      <Sparkles className="h-3 w-3 mr-1" />
+      Recommend something for me
+    </Button>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={() => onAction('check_availability')}
+      className="text-xs"
+    >
+      <Calendar className="h-3 w-3 mr-1" />
+      Check Availability
+    </Button>
   </div>
 )
 
@@ -178,6 +208,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [isListening, setIsListening] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [micError, setMicError] = useState<string | null>(null)
   
   // Booking states
   const [isBooking, setIsBooking] = useState(false)
@@ -223,6 +255,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
+  const synthRef = useRef<SpeechSynthesis | null>(null)
+  const isProcessingRef = useRef(false)
+  const finalTranscriptRef = useRef('')
 
   // Helper function to filter packages based on customer entitlement
   // This ensures that pro-only packages are only shown to pro users
@@ -441,6 +476,136 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       loadOfferings()
     }
   }, [isInitialized])
+
+  // Initialize speech recognition and synthesis
+  useEffect(() => {
+    // Initialize speech recognition
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SpeechRecognition) {
+        try {
+          recognitionRef.current = new SpeechRecognition()
+          recognitionRef.current.continuous = true
+          recognitionRef.current.interimResults = true
+          recognitionRef.current.lang = 'en-US'
+
+          recognitionRef.current.onresult = async (event: any) => {
+            let interimTranscript = ''
+            let finalTranscript = ''
+
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const result = event.results[i]
+              if (result && result[0]) {
+                const transcript = result[0].transcript
+                if (result.isFinal) {
+                  finalTranscript += transcript
+                } else {
+                  interimTranscript += transcript
+                }
+              }
+            }
+
+            // Update input with interim results
+            setInput(interimTranscript || finalTranscript)
+
+            // If we have a final transcript and we're not already processing
+            if (finalTranscript && !isProcessingRef.current) {
+              isProcessingRef.current = true
+              finalTranscriptRef.current = finalTranscript
+              await handleAIRequest(finalTranscript)
+              isProcessingRef.current = false
+            }
+          }
+
+          recognitionRef.current.onend = () => {
+            if (isListening) {
+              try {
+                recognitionRef.current?.start()
+              } catch (error) {
+                console.error('Error restarting speech recognition:', error)
+                setIsListening(false)
+                setMicError('Error with speech recognition. Please try again.')
+              }
+            }
+          }
+
+          recognitionRef.current.onerror = (event: any) => {
+            console.error('Speech recognition error:', event)
+            setMicError('Error with speech recognition. Please try again.')
+            setIsListening(false)
+          }
+        } catch (error) {
+          console.error('Error initializing speech recognition:', error)
+          setMicError('Speech recognition is not supported in your browser.')
+        }
+      } else {
+        setMicError('Speech recognition is not supported in your browser.')
+      }
+    }
+
+    // Initialize speech synthesis
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      synthRef.current = window.speechSynthesis
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+      if (synthRef.current) {
+        synthRef.current.cancel()
+      }
+    }
+  }, [isListening])
+
+  const startListening = () => {
+    if (!recognitionRef.current) {
+      setMicError('Speech recognition is not available.')
+      return
+    }
+
+    try {
+      setMicError(null)
+      finalTranscriptRef.current = ''
+      recognitionRef.current.start()
+      setIsListening(true)
+    } catch (error) {
+      console.error('Error starting speech recognition:', error)
+      setMicError('Failed to start speech recognition. Please try again.')
+      setIsListening(false)
+    }
+  }
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+        setIsListening(false)
+      } catch (error) {
+        console.error('Error stopping speech recognition:', error)
+        setMicError('Error stopping speech recognition.')
+      }
+    }
+  }
+
+  const speak = (text: string) => {
+    if (synthRef.current) {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.onstart = () => setIsSpeaking(true)
+      utterance.onend = () => {
+        setIsSpeaking(false)
+        // If we're still listening, restart recognition after speaking
+        if (isListening && recognitionRef.current) {
+          try {
+            recognitionRef.current.start()
+          } catch (error) {
+            console.error('Error restarting speech recognition after speaking:', error)
+          }
+        }
+      }
+      synthRef.current.speak(utterance)
+    }
+  }
 
   const loadOfferings = async () => {
     try {
@@ -861,8 +1026,94 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }, [messages])
   
   const handleQuickAction = (action: string, data?: any) => {
-    // Direct users to the main AI Assistant for all interactions
-    const message = `Please use the AI Assistant (bottom right corner) for all interactions including package recommendations, debug information, and booking assistance. The main AI Assistant provides comprehensive support with authentication and context awareness.`
+    let message = ''
+    
+    switch (action) {
+      case 'select_dates':
+        // If dates are already populated, acknowledge them
+        if (startDate && endDate) {
+          const acknowledgmentMessage: Message = {
+            role: 'assistant',
+            content: `I see you already have dates selected: ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')} (${duration} ${duration === 1 ? 'night' : 'nights'}). You can modify them below or ask me to suggest packages for these dates.`,
+            type: 'text'
+          }
+          setMessages(prev => [...prev, acknowledgmentMessage])
+        }
+        
+        const dateMessage: Message = {
+          role: 'assistant',
+          content: startDate && endDate ? 
+            'You can modify your dates below if needed:' : 
+            'Please select your check-in and check-out dates:',
+          type: 'date_selection'
+        }
+        setMessages(prev => [...prev, dateMessage])
+        return
+      case 'suggest_duration':
+        message = `For ${postTitle}, I'd recommend considering these durations:\n\n` +
+          `• 1-2 nights: Perfect for a quick getaway\n` +
+          `• 3-5 nights: Ideal for a relaxing break\n` +
+          `• 7+ nights: Great for a longer vacation\n\n` +
+          `What duration are you thinking of? I can help you find the perfect package.`
+        break
+      case 'show_packages':
+        if (startDate && endDate) {
+          showAvailablePackages()
+          return
+        } else {
+          message = `I'd love to show you the best packages! To give you personalized recommendations, please select your dates first using the "Select Dates" button above.`
+        }
+        break
+      case 'get_recommendation':
+        if (startDate && endDate) {
+          message = `Based on your ${duration} ${duration === 1 ? 'night' : 'nights'} stay at ${postTitle}, here are my top recommendations:\n\n` +
+            `• For couples: Romantic packages with premium amenities\n` +
+            `• For families: Spacious options with kid-friendly features\n` +
+            `• For business: Professional packages with work amenities\n\n` +
+            `Let me show you the specific packages available for your dates!`
+          
+          const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
+          setMessages(prev => [...prev, assistantMessage])
+          
+          // Show packages after the recommendation message
+          setTimeout(() => showAvailablePackages(), 1000)
+          return
+        } else {
+          message = `I'd love to give you personalized recommendations! To suggest the best packages for your needs, please select your travel dates first using the "Select Dates" button above.`
+        }
+        break
+      case 'debug_packages':
+        console.log('🐛 DEBUG: Current state:', {
+          packages: packages,
+          packagesLength: packages.length,
+          customerEntitlement,
+          startDate,
+          endDate,
+          duration
+        })
+        message = `Debug info logged to console. Packages loaded: ${packages.length}, Entitlement: ${customerEntitlement}`
+        break
+      case 'check_availability':
+        if (startDate && endDate) {
+          // Check availability and provide feedback
+          checkDateAvailability(startDate, endDate).then((isAvailable) => {
+            const availabilityMessage: Message = {
+              role: 'assistant',
+              content: isAvailable ? 
+                `✅ Great news! Your selected dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are available for booking.` :
+                `❌ Unfortunately, your selected dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are not available. Please select different dates.`,
+              type: 'text'
+            }
+            setMessages(prev => [...prev, availabilityMessage])
+          })
+          return
+        } else {
+          message = `To check availability, please select your dates first using the "Select Dates" button above.`
+        }
+        break
+      default:
+        message = 'I can help you with that! What would you like to know?'
+    }
     
     const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
     setMessages(prev => [...prev, assistantMessage])
@@ -1029,6 +1280,69 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     setIsLoading(true)
     
     try {
+      // Check for debug packages request
+      if (message.toLowerCase().includes('debug packages') || 
+          message.toLowerCase().includes('debug') ||
+          message.toLowerCase().includes('show packages')) {
+        
+        // Handle debug packages request
+        try {
+          const response = await fetch(`/api/packages/post/${postId}`)
+          if (response.ok) {
+            const data = await response.json()
+            const packages = data.packages || []
+            
+            // Get user's subscription status for entitlement info
+            const userEntitlement = currentUser?.role === 'admin' ? 'pro' : 
+                                   currentUser?.subscriptionStatus?.plan || 'none'
+            
+            const debugInfo = `
+**Debug Package Information:**
+- Total packages found: ${packages.length}
+- User role: ${currentUser?.role || 'guest'}
+- Subscription plan: ${currentUser?.subscriptionStatus?.plan || 'none'}
+- Entitlement level: ${userEntitlement}
+
+**Available Packages:**
+${packages.map((pkg: any, index: number) => 
+  `${index + 1}. **${pkg.name}**
+     - Category: ${pkg.category || 'N/A'}
+     - Entitlement: ${pkg.entitlement || 'N/A'}
+     - Enabled: ${pkg.isEnabled ? 'Yes' : 'No'}
+     - Min/Max nights: ${pkg.minNights}-${pkg.maxNights}
+     - Multiplier: ${pkg.multiplier}x
+     - RevenueCat ID: ${pkg.revenueCatId || 'N/A'}
+     - Features: ${pkg.features?.length || 0} features`
+).join('\n\n')}
+
+**Filtering Logic:**
+- Non-subscribers see: hosted, special packages only
+- Standard subscribers see: standard, hosted, special packages
+- Pro subscribers see: all packages
+- Addon packages are filtered out (booking page only)
+            `
+            
+            const assistantMessage: Message = { 
+              role: 'assistant', 
+              content: debugInfo
+            }
+            setMessages(prev => [...prev, assistantMessage])
+            speak('Here\'s the debug information for packages and entitlements.')
+            setIsLoading(false)
+            return
+          }
+        } catch (error) {
+          console.error('Debug packages error:', error)
+          const assistantMessage: Message = { 
+            role: 'assistant', 
+            content: 'Sorry, I encountered an error while fetching debug information. Please try again.'
+          }
+          setMessages(prev => [...prev, assistantMessage])
+          setIsLoading(false)
+          return
+        }
+      }
+      
       // If user is not logged in, provide basic responses without API call
       if (!isLoggedIn) {
         let response = ''
@@ -1061,24 +1375,33 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         return
       }
       
-      // For logged-in users, use the full AI API
+      // For logged-in users, use the full AI API with enhanced context
+      const contextString = `
+Property Context:
+- Title: ${postTitle}
+- Description: ${postDescription}
+- Base Rate: R${baseRate}
+- Post ID: ${postId}
+
+Current Booking State:
+- Selected Package: ${selectedPackage?.name || 'None'}
+- Duration: ${duration} ${duration === 1 ? 'night' : 'nights'}
+- Start Date: ${startDate ? format(startDate, 'MMM dd, yyyy') : 'Not selected'}
+- End Date: ${endDate ? format(endDate, 'MMM dd, yyyy') : 'Not selected'}
+- Available Packages: ${packages.length}
+- User Entitlement: ${customerEntitlement}
+
+Availability Status:
+- Are dates available: ${areDatesAvailable ? 'Yes' : 'No'}
+- Currently checking availability: ${isCheckingAvailability ? 'Yes' : 'No'}
+      `
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message,
-          bookingContext: {
-            postId,
-            postTitle,
-            postDescription,
-            baseRate,
-            duration,
-            packages: packages.length,
-            customerEntitlement,
-            selectedPackage: selectedPackage?.name,
-            fromDate: startDate?.toISOString(),
-            toDate: endDate?.toISOString()
-          }
+          message: `${contextString}\n\nUser question: ${message}`,
+          context: 'smart-estimate'
         })
       })
       
@@ -1101,6 +1424,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         type: 'text'
       }
       setMessages(prev => [...prev, assistantMessage])
+      speak(data.message)
       
       // Check if AI suggests showing packages (with null check)
       if (data.message && typeof data.message === 'string' && 
@@ -1116,6 +1440,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         type: 'text'
       }
       setMessages(prev => [...prev, errorMessage])
+      speak(error instanceof Error ? error.message : 'Sorry, I encountered an error.')
     } finally {
       setIsLoading(false)
     }
@@ -1489,96 +1814,32 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           )}
           
           {selectedPackage && (
-            <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-medium text-sm">{selectedPackage.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {duration} {duration === 1 ? 'night' : 'nights'} • {selectedPackage.features.slice(0, 2).join(', ')}
-                  </p>
-                  {startDate && endDate && (
-                    <div className="mt-1">
-                      <p className="text-xs text-muted-foreground">
-                        {format(startDate, 'MMM dd')} - {format(endDate, 'MMM dd, yyyy')}
-                      </p>
-                      {isCheckingAvailability ? (
-                        <p className="text-xs text-blue-600 flex items-center gap-1">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Checking availability...
-                        </p>
-                      ) : !areDatesAvailable ? (
-                        <p className="text-xs text-red-600 flex items-center gap-1">
-                          ❌ Dates not available
-                        </p>
-                      ) : (
-                        <p className="text-xs text-green-600 flex items-center gap-1">
-                          ✅ Dates available
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-primary">
-                    R{(selectedPackage.baseRate || calculateTotal(baseRate, duration, selectedPackage.multiplier)).toFixed(0)}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    R{(selectedPackage.baseRate ? baseRate : (calculateTotal(baseRate, duration, selectedPackage.multiplier) / duration)).toFixed(0)}/night
-                  </div>
-                  {!selectedPackage.baseRate && selectedPackage.multiplier !== 1 && (
-                    <div className="text-xs text-muted-foreground">
-                      {selectedPackage.multiplier > 1 ? '+' : ''}{((selectedPackage.multiplier - 1) * 100).toFixed(0)}% rate
-                    </div>
-                  )}
-                  {isLoggedIn ? (
-                    <Button 
-                      size="sm" 
-                      className="mt-1" 
-                      onClick={handleBooking}
-                      disabled={isBooking || !startDate || !endDate || !areDatesAvailable || isCheckingAvailability}
-                    >
-                      {isBooking ? (
-                        <>
-                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                          Processing...
-                        </>
-                      ) : !startDate || !endDate ? (
-                        'Select Dates'
-                      ) : !areDatesAvailable ? (
-                        'Dates Unavailable'
-                      ) : isCheckingAvailability ? (
-                        <>
-                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                          Checking...
-                        </>
-                      ) : (
-                        'Book Now'
-                      )}
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" className="mt-1" asChild>
-                      <a href="/login">Log In to Book</a>
-                    </Button>
-                  )}
-                  {/* Secondary action to create booking via estimate page */}
-                  <Button size="sm" variant="ghost" className="mt-1 ml-2" onClick={handleGoToEstimate} disabled={isCreatingEstimate}>
-                    {isCreatingEstimate ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Opening...
-                      </>
-                    ) : (
-                      'Share Estimate'
-                    )}
-                  </Button>
-                </div>
-              </div>
-              {bookingError && (
-                <div className="mt-2 p-2 text-xs text-destructive bg-destructive/10 rounded">
-                  {bookingError}
-                </div>
-              )}
-            </div>
+            <PackageDisplay
+              packageData={{
+                name: selectedPackage.name,
+                description: selectedPackage.description,
+                features: selectedPackage.features,
+                category: selectedPackage.category,
+                minNights: selectedPackage.minNights,
+                maxNights: selectedPackage.maxNights,
+                baseRate: selectedPackage.baseRate,
+                multiplier: selectedPackage.multiplier
+              }}
+              duration={duration}
+              baseRate={baseRate}
+              startDate={startDate}
+              endDate={endDate}
+              variant="estimate"
+              className="mb-4"
+              isCheckingAvailability={isCheckingAvailability}
+              areDatesAvailable={areDatesAvailable}
+              isBooking={isBooking}
+              bookingError={bookingError}
+              isLoggedIn={isLoggedIn}
+              onBooking={handleBooking}
+              onGoToEstimate={handleGoToEstimate}
+              isCreatingEstimate={isCreatingEstimate}
+            />
           )}
           
           <form onSubmit={handleSubmit} className="flex gap-2">
@@ -1593,12 +1854,23 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
                     : "Ask about packages (log in for full AI assistance)..."
               }
               className="flex-1"
-              disabled={isLoading}
+              disabled={isLoading || isListening}
             />
-            <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+            <Button
+              type="button"
+              size="icon"
+              variant={isListening ? 'destructive' : 'outline'}
+              onClick={isListening ? stopListening : startListening}
+              disabled={isLoading || isSpeaking || !!micError}
+              title={micError || (isListening ? 'Stop listening' : 'Start listening')}
+            >
+              {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+            <Button type="submit" size="icon" disabled={isLoading || isListening || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </form>
+          {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
         </div>
       </CardContent>
     </Card>
