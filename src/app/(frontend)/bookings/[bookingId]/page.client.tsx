@@ -388,13 +388,13 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                     {/* Package Information Display */}
                     {data?.selectedPackage && (
                       <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-3">
                           <Package className="h-5 w-5 text-primary" />
-                          <h3 className="font-semibold">Selected Package</h3>
+                          <h3 className="font-semibold text-lg">Purchased Package</h3>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <div className="flex items-center justify-between">
-                            <span className="font-medium">
+                            <span className="font-medium text-base">
                               {data.selectedPackage.customName || 
                                (typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.name) || 
                                'Package'}
@@ -403,23 +403,46 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                               {data.total ? `R${data.total.toFixed(2)}` : 'Price not available'}
                             </span>
                           </div>
+                          
                           {typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.description && (
                             <p className="text-sm text-muted-foreground">
                               {data.selectedPackage.package.description}
                             </p>
                           )}
+                          
                           {typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.features && 
                            data.selectedPackage.package.features.length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-xs font-medium text-muted-foreground mb-1">Features:</p>
-                              <ul className="text-xs text-muted-foreground space-y-1">
+                            <div className="mt-3">
+                              <p className="text-sm font-medium text-muted-foreground mb-2">Package Features:</p>
+                              <ul className="space-y-2">
                                 {data.selectedPackage.package.features.map((feature: any, index: number) => (
-                                  <li key={index} className="flex items-center gap-1">
-                                    <span className="w-1 h-1 bg-primary rounded-full"></span>
-                                    {feature.feature || feature}
+                                  <li key={index} className="flex items-start gap-2">
+                                    <span className="w-1.5 h-1.5 bg-primary rounded-full mt-2 flex-shrink-0"></span>
+                                    <span className="text-sm text-muted-foreground">
+                                      {feature.feature || feature}
+                                    </span>
                                   </li>
                                 ))}
                               </ul>
+                            </div>
+                          )}
+                          
+                          {typeof data.selectedPackage.package === 'object' && data.selectedPackage.package?.category && (
+                            <div className="flex items-center gap-2 mt-3">
+                              <span className="text-xs font-medium text-muted-foreground">Category:</span>
+                              <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                                {data.selectedPackage.package.category}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {typeof data.selectedPackage.package === 'object' && 
+                           (data.selectedPackage.package?.minNights || data.selectedPackage.package?.maxNights) && (
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-xs font-medium text-muted-foreground">Duration:</span>
+                              <span className="text-xs text-muted-foreground">
+                                {data.selectedPackage.package.minNights}-{data.selectedPackage.package.maxNights} nights
+                              </span>
                             </div>
                           )}
                         </div>
