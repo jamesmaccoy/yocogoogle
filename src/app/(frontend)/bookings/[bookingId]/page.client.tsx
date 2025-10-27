@@ -16,6 +16,8 @@ import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
+import { calculateTotal } from '@/lib/calculateTotal'
 
 type Props = {
   data: Booking
@@ -58,6 +60,7 @@ function formatPriceWithUSD(product: any) {
 
 export default function BookingDetailsClientPage({ data, user }: Props) {
   const [removedGuests, setRemovedGuests] = React.useState<string[]>([])
+  const router = useRouter()
 
   // Addon packages state
   const [addonPackages, setAddonPackages] = useState<AddonPackage[]>([])
@@ -75,11 +78,17 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   const [selectedDates, setSelectedDates] = useState<DateRange | undefined>()
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const [isSubmittingEstimate, setIsSubmittingEstimate] = useState(false)
-  const [estimateRequestSuccess, setEstimateRequestSuccess] = useState(false)
   
   // Available packages state
   const [availablePackages, setAvailablePackages] = useState<any[]>([])
   const [loadingPackages, setLoadingPackages] = useState(true)
+  
+  // Unavailable dates state
+  const [unavailableDates, setUnavailableDates] = useState<Date[]>([])
+  const [loadingUnavailableDates, setLoadingUnavailableDates] = useState(false)
+  
+  // Error state for estimate creation
+  const [estimateError, setEstimateError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadPackages = async () => {
@@ -185,11 +194,30 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     setRemovedGuests((prev) => [...prev, guestId])
   }
 
+  const loadUnavailableDates = async () => {
+    const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+    if (!postId) return
+    
+    setLoadingUnavailableDates(true)
+    try {
+      const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
+      if (response.ok) {
+        const data = await response.json()
+        const dates = data.unavailableDates.map((dateStr: string) => new Date(dateStr))
+        setUnavailableDates(dates)
+      }
+    } catch (error) {
+      console.error('Error loading unavailable dates:', error)
+    } finally {
+      setLoadingUnavailableDates(false)
+    }
+  }
+
   const handleEstimateRequest = async () => {
     if (!selectedDates?.from || !selectedDates?.to) return
     
     setIsSubmittingEstimate(true)
-    setEstimateRequestSuccess(false)
+    setEstimateError(null)
     
     try {
       const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
@@ -197,38 +225,60 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         throw new Error('No post ID found')
       }
       
-      const response = await fetch('/api/estimates/request', {
+      // First, check availability for the selected dates
+      const availabilityResponse = await fetch(
+        `/api/bookings/check-availability?postId=${postId}&startDate=${selectedDates.from.toISOString()}&endDate=${selectedDates.to.toISOString()}`
+      )
+      
+      if (!availabilityResponse.ok) {
+        throw new Error('Failed to check availability')
+      }
+      
+      const availabilityData = await availabilityResponse.json()
+      
+      if (!availabilityData.isAvailable) {
+        // Show error message for unavailable dates
+        setEstimateError('The selected dates are not available. Please choose different dates.')
+        setIsSubmittingEstimate(false)
+        return
+      }
+      
+      // Calculate duration for the new estimate
+      const fromDateObj = new Date(selectedDates.from)
+      const toDateObj = new Date(selectedDates.to)
+      const duration = Math.max(1, Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)))
+      
+      // Get base rate from the post
+      const baseRate = typeof data?.post === 'object' ? data.post.baseRate || 150 : 150
+      
+      // Create a minimal estimate and navigate to it (like Share Estimate button)
+      const resp = await fetch('/api/estimates', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId,
           fromDate: selectedDates.from.toISOString(),
           toDate: selectedDates.to.toISOString(),
-          customerId: user.id,
-          customerName: user.name,
-          customerEmail: user.email,
-          bookingId: data.id,
-          propertyTitle: typeof data?.post === 'object' ? data.post.title : 'Property'
-        }),
+          guests: [],
+          title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
+          packageType: 'standard', // Default package type
+          total: calculateTotal(baseRate, duration, 1) // Base rate calculation
+        })
       })
       
-      if (!response.ok) {
-        throw new Error('Failed to submit estimate request')
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err?.error || 'Failed to create estimate')
       }
       
-      setEstimateRequestSuccess(true)
-      setSelectedDates(undefined)
+      const created = await resp.json()
       
-      // Reset success message after 5 seconds
-      setTimeout(() => {
-        setEstimateRequestSuccess(false)
-      }, 5000)
+      // Navigate to the new estimate page
+      router.push(`/estimate/${created.id}`)
       
     } catch (error) {
-      console.error('Error submitting estimate request:', error)
-      // You could add error state handling here
+      console.error('Error creating estimate:', error)
+      setEstimateError('Failed to create estimate. Please try again.')
     } finally {
       setIsSubmittingEstimate(false)
     }
@@ -368,7 +418,12 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                     
                     {/* Request New Estimate Button */}
                     <div className="mt-4">
-                      <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                      <Popover open={isDatePickerOpen} onOpenChange={(open) => {
+                        setIsDatePickerOpen(open)
+                        if (open) {
+                          loadUnavailableDates()
+                        }
+                      }}>
                         <PopoverTrigger asChild>
                           <Button variant="outline" className="w-full justify-start text-left font-normal">
                             <CalendarIcon className="mr-2 h-4 w-4" />
@@ -394,13 +449,34 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             selected={selectedDates}
                             onSelect={(range) => {
                               setSelectedDates(range)
+                              setEstimateError(null) // Clear error when dates change
                               if (range?.from && range?.to) {
                                 setIsDatePickerOpen(false)
                               }
                             }}
                             numberOfMonths={2}
-                            disabled={(date) => date < new Date()}
+                            disabled={(date) => {
+                              const today = new Date()
+                              today.setHours(0, 0, 0, 0)
+                              
+                              // Disable past dates
+                              if (date < today) return true
+                              
+                              // Disable unavailable dates
+                              return unavailableDates.some(unavailableDate => {
+                                const unavailable = new Date(unavailableDate)
+                                unavailable.setHours(0, 0, 0, 0)
+                                const checkDate = new Date(date)
+                                checkDate.setHours(0, 0, 0, 0)
+                                return unavailable.getTime() === checkDate.getTime()
+                              })
+                            }}
                           />
+                          {loadingUnavailableDates && (
+                            <div className="p-2 text-xs text-muted-foreground text-center">
+                              Loading availability...
+                            </div>
+                          )}
                         </PopoverContent>
                       </Popover>
                       
@@ -414,11 +490,11 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             disabled={isSubmittingEstimate}
                             className="w-full"
                           >
-                            {isSubmittingEstimate ? 'Submitting Request...' : 'Request New Estimate'}
+                            {isSubmittingEstimate ? 'Creating Estimate...' : 'Create New Estimate'}
                           </Button>
-                          {estimateRequestSuccess && (
-                            <div className="text-sm text-green-600">
-                              New estimate request submitted! The host will create a new estimate with all available packages for your selected dates.
+                          {estimateError && (
+                            <div className="text-sm text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                              {estimateError}
                             </div>
                           )}
                         </div>
