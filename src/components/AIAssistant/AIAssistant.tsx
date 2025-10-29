@@ -293,19 +293,21 @@ export const AIAssistant = () => {
     setIsLoading(true)
 
     try {
-      // Check if this is a package suggestion request
-      if (currentContext?.context === 'package-suggestions' || 
-          messageToSend.toLowerCase().includes('package') || 
-          messageToSend.toLowerCase().includes('suggest')) {
-        
+      // Check if this is a package suggestion request (only in package-suggestions context)
+      if (currentContext?.context === 'package-suggestions') {
+
+        // Determine if user has host/admin privileges
+        const userRole = Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean)
+        const isHostOrAdmin = userRole.includes('host') || userRole.includes('admin')
+
         // Call package suggestions API
         const res = await fetch('/api/packages/suggest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            description: messageToSend, 
+          body: JSON.stringify({
+            description: messageToSend,
             postId: currentContext?.postId,
-            hostContext: true 
+            hostContext: isHostOrAdmin
           }),
         })
         
@@ -343,12 +345,16 @@ export const AIAssistant = () => {
             speak('I couldn\'t find specific package suggestions. Please try describing your needs more specifically.')
           }
         } else {
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while generating package suggestions. Please try again.' 
+          // Try to get error details from response
+          const data = await res.json().catch(() => ({}))
+          const errorDetails = data.error || data.message || 'Unknown error'
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: `Sorry, I encountered an error while generating package suggestions: ${errorDetails}. Please check the console for more details.`
           }
           setMessages((prev) => [...prev, assistantMessage])
           speak('Sorry, I encountered an error while generating package suggestions.')
+          console.error('Package suggestions API error:', data)
         }
       } else if (currentContext?.context === 'package-rename') {
         // Handle package renaming with enhanced suggestions
@@ -419,7 +425,7 @@ export const AIAssistant = () => {
       } else if (currentContext?.context === 'booking-details') {
         // Handle booking-specific queries
         const bookingContext = currentContext
-        
+
         // Create a comprehensive context string for the AI
         const contextString = `
 Booking Context:
@@ -436,24 +442,24 @@ Booking Context:
 Property Article Content:
 ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.content) : 'No property content available'}
         `
-        
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message: `${contextString}\n\nUser question: ${messageToSend}`,
             context: 'booking-details'
           }),
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message }
+        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message)
+        speak(data.message || data.response || 'No response received')
       } else if (currentContext?.context === 'post-article') {
         // Handle post article queries
         const postContext = currentContext
-        
+
         // Create a comprehensive context string for the AI
         const contextString = `
 Article Context:
@@ -465,20 +471,20 @@ Article Context:
 Full Article Content:
 ${JSON.stringify(postContext.post?.content || 'No content available')}
         `
-        
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message: `${contextString}\n\nUser question: ${messageToSend}`,
             context: 'post-article'
           }),
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message }
+        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message)
+        speak(data.message || data.response || 'No response received')
       } else if (messageToSend.toLowerCase().includes('debug packages') || 
                  messageToSend.toLowerCase().includes('debug') ||
                  messageToSend.toLowerCase().includes('show packages')) {
@@ -558,9 +564,9 @@ ${packages.map((pkg: any, index: number) =>
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message }
+        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message)
+        speak(data.message || data.response || 'No response received')
       }
     } catch (error) {
       console.error('Error:', error)
@@ -671,7 +677,7 @@ ${packages.map((pkg: any, index: number) =>
               >
                 <p
                   className="text-sm"
-                  dangerouslySetInnerHTML={{ __html: message.content.replace(/\n/g, '<br />') }}
+                  dangerouslySetInnerHTML={{ __html: (message.content || '').replace(/\n/g, '<br />') }}
                 />
               </div>
             ))}
