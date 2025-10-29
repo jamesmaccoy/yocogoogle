@@ -768,6 +768,16 @@ export interface Form {
             blockName?: string | null;
             blockType: 'textarea';
           }
+        | {
+            name: string;
+            label?: string | null;
+            width?: number | null;
+            maxDays?: number | null;
+            required?: boolean | null;
+            id?: string | null;
+            blockName?: string | null;
+            blockType: 'datePicker';
+          }
       )[]
     | null;
   submitButtonLabel?: string | null;
@@ -851,6 +861,18 @@ export interface Estimate {
   fromDate: string;
   toDate: string;
   packageType?: string | null;
+  status?: ('pending' | 'approved' | 'rejected' | 'completed') | null;
+  requestType?: ('initial' | 'new_estimate' | 'modification') | null;
+  /**
+   * Original booking this estimate request is based on
+   */
+  originalBooking?: (string | null) | Booking;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  /**
+   * Additional notes about this estimate request
+   */
+  notes?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1188,6 +1210,12 @@ export interface EstimatesSelect<T extends boolean = true> {
   fromDate?: T;
   toDate?: T;
   packageType?: T;
+  status?: T;
+  requestType?: T;
+  originalBooking?: T;
+  customerName?: T;
+  customerEmail?: T;
+  notes?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1684,6 +1712,17 @@ export interface FormsSelect<T extends boolean = true> {
               label?: T;
               width?: T;
               defaultValue?: T;
+              required?: T;
+              id?: T;
+              blockName?: T;
+            };
+        datePicker?:
+          | T
+          | {
+              name?: T;
+              label?: T;
+              width?: T;
+              maxDays?: T;
               required?: T;
               id?: T;
               blockName?: T;
