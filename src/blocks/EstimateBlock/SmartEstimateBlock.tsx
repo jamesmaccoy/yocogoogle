@@ -734,6 +734,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
               productId: yocoProduct.id,
               customerId: String(currentUser.id),
               customerName: currentUser.name || currentUser.email || 'Customer',
+              estimateId: estimate.id, // Pass estimate ID so we can create booking after payment
+              postId: postId,
+              total: total,
+              duration: duration,
+              startDate: startDate?.toISOString(),
+              endDate: endDate?.toISOString(),
               version: 'V2' // Use V2 API keys
             })
           })
@@ -776,7 +782,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
               },
               customerId: String(currentUser.id),
               customerName: currentUser.name || currentUser.email || 'Customer',
+              estimateId: estimate.id, // Pass estimate ID so we can create booking after payment
+              postId: postId,
               total: total,
+              duration: duration,
+              startDate: startDate?.toISOString(),
+              endDate: endDate?.toISOString(),
               version: 'V2' // Use V2 API keys
             })
           })

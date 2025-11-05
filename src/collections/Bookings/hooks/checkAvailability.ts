@@ -40,6 +40,7 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
       fromDate: true,
       toDate: true,
       title: true,
+      id: true,
     },
     depth: 0,
     req,
@@ -48,12 +49,32 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   const isAvailable = bookings.docs.length === 0
 
   if (!isAvailable) {
+    console.error('❌ Booking availability check failed:', {
+      requestedDates: {
+        fromDate: formattedFromDate,
+        toDate: formattedToDate,
+        post: data.post
+      },
+      conflictingBookings: bookings.docs.map(b => ({
+        id: b.id,
+        title: b.title,
+        fromDate: b.fromDate,
+        toDate: b.toDate
+      }))
+    })
+    
     throw new APIError(
-      'Booking dates are not available.',
+      `Booking dates are not available. Found ${bookings.docs.length} conflicting booking(s).`,
       400,
       [
         {
           message: 'The selected dates overlap with an existing booking.',
+          conflictingBookings: bookings.docs.map(b => ({
+            id: b.id,
+            title: b.title,
+            fromDate: b.fromDate,
+            toDate: b.toDate
+          }))
         },
       ],
       true,

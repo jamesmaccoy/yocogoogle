@@ -196,7 +196,7 @@ class YocoService {
     ]
   }
 
-  async createPaymentLink(product: YocoProduct, customerId: string, customerName: string, version?: string): Promise<YocoPaymentLink | null> {
+  async createPaymentLink(product: YocoProduct, customerId: string, customerName: string, version?: string, bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }): Promise<YocoPaymentLink | null> {
     await this.initialize()
     
     const apiKey = this.getApiKey(version)
@@ -205,20 +205,31 @@ class YocoService {
     try {
       if (!apiKey) {
         console.warn('Yoco API key not configured, using mock payment link')
-        return this.getMockPaymentLink(product, customerId, customerName)
+        return this.getMockPaymentLink(product, customerId, customerName, bookingData)
       }
+
+      // Build success URL with booking data
+      const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+      const successParams = new URLSearchParams({ success: 'true' })
+      if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
+      if (bookingData?.postId) successParams.set('postId', bookingData.postId)
+      if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
+      if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
+      if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
 
       // Create checkout via Yoco Checkout API
       const requestBody = {
         amount: Math.round(product.price * 100), // Amount in cents
         currency: product.currency,
-        successUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/booking-confirmation?success=true`,
-        cancelUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/estimate?cancelled=true`,
+        successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
+        cancelUrl: `${baseUrl}/estimate?cancelled=true`,
         metadata: {
           productId: product.id,
           productName: product.title,
           customerId: customerId,
-          customerName: customerName
+          customerName: customerName,
+          ...(bookingData?.estimateId && { estimateId: bookingData.estimateId }),
+          ...(bookingData?.postId && { postId: bookingData.postId })
         }
       }
 
@@ -235,7 +246,7 @@ class YocoService {
       const response = await fetch(`${this.baseUrl}/checkouts`, {
         method: 'POST',
         headers: {
-          'X-Auth-Secret-Key': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -292,7 +303,7 @@ class YocoService {
       
     } catch (error) {
       console.error('Failed to create payment link:', error)
-      return this.getMockPaymentLink(product, customerId, customerName)
+      return this.getMockPaymentLink(product, customerId, customerName, bookingData)
     }
   }
 
@@ -308,7 +319,8 @@ class YocoService {
     customerId: string,
     customerName: string,
     total: number,
-    version?: string
+    version?: string,
+    bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }
   ): Promise<YocoPaymentLink | null> {
     await this.initialize()
 
@@ -320,27 +332,39 @@ class YocoService {
       customerId,
       customerName,
       total,
+      bookingData,
       apiKey: apiKey ? 'Present' : 'Missing'
     })
     
     try {
       if (!apiKey) {
         console.warn('Yoco API key not configured, using mock payment link')
-        return this.getMockPaymentLinkFromDatabase(packageData, customerId, customerName, total)
+        return this.getMockPaymentLinkFromDatabase(packageData, customerId, customerName, total, bookingData)
       }
+
+      // Build success URL with booking data
+      const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+      const successParams = new URLSearchParams({ success: 'true' })
+      if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
+      if (bookingData?.postId) successParams.set('postId', bookingData.postId)
+      if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
+      if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
+      if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
 
       // Create checkout via Yoco Checkout API
       // Note: The Checkout API creates a checkout session, not a direct payment link
       const requestBody = {
         amount: Math.round(total * 100), // Amount in cents
         currency: 'ZAR',
-        successUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/booking-confirmation?success=true`,
-        cancelUrl: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}/estimate?cancelled=true`,
+        successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
+        cancelUrl: `${baseUrl}/estimate?cancelled=true`,
         metadata: {
           packageId: packageData.id,
           packageName: packageData.name,
           customerId: customerId,
-          customerName: customerName
+          customerName: customerName,
+          ...(bookingData?.estimateId && { estimateId: bookingData.estimateId }),
+          ...(bookingData?.postId && { postId: bookingData.postId })
         }
       }
 
@@ -419,14 +443,21 @@ class YocoService {
         stack: error instanceof Error ? error.stack : undefined
       })
       console.warn('Falling back to mock payment link due to API error')
-      return this.getMockPaymentLinkFromDatabase(packageData, customerId, customerName, total)
+      return this.getMockPaymentLinkFromDatabase(packageData, customerId, customerName, total, bookingData)
     }
   }
 
-  private getMockPaymentLink(product: YocoProduct, customerId: string, customerName: string): YocoPaymentLink {
+  private getMockPaymentLink(product: YocoProduct, customerId: string, customerName: string, bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }): YocoPaymentLink {
+    const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+    const successParams = new URLSearchParams({ success: 'true' })
+    if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
+    if (bookingData?.postId) successParams.set('postId', bookingData.postId)
+    if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
+    if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
+    if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
     return {
       id: `mock-${Date.now()}`,
-      url: `https://pay.yoco.com/r/mock-${product.id}`,
+      url: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       customer_description: product.description,
@@ -466,8 +497,16 @@ class YocoService {
     },
     customerId: string,
     customerName: string,
-    total: number
+    total: number,
+    bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }
   ): YocoPaymentLink {
+    const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+    const successParams = new URLSearchParams({ success: 'true' })
+    if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
+    if (bookingData?.postId) successParams.set('postId', bookingData.postId)
+    if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
+    if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
+    if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
     console.warn('⚠️ Using mock payment link - Yoco API requires OAuth 2.0 for Payment Links')
     console.warn('💡 To use real Yoco payments, you need to:')
     console.warn('   1. Get OAuth 2.0 credentials from Yoco')
@@ -476,7 +515,7 @@ class YocoService {
     
     return {
       id: `mock-${Date.now()}`,
-      url: `/booking-confirmation?mock=true&package=${packageData.id}&amount=${total}&customer=${customerName}`,
+      url: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       customer_description: packageData.description || packageData.name,

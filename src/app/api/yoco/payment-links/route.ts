@@ -4,7 +4,7 @@ import { yocoService } from '@/lib/yocoService'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { packageData, customerId, customerName, total, productId, version } = body
+    const { packageData, customerId, customerName, total, productId, estimateId, postId, duration, startDate, endDate, version } = body
 
     if (!customerId || !customerName) {
       return NextResponse.json({ error: 'Customer ID and name are required' }, { status: 400 })
@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
         customerId,
         customerName,
         total,
-        version
+        version,
+        { estimateId, postId, duration, startDate, endDate }
       )
     } else if (productId) {
       // Create payment link for Yoco product
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Product not found' }, { status: 404 })
       }
       
-      paymentLink = await yocoService.createPaymentLink(product, customerId, customerName, version)
+      paymentLink = await yocoService.createPaymentLink(product, customerId, customerName, version, { estimateId, postId, duration, startDate, endDate })
     } else {
       return NextResponse.json({ error: 'Either packageData or productId is required' }, { status: 400 })
     }
