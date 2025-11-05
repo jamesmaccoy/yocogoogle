@@ -69,7 +69,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  const { isInitialized } = useRevenueCat();
+  const { isInitialized } = useYoco();
 
   // Related pages state
   const [relatedPages, setRelatedPages] = useState<any[]>([])

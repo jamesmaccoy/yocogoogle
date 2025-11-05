@@ -32,7 +32,7 @@ interface RevenueCatProduct extends Omit<Product, 'price'> {
 export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration = 'N/A' }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isInitialized } = useRevenueCat()
+  const { isInitialized } = useYoco()
   const { currentUser, isLoading: isUserLoading } = useUserContext()
   const { isSubscribed, isLoading: isSubscriptionLoading } = useSubscription()
   
