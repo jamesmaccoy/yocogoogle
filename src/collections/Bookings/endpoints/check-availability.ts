@@ -49,9 +49,14 @@ export const checkAvailability: Endpoint = {
         return Response.json({ message: 'Invalid date format' }, { status: 400 })
       }
 
+      // Normalize dates to midnight UTC to get consistent date-only values
+      // Extract just the date part (YYYY-MM-DD) to avoid timezone issues
+      const startDateStr = requestStart.toISOString().split('T')[0]
+      const endDateStr = requestEnd.toISOString().split('T')[0]
+      
       // Format dates as YYYY-MM-DD for database queries
-      const startFormatted = requestStart.toISOString().split('T')[0]
-      const endFormatted = requestEnd.toISOString().split('T')[0]
+      const startFormatted = startDateStr
+      const endFormatted = endDateStr
 
       // Find all bookings for this post that overlap with the requested range
       const bookings = await req.payload.find({

@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { calculateTotal } from '@/lib/calculateTotal'
-import { PackageDisplay } from '@/components/PackageDisplay'
 
 type Props = {
   data: Booking
@@ -369,6 +368,14 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                 <div className="md:py-5 py-3">
                   <h1 className="text-4xl mb-3 font-bold">{data?.post.title}</h1>
                   <div className="flex flex-col gap-2">
+                    <label className="text-lg font-medium">Booking Details:</label>
+                    <div className="text-muted-foreground text-sm">
+                      {data?.selectedPackage && data.selectedPackage.package && typeof data.selectedPackage.package === 'object'
+                        ? `Package: ${data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'}`
+                        : data?.selectedPackage && data.selectedPackage.customName
+                        ? `Package: ${data.selectedPackage.customName}`
+                        : 'Package: No package assigned'}
+                    </div>
                     <label className="text-lg font-medium">Booking Dates:</label>
                     <Calendar
                       mode="range"
@@ -385,25 +392,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                         ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
                         : 'Select a start and end date'}
                     </div>
-                    
-                    {/* Package Information Display */}
-                    {data?.selectedPackage && typeof data.selectedPackage.package === 'object' && data.selectedPackage.package && (
-                      <PackageDisplay
-                        packageData={{
-                          name: data.selectedPackage.package.name || 'Package',
-                          description: data.selectedPackage.package.description || null,
-                          features: data.selectedPackage.package.features?.map((f: any) => f.feature || f) || null,
-                          category: data.selectedPackage.package.category || null,
-                          minNights: data.selectedPackage.package.minNights || null,
-                          maxNights: data.selectedPackage.package.maxNights || null,
-                          baseRate: data.selectedPackage.package.baseRate || null,
-                          multiplier: data.selectedPackage.package.multiplier || null
-                        }}
-                        customName={data.selectedPackage.customName || null}
-                        total={data.total}
-                        variant="booking"
-                      />
-                    )}
                     
                     {/* Request New Estimate Button */}
                     <div className="mt-4">
@@ -600,7 +588,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
               ) : (
                 <div className="space-y-6">
                   {relatedPages.map((page, index) => (
-                    <div key={page.id || index} className="border rounded-lg p-6">
+                    <div key={`${page.id || 'page'}-${page.packageId || index}`} className="border rounded-lg p-6">
                       <div className="flex items-center gap-2 mb-4">
                         <div className="p-2 bg-primary/10 rounded-full">
                           <Lock className="h-4 w-4 text-primary" />

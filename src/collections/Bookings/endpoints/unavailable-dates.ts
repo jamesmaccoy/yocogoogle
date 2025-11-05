@@ -68,14 +68,28 @@ export const unavailableDates: Endpoint = {
       const unavailableDates: string[] = []
 
       bookings.docs.forEach((booking) => {
+        // Parse dates and normalize to midnight UTC to avoid timezone issues
         const fromDate = new Date(booking.fromDate)
         const toDate = new Date(booking.toDate)
+        
+        // Extract just the date part (YYYY-MM-DD) and create new date at midnight UTC
+        // This ensures we're working with date-only values, not datetime
+        const fromDateStr = fromDate.toISOString().split('T')[0]
+        const toDateStr = toDate.toISOString().split('T')[0]
+        
+        const normalizedFromDate = new Date(fromDateStr + 'T00:00:00.000Z')
+        const normalizedToDate = new Date(toDateStr + 'T00:00:00.000Z')
 
-        // Generate array of all dates in the range with full ISO strings
-        const currentDate = new Date(fromDate)
-        while (currentDate < toDate) {
+        // Generate array of all dates in the range (excluding check-out date)
+        // A booking from Sept 4 to Sept 6 means nights of Sept 4-5 are unavailable
+        // Sept 6 is the check-out date and should be available for new bookings
+        const currentDate = new Date(normalizedFromDate)
+        
+        // Only include dates strictly less than the check-out date
+        while (currentDate.getTime() < normalizedToDate.getTime()) {
           unavailableDates.push(currentDate.toISOString())
-          currentDate.setDate(currentDate.getDate() + 1)
+          // Increment by one day using UTC methods to avoid timezone shifts
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1)
         }
       })
 

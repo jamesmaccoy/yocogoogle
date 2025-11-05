@@ -115,11 +115,23 @@ export default async function BookingConfirmationPage({
                 console.warn('Could not fetch post title, using default:', error)
               }
 
+              // Normalize dates to midnight UTC to ensure consistent date-only storage
+              // Extract date part and create new date at midnight UTC
+              const fromDateObj = new Date(bookingFromDate)
+              const toDateObj = new Date(bookingToDate)
+              
+              const fromDateStr = fromDateObj.toISOString().split('T')[0]
+              const toDateStr = toDateObj.toISOString().split('T')[0]
+              
+              // Create dates at midnight UTC for consistent storage
+              const normalizedFromDate = new Date(fromDateStr + 'T00:00:00.000Z')
+              const normalizedToDate = new Date(toDateStr + 'T00:00:00.000Z')
+
               console.log('Creating booking with data:', {
                 title: postTitle,
                 post: bookingPostId,
-                fromDate: bookingFromDate,
-                toDate: bookingToDate,
+                fromDate: normalizedFromDate.toISOString(),
+                toDate: normalizedToDate.toISOString(),
                 total: bookingTotal,
                 customer: user.id
               })
@@ -130,8 +142,8 @@ export default async function BookingConfirmationPage({
                   data: {
                     title: postTitle,
                     post: bookingPostId, // Use 'post' not 'postId' for the relationship
-                    fromDate: bookingFromDate,
-                    toDate: bookingToDate,
+                    fromDate: normalizedFromDate.toISOString(),
+                    toDate: normalizedToDate.toISOString(),
                     total: bookingTotal, // Required field
                     paymentStatus: 'paid',
                     customer: user.id,

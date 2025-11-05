@@ -195,16 +195,19 @@ export const PackageDisplay: React.FC<PackageDisplayProps> = ({
         {showFeatures && getFeatures().length > 0 && (
           <div className="mt-3">
             <p className="text-sm font-medium text-muted-foreground mb-2">Package Features:</p>
-            <ul className="space-y-2">
-              {getFeatures().map((feature: string, index: number) => (
-                <li key={index} className="flex items-start gap-2">
-                  <span className="w-1.5 h-1.5 bg-primary rounded-full mt-2 flex-shrink-0"></span>
-                  <span className="text-sm text-muted-foreground">
-                    {feature}
-                  </span>
-                </li>
+            <div className="space-y-1">
+              {getFeatures().slice(0, 3).map((feature: string, index: number) => (
+                <div key={index} className="flex items-center text-sm">
+                  <span className="w-1.5 h-1.5 bg-primary rounded-full mr-2" />
+                  {feature}
+                </div>
               ))}
-            </ul>
+              {getFeatures().length > 3 && (
+                <div className="text-xs text-muted-foreground">
+                  +{getFeatures().length - 3} more features
+                </div>
+              )}
+            </div>
           </div>
         )}
         
