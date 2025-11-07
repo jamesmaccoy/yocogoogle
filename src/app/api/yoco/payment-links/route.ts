@@ -1,13 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getPayload } from 'payload'
+import configPromise from '@payload-config'
 import { yocoService } from '@/lib/yocoService'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { packageData, customerId, customerName, total, productId, estimateId, postId, duration, startDate, endDate, version } = body
+    const payload = await getPayload({ config: configPromise })
+    const { user } = await payload.auth({ headers: request.headers })
 
-    if (!customerId || !customerName) {
-      return NextResponse.json({ error: 'Customer ID and name are required' }, { status: 400 })
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const {
+      packageData,
+      customerName: customerNameFromBody,
+      total,
+      productId,
+      estimateId,
+      postId,
+      duration,
+      startDate,
+      endDate,
+      version,
+    } = body
+
+    const customerId = String(user.id)
+    const customerName = customerNameFromBody || user.name || user.email || 'Guest'
+
+    if (!customerName) {
+      return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
     }
 
     console.log(`API Route: Using Yoco API version: ${version || 'default'}`)
@@ -16,14 +39,17 @@ export async function POST(request: NextRequest) {
 
     if (packageData) {
       // Create payment link for database package
-      if (!total) {
+      if (!total || Number(total) <= 0) {
         return NextResponse.json({ error: 'Total amount is required for database packages' }, { status: 400 })
+      }
+      if (!packageData.id || !packageData.name) {
+        return NextResponse.json({ error: 'packageData.id and packageData.name are required' }, { status: 400 })
       }
       paymentLink = await yocoService.createPaymentLinkFromDatabasePackage(
         packageData,
         customerId,
         customerName,
-        total,
+        Number(total),
         version,
         { estimateId, postId, duration, startDate, endDate }
       )

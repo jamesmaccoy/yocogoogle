@@ -1,14 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Estimate, User } from '@/payload-types'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useYoco } from '@/providers/Yoco'
-import { yocoService, YocoProduct, YocoPaymentLink } from '@/lib/yocoService'
-import { useRouter } from 'next/navigation'
 import { FileText, Loader2, PlusCircleIcon, TrashIcon } from 'lucide-react'
-import { Switch } from '@/components/ui/switch'
 import {
   Card,
   CardContent,
@@ -24,8 +20,6 @@ import { Media } from '@/components/Media'
 import { formatDateTime } from '@/utilities/formatDateTime'
 import { UserIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Calendar } from '@/components/ui/calendar'
-import { DateRange } from 'react-day-picker'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
@@ -48,6 +42,7 @@ export interface PostPackage {
   minNights: number
   maxNights: number
   yocoId?: string
+  revenueCatId?: string
   baseRate?: number // Package-specific base rate
   isEnabled: boolean
   source?: 'database' | 'yoco'
@@ -97,27 +92,13 @@ export function usePackages(postId: string) {
   return { packages, loading, error }
 }
 
-interface RevenueCatError extends Error {
-  code?: ErrorCode
-}
-
-interface RevenueCatProduct {
-  identifier?: string
-  title?: string
-  description?: string
-  price?: number
-  priceString?: string
-  currencyCode?: string
-}
-
 type Props = {
   data: Estimate
   user: User
 }
 
 export default function EstimateDetailsClientPage({ data, user }: Props) {
-  const router = useRouter()
-  const { isInitialized } = useYoco()
+  const { createPaymentLinkFromDatabase } = useYoco()
 
   // Helper function to get display name from either package type
   const getPackageDisplayName = (pkg: PostPackage | null): string => {
@@ -158,8 +139,6 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   // Payment states
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
-  const [offerings, setOfferings] = useState<YocoProduct[]>([])
-  const [loadingOfferings, setLoadingOfferings] = useState(true)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
 
   // Package suggestion states
@@ -263,92 +242,29 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     }
   }, [packages, _bookingDuration, isWineSelected, selectedPackage])
 
-  // Load RevenueCat offerings when initialized
-  useEffect(() => {
-    if (isInitialized) {
-      loadOfferings()
-    }
-  }, [isInitialized])
-
-  const loadOfferings = async () => {
-    setLoadingOfferings(true)
-    try {
-      const purchases = await Purchases.getSharedInstance()
-      const fetchedOfferings = await purchases.getOfferings()
-      console.log('Offerings:', fetchedOfferings)
-      
-      // Collect all packages from all offerings instead of just 'per_night'
-      const allPackages: Package[] = []
-      
-      // Add packages from current offering if it exists
-      if (fetchedOfferings.current && fetchedOfferings.current.availablePackages.length > 0) {
-        allPackages.push(...fetchedOfferings.current.availablePackages)
-      }
-      
-      // Add packages from all other offerings
-      Object.values(fetchedOfferings.all).forEach(offering => {
-        if (offering && offering.availablePackages.length > 0) {
-          allPackages.push(...offering.availablePackages)
-        }
-      })
-      
-      // Remove duplicates based on identifier
-      const uniquePackages = allPackages.filter((pkg, index, self) => 
-        index === self.findIndex(p => p.webBillingProduct?.identifier === pkg.webBillingProduct?.identifier)
-      )
-      
-      console.log('All available packages:', uniquePackages.map(p => p.webBillingProduct?.identifier))
-      setOfferings(uniquePackages)
-    } catch (err) {
-      console.error('Error loading offerings:', err)
-      setPaymentError('Failed to load booking options')
-    } finally {
-      setLoadingOfferings(false)
-    }
-  }
-
   // Update package price when package or duration changes
   useEffect(() => {
-    if (!selectedPackage) return
-
-    // Use the post's baseRate for calculations
-    const basePrice = _postBaseRate
-
-    if (selectedPackage.baseRate && selectedPackage.baseRate > 0) {
-      // If package has its own baseRate, use that
-      setPackagePrice(selectedPackage.baseRate)
-    } else if (selectedPackage.revenueCatId && offerings.length > 0) {
-      // Try to find the package in RevenueCat offerings
-      const packageToUse = offerings.find(
-        (pkg) => pkg.webBillingProduct?.identifier === selectedPackage.revenueCatId,
-      )
-
-      if (packageToUse?.webBillingProduct) {
-        const product = packageToUse.webBillingProduct as unknown as RevenueCatProduct
-        if (product.price) {
-          // Use RevenueCat price
-          setPackagePrice(Number(product.price))
-        } else {
-          // Fallback to post baseRate with multiplier
-          const calculatedPrice = basePrice * selectedPackage.multiplier
-          setPackagePrice(calculatedPrice)
-        }
-      } else {
-        // Package not found in RevenueCat offerings, use post baseRate with multiplier
-        const calculatedPrice = basePrice * selectedPackage.multiplier
-        setPackagePrice(calculatedPrice)
-      }
-    } else {
-      // For database packages or other cases, use post baseRate with multiplier
-      const calculatedPrice = basePrice * selectedPackage.multiplier
-      setPackagePrice(calculatedPrice)
+    if (!selectedPackage) {
+      setPackagePrice(null)
+      return
     }
-  }, [selectedPackage, offerings, _postBaseRate])
+
+    // Use package-specific base rate when available, otherwise apply multiplier to the post base rate
+    if (selectedPackage.baseRate && selectedPackage.baseRate > 0) {
+      setPackagePrice(selectedPackage.baseRate)
+      return
+    }
+
+    const calculatedPrice = _postBaseRate * (selectedPackage.multiplier || 1)
+    setPackagePrice(calculatedPrice)
+  }, [selectedPackage, _postBaseRate])
 
   const formatPrice = (price: number | null) => {
     if (price === null) return 'N/A'
     return `R${price.toFixed(2)}`
   }
+
+  const bookingTotal = packagePrice !== null ? packagePrice * _bookingDuration : _bookingTotal
 
   // Handle estimate completion
   const handleEstimate = async () => {
@@ -358,263 +274,39 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     setPaymentError(null)
 
     try {
-      console.log('=== ESTIMATE HANDLING DEBUG ===')
-      console.log('Selected package:', {
-        id: selectedPackage.id,
-        name: selectedPackage.name,
-        revenueCatId: selectedPackage.revenueCatId,
-        source: selectedPackage.source,
-        isEnabled: selectedPackage.isEnabled
-      })
-      console.log('Available offerings count:', offerings.length)
-      console.log('Available offerings:', offerings.map(p => p.webBillingProduct?.identifier))
-      
-      // Special handling for gathering_monthly package (pro entitlement only)
-      if (selectedPackage.revenueCatId === 'gathering_monthly') {
-        console.log('🎯 Special handling for gathering_monthly package (pro entitlement only)')
-        console.log('🔍 Available offerings:', offerings.map(p => ({
-          identifier: p.webBillingProduct?.identifier,
-          title: p.webBillingProduct?.title
-        })))
-        
-        // Check if user has pro subscription first
-        if (customerEntitlement !== 'pro') {
-          console.warn('⚠️ User does not have pro entitlement required for gathering_monthly')
-          throw new Error('This package requires a pro subscription. Please upgrade your account.')
-        }
-        
-        // For gathering_monthly, we should go through RevenueCat payment flow
-        console.log('🔍 Looking for gathering_monthly product in RevenueCat offerings')
-        
-        // Try to find the product in offerings
-        const gatheringPackage = offerings.find((pkg) => {
-          const identifier = pkg.webBillingProduct?.identifier
-          console.log('Checking gathering package:', identifier, 'against:', selectedPackage.revenueCatId)
-          return identifier === selectedPackage.revenueCatId
-        })
-        
-        if (gatheringPackage) {
-          console.log('✅ Found gathering_monthly package in RevenueCat offerings, proceeding with normal payment flow')
-          
-          // Proceed with normal RevenueCat payment flow
-          try {
-            const purchases = await Purchases.getSharedInstance()
-            const purchaseResult = await purchases.purchase({
-              rcPackage: gatheringPackage,
-            })
-
-            // After successful purchase, confirm the estimate in backend
-            const fromDate = new Date(data.fromDate)
-            const toDate = new Date(data.toDate)
-            const estimateData = {
-              postId: _postId,
-              fromDate: fromDate.toISOString(),
-              toDate: toDate.toISOString(),
-              guests: [],
-              baseRate: packagePrice,
-              duration: _bookingDuration,
-              customer: user.id,
-              packageType: selectedPackage.revenueCatId || selectedPackage.id,
-            }
-            const response = await fetch(`/api/estimates/${data.id}/confirm`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(estimateData),
-            })
-            if (!response.ok) {
-              const errorData = await response.json()
-              throw new Error(errorData.error || 'Failed to confirm estimate')
-            }
-            const result = await response.json()
-            setPaymentSuccess(true)
-            setTimeout(() => {
-              router.push(`/booking-confirmation?total=${packagePrice}&duration=${_bookingDuration}`)
-            }, 1500)
-            return
-          } catch (purchaseError) {
-            const rcError = purchaseError as RevenueCatError
-            console.error('RevenueCat Purchase Error:', rcError)
-            if (rcError.code === ErrorCode.UserCancelledError) {
-              console.log('User cancelled the purchase flow.')
-              return
-            }
-            throw new Error('Failed to complete purchase. Please try again.')
-          }
-        } else {
-          console.warn('❌ gathering_monthly package not found in RevenueCat offerings, using fallback')
-          console.log('💡 To enable payment modal, add gathering_monthly to your RevenueCat offerings')
-          
-          // Fallback to simulated purchase only if package not in offerings
-          try {
-            console.log('🔄 Simulating purchase for gathering_monthly package (fallback)')
-            
-            // After successful simulated purchase, confirm the estimate in backend
-            const fromDate = new Date(data.fromDate)
-            const toDate = new Date(data.toDate)
-            const estimateData = {
-              postId: _postId,
-              fromDate: fromDate.toISOString(),
-              toDate: toDate.toISOString(),
-              guests: [],
-              baseRate: packagePrice,
-              duration: _bookingDuration,
-              customer: user.id,
-              packageType: selectedPackage.revenueCatId || selectedPackage.id,
-            }
-            
-            console.log('📤 Sending estimate confirmation data:', estimateData)
-            
-            const response = await fetch(`/api/estimates/${data.id}/confirm`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(estimateData),
-            })
-            
-            if (!response.ok) {
-              const errorData = await response.json()
-              console.error('❌ Estimate confirmation failed:', errorData)
-              throw new Error(errorData.error || 'Failed to confirm estimate')
-            }
-            
-            const result = await response.json()
-            console.log('✅ Estimate confirmed successfully:', result)
-            setPaymentSuccess(true)
-            setTimeout(() => {
-              router.push(`/booking-confirmation?total=${packagePrice}&duration=${_bookingDuration}`)
-            }, 1500)
-            return
-          } catch (simulationError) {
-            console.error('❌ Simulated purchase failed:', simulationError)
-            throw new Error('Failed to complete purchase. Please try again.')
-          }
-        }
+      if (selectedPackage.revenueCatId === 'gathering_monthly' && customerEntitlement !== 'pro') {
+        throw new Error('This package requires a pro subscription. Please upgrade your account.')
       }
-      
-      const estimatePackage = offerings.find((pkg) => {
-        const identifier = pkg.webBillingProduct?.identifier
-        console.log('Checking package:', identifier, 'against:', selectedPackage.revenueCatId)
-        return identifier === selectedPackage.revenueCatId
-      })
-      
-      if (!estimatePackage) {
-        console.warn(`❌ Package ${selectedPackage.revenueCatId} not found in RevenueCat offerings`)
-        console.log('Selected package details:', {
+
+      const metadata = {
+        estimateId: data.id,
+        postId: _postId,
+        duration: _bookingDuration,
+        startDate: data.fromDate ? new Date(data.fromDate).toISOString() : undefined,
+        endDate: data.toDate ? new Date(data.toDate).toISOString() : undefined,
+      }
+
+      const paymentLink = await createPaymentLinkFromDatabase?.(
+        {
           id: selectedPackage.id,
           name: selectedPackage.name,
+          description: selectedPackage.description,
+          baseRate: selectedPackage.baseRate,
           revenueCatId: selectedPackage.revenueCatId,
-          source: selectedPackage.source
-        })
-        
-        // Enhanced fallback logic for both RevenueCat and database packages
-        if (selectedPackage.revenueCatId) {
-          console.log('✅ Attempting fallback purchase for package:', selectedPackage.revenueCatId)
-          
-          try {
-            // Simulate successful purchase for packages not in RevenueCat offerings
-            console.log('🔄 Simulating purchase for package:', selectedPackage.revenueCatId)
-            
-            // After successful simulated purchase, confirm the estimate in backend
-            const fromDate = new Date(data.fromDate)
-            const toDate = new Date(data.toDate)
-            const estimateData = {
-              postId: _postId,
-              fromDate: fromDate.toISOString(),
-              toDate: toDate.toISOString(),
-              guests: [],
-              baseRate: packagePrice,
-              duration: _bookingDuration,
-              customer: user.id,
-              packageType: selectedPackage.revenueCatId || selectedPackage.id,
-            }
-            
-            console.log('📤 Sending estimate confirmation data:', estimateData)
-            
-            const response = await fetch(`/api/estimates/${data.id}/confirm`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(estimateData),
-            })
-            
-            if (!response.ok) {
-              const errorData = await response.json()
-              console.error('❌ Estimate confirmation failed:', errorData)
-              throw new Error(errorData.error || 'Failed to confirm estimate')
-            }
-            
-            const result = await response.json()
-            console.log('✅ Estimate confirmed successfully:', result)
-            setPaymentSuccess(true)
-            setTimeout(() => {
-              router.push(`/booking-confirmation?total=${packagePrice}&duration=${_bookingDuration}`)
-            }, 1500)
-            return
-          } catch (simulationError) {
-            console.error('❌ Simulated purchase failed:', simulationError)
-            throw new Error('Failed to complete purchase. Please try again.')
-          }
-        }
-        
-        // If we get here, it means no fallback was attempted
-        console.error('❌ No fallback logic triggered for package:', selectedPackage.revenueCatId)
-        throw new Error(
-          `Estimate package not found for ${selectedPackage.revenueCatId}. Please contact support.`,
-        )
+        },
+        user?.name || 'Guest',
+        bookingTotal,
+        metadata,
+      )
+
+      if (!paymentLink) {
+        throw new Error('Failed to create payment link. Please try again.')
       }
 
-      console.log('✅ Package found in RevenueCat offerings, proceeding with normal purchase flow')
-      
-      // RevenueCat Payment Flow
-      try {
-        const purchaseResult = await Purchases.getSharedInstance().purchase({
-          rcPackage: estimatePackage,
-        })
-
-        // After successful purchase, confirm the estimate in backend
-        const fromDate = new Date(data.fromDate)
-        const toDate = new Date(data.toDate)
-        const estimateData = {
-          postId: _postId,
-          fromDate: fromDate.toISOString(),
-          toDate: toDate.toISOString(),
-          guests: [],
-          baseRate: packagePrice,
-          duration: _bookingDuration,
-          customer: user.id,
-          packageType: selectedPackage.revenueCatId || selectedPackage.id,
-        }
-        const response = await fetch(`/api/estimates/${data.id}/confirm`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(estimateData),
-        })
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to confirm estimate')
-        }
-        const result = await response.json()
-        setPaymentSuccess(true)
-        setTimeout(() => {
-          router.push(`/booking-confirmation?total=${packagePrice}&duration=${_bookingDuration}`)
-        }, 1500)
-      } catch (purchaseError) {
-        const rcError = purchaseError as RevenueCatError
-        console.error('RevenueCat Purchase Error:', rcError)
-        if (rcError.code === ErrorCode.UserCancelledError) {
-          console.log('User cancelled the purchase flow.')
-          return
-        }
-        throw new Error('Failed to complete purchase. Please try again.')
-      }
+      setPaymentSuccess(true)
+      window.location.href = paymentLink.url
     } catch (err) {
-      console.error('❌ Purchase Error:', err)
+      console.error('❌ Payment Error:', err)
       setPaymentError(err instanceof Error ? err.message : 'An unknown error occurred')
     } finally {
       setPaymentLoading(false)
@@ -828,7 +520,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Total:</span>
-                    <div className="font-medium">{formatPrice(data.total)}</div>
+                    <div className="font-medium">{formatPrice(bookingTotal)}</div>
                   </div>
                 </div>
               </div>
@@ -860,7 +552,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   </div>
                   <div className="flex justify-between items-center mb-6">
                     <span className="text-muted-foreground">Total:</span>
-                    <span className="text-2xl font-bold">{formatPrice(_bookingTotal)}</span>
+                    <span className="text-2xl font-bold">{formatPrice(bookingTotal)}</span>
                   </div>
                 </>
               )}
@@ -887,7 +579,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                 ) : !areDatesAvailable ? (
                   'Dates Not Available'
                 ) : (
-                  `Complete Estimate - ${formatPrice(_bookingTotal)}`
+                  `Complete Estimate - ${formatPrice(bookingTotal)}`
                 )}
               </Button>
               <AIAssistant />

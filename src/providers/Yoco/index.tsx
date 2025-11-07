@@ -7,6 +7,15 @@ import { yocoService, YocoCustomer, YocoPaymentLink } from '@/lib/yocoService'
 // Define types for Yoco
 type CustomerInfo = YocoCustomer
 
+type PaymentLinkMetadata = {
+  estimateId?: string
+  postId?: string
+  duration?: number
+  startDate?: string
+  endDate?: string
+  version?: string
+}
+
 type YocoContextType = {
   customerInfo: CustomerInfo | null
   isLoading: boolean
@@ -14,8 +23,17 @@ type YocoContextType = {
   error: Error | null
   refreshCustomerInfo: () => Promise<CustomerInfo | null | void>
   restorePurchases: () => Promise<CustomerInfo | null | void>
-  createPaymentLink: (productId: string, customerName: string) => Promise<YocoPaymentLink | null>
-  createPaymentLinkFromDatabase?: (packageData: any, customerName: string, total: number) => Promise<YocoPaymentLink | null>
+  createPaymentLink: (
+    productId: string,
+    customerName?: string,
+    metadata?: PaymentLinkMetadata
+  ) => Promise<YocoPaymentLink | null>
+  createPaymentLinkFromDatabase?: (
+    packageData: any,
+    customerName: string | undefined,
+    total: number,
+    metadata?: PaymentLinkMetadata
+  ) => Promise<YocoPaymentLink | null>
 }
 
 const YocoContext = createContext<YocoContextType | undefined>(undefined)
@@ -108,14 +126,32 @@ export const YocoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const createPaymentLink = async (productId: string, customerName: string): Promise<YocoPaymentLink | null> => {
-    if (!currentUser?.id) {
-      console.error('No user ID available for payment link creation')
-      return null
-    }
-
+  const createPaymentLink = async (
+    productId: string,
+    customerName?: string,
+    metadata?: PaymentLinkMetadata
+  ): Promise<YocoPaymentLink | null> => {
     try {
-      return await yocoService.purchasePackage(productId, String(currentUser.id), customerName)
+      const response = await fetch('/api/yoco/payment-links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          productId,
+          customerName,
+          ...metadata,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to create payment link')
+      }
+
+      const { paymentLink } = await response.json()
+      return paymentLink as YocoPaymentLink
     } catch (err) {
       console.error('Failed to create payment link:', err)
       setError(err instanceof Error ? err : new Error('Failed to create payment link'))
@@ -123,19 +159,34 @@ export const YocoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const createPaymentLinkFromDatabase = async (packageData: any, customerName: string, total: number): Promise<YocoPaymentLink | null> => {
-    if (!currentUser?.id) {
-      console.error('No user ID available for payment link creation')
-      return null
-    }
-
+  const createPaymentLinkFromDatabase = async (
+    packageData: any,
+    customerName: string | undefined,
+    total: number,
+    metadata?: PaymentLinkMetadata
+  ): Promise<YocoPaymentLink | null> => {
     try {
-      return await yocoService.createPaymentLinkFromDatabasePackage(
-        packageData,
-        String(currentUser.id),
-        customerName,
-        total
-      )
+      const response = await fetch('/api/yoco/payment-links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          packageData,
+          customerName,
+          total,
+          ...metadata,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to create payment link')
+      }
+
+      const { paymentLink } = await response.json()
+      return paymentLink as YocoPaymentLink
     } catch (err) {
       console.error('Failed to create payment link from database package:', err)
       setError(err instanceof Error ? err : new Error('Failed to create payment link'))
