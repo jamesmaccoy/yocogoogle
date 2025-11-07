@@ -76,6 +76,7 @@ export interface Config {
     users: User;
     packages: Package;
     authRequests: AuthRequest;
+    'yoco-transactions': YocoTransaction;
     redirects: Redirect;
     forms: Form;
     'form-submissions': FormSubmission;
@@ -96,6 +97,7 @@ export interface Config {
     users: UsersSelect<false> | UsersSelect<true>;
     packages: PackagesSelect<false> | PackagesSelect<true>;
     authRequests: AuthRequestsSelect<false> | AuthRequestsSelect<true>;
+    'yoco-transactions': YocoTransactionsSelect<false> | YocoTransactionsSelect<true>;
     redirects: RedirectsSelect<false> | RedirectsSelect<true>;
     forms: FormsSelect<false> | FormsSelect<true>;
     'form-submissions': FormSubmissionsSelect<false> | FormSubmissionsSelect<true>;
@@ -897,6 +899,38 @@ export interface AuthRequest {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "yoco-transactions".
+ */
+export interface YocoTransaction {
+  id: string;
+  user: string | User;
+  intent: 'booking' | 'subscription' | 'product';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  productId?: string | null;
+  packageName: string;
+  amount: number;
+  currency?: string | null;
+  paymentLinkId?: string | null;
+  paymentUrl?: string | null;
+  entitlement?: ('none' | 'standard' | 'pro') | null;
+  plan?: ('free' | 'standard' | 'pro') | null;
+  periodDays?: number | null;
+  expiresAt?: string | null;
+  completedAt?: string | null;
+  metadata?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "redirects".
  */
 export interface Redirect {
@@ -1103,6 +1137,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'authRequests';
         value: string | AuthRequest;
+      } | null)
+    | ({
+        relationTo: 'yoco-transactions';
+        value: string | YocoTransaction;
       } | null)
     | ({
         relationTo: 'redirects';
@@ -1596,6 +1634,29 @@ export interface AuthRequestsSelect<T extends boolean = true> {
   email?: T;
   code?: T;
   expiresAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "yoco-transactions_select".
+ */
+export interface YocoTransactionsSelect<T extends boolean = true> {
+  user?: T;
+  intent?: T;
+  status?: T;
+  productId?: T;
+  packageName?: T;
+  amount?: T;
+  currency?: T;
+  paymentLinkId?: T;
+  paymentUrl?: T;
+  entitlement?: T;
+  plan?: T;
+  periodDays?: T;
+  expiresAt?: T;
+  completedAt?: T;
+  metadata?: T;
   updatedAt?: T;
   createdAt?: T;
 }
