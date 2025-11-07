@@ -90,6 +90,94 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   // Error state for estimate creation
   const [estimateError, setEstimateError] = useState<string | null>(null)
 
+  const currencyFormatter = React.useMemo(
+    () =>
+      new Intl.NumberFormat('en-ZA', {
+        style: 'currency',
+        currency: 'ZAR',
+        minimumFractionDigits: 2,
+      }),
+    [],
+  )
+
+  const packageSnapshot = React.useMemo(() => {
+    const selectedPackage = data?.selectedPackage
+
+    let resolvedPackage: any =
+      selectedPackage && typeof selectedPackage.package === 'object'
+        ? selectedPackage.package
+        : null
+
+    let resolvedPackageId: string | null = null
+
+    if (selectedPackage) {
+      if (typeof selectedPackage.package === 'string') {
+        resolvedPackageId = selectedPackage.package
+      } else if (typeof selectedPackage.package === 'object' && selectedPackage.package?.id) {
+        resolvedPackageId = selectedPackage.package.id
+      }
+    }
+
+    if (!resolvedPackage && resolvedPackageId) {
+      resolvedPackage = availablePackages.find((pkg) => pkg.id === resolvedPackageId) || null
+    }
+
+    if (!resolvedPackage) {
+      const fallbackPackage = availablePackages.find((pkg) => pkg.isEnabled)
+      if (fallbackPackage) {
+        resolvedPackage = fallbackPackage
+        resolvedPackageId = fallbackPackage.id
+      }
+    }
+
+    const fallbackBaseRate =
+      typeof data?.post === 'object' && data?.post?.baseRate
+        ? Number(data.post.baseRate)
+        : 150
+
+    const resolvedBaseRateRaw = resolvedPackage?.baseRate
+    const resolvedBaseRate =
+      resolvedBaseRateRaw !== undefined && !isNaN(Number(resolvedBaseRateRaw))
+        ? Number(resolvedBaseRateRaw)
+        : fallbackBaseRate
+
+    const resolvedMultiplier =
+      selectedPackage?.multiplier !== undefined && !isNaN(Number(selectedPackage.multiplier))
+        ? Number(selectedPackage.multiplier)
+        : resolvedPackage?.multiplier && !isNaN(Number(resolvedPackage.multiplier))
+        ? Number(resolvedPackage.multiplier)
+        : 1
+
+    const resolvedName =
+      selectedPackage?.customName || resolvedPackage?.name || 'Standard stay'
+
+    return {
+      id: resolvedPackageId,
+      name: resolvedName,
+      baseRate: resolvedBaseRate,
+      multiplier: resolvedMultiplier,
+    }
+  }, [availablePackages, data?.post, data?.selectedPackage])
+
+  const bookingDuration = React.useMemo(() => {
+    if (!data?.fromDate || !data?.toDate) return null
+
+    const from = new Date(data.fromDate)
+    const to = new Date(data.toDate)
+
+    return Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)))
+  }, [data?.fromDate, data?.toDate])
+
+  const currentPackageTotal = React.useMemo(() => {
+    if (data?.total && !isNaN(Number(data.total))) {
+      return Number(data.total)
+    }
+
+    if (!bookingDuration) return null
+
+    return calculateTotal(packageSnapshot.baseRate, bookingDuration, packageSnapshot.multiplier)
+  }, [bookingDuration, data?.total, packageSnapshot.baseRate, packageSnapshot.multiplier])
+
   useEffect(() => {
     const loadPackages = async () => {
       setLoadingAddons(true)
@@ -215,80 +303,95 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
 
   const handleEstimateRequest = async () => {
     if (!selectedDates?.from || !selectedDates?.to) return
-    
+
     setIsSubmittingEstimate(true)
     setEstimateError(null)
-    
+
     try {
       const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
       if (!postId) {
         throw new Error('No post ID found')
       }
-      
-      // First, check availability for the selected dates
+
       const availabilityResponse = await fetch(
-        `/api/bookings/check-availability?postId=${postId}&startDate=${selectedDates.from.toISOString()}&endDate=${selectedDates.to.toISOString()}`
+        `/api/bookings/check-availability?postId=${postId}&startDate=${selectedDates.from.toISOString()}&endDate=${selectedDates.to.toISOString()}`,
       )
-      
+
       if (!availabilityResponse.ok) {
         throw new Error('Failed to check availability')
       }
-      
+
       const availabilityData = await availabilityResponse.json()
-      
+
       if (!availabilityData.isAvailable) {
-        // Show error message for unavailable dates
         setEstimateError('The selected dates are not available. Please choose different dates.')
         setIsSubmittingEstimate(false)
         return
       }
-      
-      // Calculate duration for the new estimate
+
       const fromDateObj = new Date(selectedDates.from)
       const toDateObj = new Date(selectedDates.to)
-      const duration = Math.max(1, Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)))
-      
-      // Get base rate from the post
-      const baseRate = typeof data?.post === 'object' ? data.post.baseRate || 150 : 150
-      
-      // Get the first available package to use as default
-      const packagesResponse = await fetch(`/api/packages/post/${postId}`)
-      const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
-      const availablePackages = packagesData.packages || []
-      const firstPackage = availablePackages.find((pkg: any) => pkg.isEnabled)
-      
-      if (!firstPackage) {
-        throw new Error('No packages available for this property')
-      }
-      
-      // Create a minimal estimate and navigate to it (like Share Estimate button)
-      const resp = await fetch('/api/estimates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          postId,
-          fromDate: selectedDates.from.toISOString(),
-          toDate: selectedDates.to.toISOString(),
-          guests: [],
-          title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
-          packageType: firstPackage.id, // Use the first available package
-          total: calculateTotal(baseRate, duration, 1) // Base rate calculation
-        })
+      const duration = Math.max(
+        1,
+        Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
+      )
+
+      const packageBaseRate = packageSnapshot.baseRate
+      const packageMultiplier = packageSnapshot.multiplier
+      const packageId = packageSnapshot.id
+      const packageName = packageSnapshot.name
+
+      const estimateTotal = calculateTotal(packageBaseRate, duration, packageMultiplier)
+
+      const formattedDateRange = `${format(fromDateObj, 'LLL dd, y')} - ${format(toDateObj, 'LLL dd, y')}`
+      const formattedTotal = currencyFormatter.format(estimateTotal)
+
+      const redirectParams = new URLSearchParams({
+        postId,
+        startDate: fromDateObj.toISOString(),
+        endDate: toDateObj.toISOString(),
+        duration: duration.toString(),
+        baseRate: packageBaseRate.toString(),
+        multiplier: packageMultiplier.toString(),
+        total: estimateTotal.toString(),
       })
-      
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}))
-        throw new Error(err?.error || 'Failed to create estimate')
+
+      if (packageId) {
+        redirectParams.set('packageId', packageId)
       }
-      
-      const created = await resp.json()
-      
-      // Navigate to the new estimate page
-      router.push(`/estimate/${created.id}`)
-      
+
+      const redirectUrl = `/estimate?${redirectParams.toString()}`
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('openAIAssistant', {
+            detail: {
+              context: 'booking-reschedule',
+              postId,
+              message: `Please help me reschedule to ${formattedDateRange}.`,
+              rescheduleData: {
+                postTitle: typeof data?.post === 'object' ? data.post.title : 'your stay',
+                packageName,
+                fromDate: fromDateObj.toISOString(),
+                toDate: toDateObj.toISOString(),
+                duration,
+                baseRate: packageBaseRate,
+                multiplier: packageMultiplier,
+                total: estimateTotal,
+                formattedTotal,
+                formattedDateRange,
+                redirectUrl,
+              },
+            },
+          }),
+        )
+      }
+
+      router.prefetch(redirectUrl)
+      setSelectedDates(undefined)
     } catch (error) {
-      console.error('Error creating estimate:', error)
-      setEstimateError('Failed to create estimate. Please try again.')
+      console.error('Error preparing estimate redirect:', error)
+      setEstimateError('Failed to prepare estimate. Please try again.')
     } finally {
       setIsSubmittingEstimate(false)
     }
@@ -375,6 +478,12 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                         : data?.selectedPackage && data.selectedPackage.customName
                         ? `Package: ${data.selectedPackage.customName}`
                         : 'Package: No package assigned'}
+                    </div>
+                    <div className="text-muted-foreground text-xs">
+                      Rate: {currencyFormatter.format(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
+                      {currentPackageTotal !== null && typeof currentPackageTotal === 'number'
+                        ? ` · Booking total: ${currencyFormatter.format(currentPackageTotal)}`
+                        : ''}
                     </div>
                     <label className="text-lg font-medium">Booking Dates:</label>
                     <Calendar

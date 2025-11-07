@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -82,6 +83,7 @@ const LoadingDots = () => {
 export const AIAssistant = () => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
+  const router = useRouter()
   
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -97,6 +99,7 @@ export const AIAssistant = () => {
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
   const finalTranscriptRef = useRef('')
+  const rescheduleRedirectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     // Listen for custom events to open AI Assistant with context
@@ -139,6 +142,14 @@ export const AIAssistant = () => {
       clearTimeout(timeoutId)
     }
   }, [isLoggedIn])
+
+  useEffect(() => {
+    return () => {
+      if (rescheduleRedirectRef.current) {
+        clearTimeout(rescheduleRedirectRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     // Initialize speech recognition
@@ -422,6 +433,37 @@ export const AIAssistant = () => {
           setMessages((prev) => [...prev, assistantMessage])
           speak('Sorry, I encountered an error while generating update suggestions.')
         }
+      } else if (currentContext?.context === 'booking-reschedule') {
+        const rescheduleData = currentContext?.rescheduleData || {}
+        const postTitle = rescheduleData.postTitle || 'your stay'
+        const packageName = rescheduleData.packageName || 'selected package'
+        const formattedRange = rescheduleData.formattedDateRange || 'the selected dates'
+        const formattedTotal = rescheduleData.formattedTotal
+          || (typeof rescheduleData.total === 'number'
+            ? `R${rescheduleData.total.toFixed(2)}`
+            : 'the updated total')
+        const redirectUrl: string | undefined = rescheduleData.redirectUrl
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: `Great! I've prepared a fresh estimate for ${postTitle} from ${formattedRange} with the ${packageName}. Your updated total comes to ${formattedTotal}. I'll open the estimate builder so you can review and confirm.`,
+        }
+
+        setMessages((prev) => [...prev, assistantMessage])
+        speak(`Your updated stay totals ${formattedTotal}. I'm opening the estimate builder now.`)
+
+        if (rescheduleRedirectRef.current) {
+          clearTimeout(rescheduleRedirectRef.current)
+        }
+
+        if (redirectUrl) {
+          rescheduleRedirectRef.current = setTimeout(() => {
+            router.push(redirectUrl)
+            rescheduleRedirectRef.current = null
+          }, 1500)
+        }
+
+        return
       } else if (currentContext?.context === 'booking-details') {
         // Handle booking-specific queries
         const bookingContext = currentContext
