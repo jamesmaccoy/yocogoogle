@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import type { User } from "@/payload-types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,6 +51,28 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   const postId = searchParams?.get('postId') || ''
   
   console.log('Estimate page - Received postId:', postId)
+
+  const normalizedRoles = useMemo(() => {
+    const role = currentUser?.role
+
+    if (!role) return []
+
+    if (Array.isArray(role)) {
+      return role.filter(Boolean).map(String)
+    }
+
+    if (typeof role === 'string') {
+      return [role]
+    }
+
+    if (typeof role === 'object') {
+      return Object.values(role)
+        .flat()
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    }
+
+    return []
+  }, [currentUser?.role])
 
   // Calculate total price
   const totalPrice = 
@@ -544,7 +566,9 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
         {isUserLoading || isSubscriptionLoading ? (
           <span>Loading user info...</span>
         ) : currentUser ? (
-          <span className="text-sm text-muted-foreground">Logged in as: <b>{currentUser.name}</b> ({currentUser.role?.join(', ')})</span>
+          <span className="text-sm text-muted-foreground">Logged in as: <b>{currentUser.name}</b>{' '}
+            {normalizedRoles.length > 0 ? `(${normalizedRoles.join(', ')})` : ''}
+          </span>
         ) : (
           <span className="text-sm text-muted-foreground">Not logged in. Showing base rate only.</span>
         )}

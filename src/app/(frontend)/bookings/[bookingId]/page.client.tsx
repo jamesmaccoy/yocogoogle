@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { calculateTotal } from '@/lib/calculateTotal'
+import { formatAmountToZAR } from '@/lib/currency'
 
 type Props = {
   data: Booking
@@ -89,16 +90,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   
   // Error state for estimate creation
   const [estimateError, setEstimateError] = useState<string | null>(null)
-
-  const currencyFormatter = React.useMemo(
-    () =>
-      new Intl.NumberFormat('en-ZA', {
-        style: 'currency',
-        currency: 'ZAR',
-        minimumFractionDigits: 2,
-      }),
-    [],
-  )
 
   const packageSnapshot = React.useMemo(() => {
     const selectedPackage = data?.selectedPackage
@@ -344,7 +335,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       const estimateTotal = calculateTotal(packageBaseRate, duration, packageMultiplier)
 
       const formattedDateRange = `${format(fromDateObj, 'LLL dd, y')} - ${format(toDateObj, 'LLL dd, y')}`
-      const formattedTotal = currencyFormatter.format(estimateTotal)
+      const formattedTotal = formatAmountToZAR(estimateTotal)
 
       const redirectParams = new URLSearchParams({
         postId,
@@ -480,9 +471,9 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                         : 'Package: No package assigned'}
                     </div>
                     <div className="text-muted-foreground text-xs">
-                      Rate: {currencyFormatter.format(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
+                      Rate: {formatAmountToZAR(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
                       {currentPackageTotal !== null && typeof currentPackageTotal === 'number'
-                        ? ` · Booking total: ${currencyFormatter.format(currentPackageTotal)}`
+                        ? ` · Booking total: ${formatAmountToZAR(currentPackageTotal)}`
                         : ''}
                     </div>
                     <label className="text-lg font-medium">Booking Dates:</label>
@@ -494,7 +485,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                       }}
                       numberOfMonths={2}
                       className="max-w-md"
-                      disabled={() => true}
                     />
                     <div className="text-muted-foreground text-sm mt-1">
                       {data?.fromDate && data?.toDate

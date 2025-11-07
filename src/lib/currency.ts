@@ -1,10 +1,16 @@
 export function formatAmountToZAR(amount: number | null | undefined): string {
   if (amount === null || amount === undefined || isNaN(Number(amount))) return 'N/A'
-  try {
-    return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(Number(amount))
-  } catch {
-    return `R${Number(amount).toFixed(2)}`
-  }
+
+  const numericAmount = Number(amount)
+  const sign = numericAmount < 0 ? '-' : ''
+  const absolute = Math.abs(numericAmount)
+  const fixed = absolute.toFixed(2)
+  const parts = fixed.split('.')
+  const integerPart = parts[0]
+  const decimal = parts[1]
+  const withThousands = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+
+  return `${sign}R ${withThousands.length > 0 ? withThousands : '0'}.${decimal}`
 }
 
 export function formatFormattedPriceToZAR(formattedPrice: string | null | undefined): string {
