@@ -1,14 +1,24 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { User } from '@/payload-types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3 } from 'lucide-react'
+import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2 } from 'lucide-react'
 import { useSubscription } from '@/hooks/useSubscription'
 import { EditPostsLink } from '@/components/EditPostsLink'
 import Link from 'next/link'
+
+type YocoTransaction = {
+  id: string
+  packageName?: string
+  status?: string
+  amount?: number
+  currency?: string
+  createdAt?: string
+  expiresAt?: string
+}
 
 interface AccountClientProps {
   user: User | null
@@ -16,6 +26,27 @@ interface AccountClientProps {
 
 export default function AccountClient({ user }: AccountClientProps) {
   const { isSubscribed, isLoading } = useSubscription()
+  const [transactions, setTransactions] = useState<YocoTransaction[]>([])
+  const [loadingTransactions, setLoadingTransactions] = useState(false)
+
+  useEffect(() => {
+    const loadTransactions = async () => {
+      if (!user) return
+      setLoadingTransactions(true)
+      try {
+        const response = await fetch('/api/yoco/transactions?limit=5', { credentials: 'include' })
+        if (!response.ok) return
+        const data = await response.json()
+        setTransactions(data.transactions || [])
+      } catch (error) {
+        console.error('Failed to fetch Yoco transactions:', error)
+      } finally {
+        setLoadingTransactions(false)
+      }
+    }
+
+    loadTransactions()
+  }, [user])
 
   if (!user) {
     return (
@@ -28,7 +59,7 @@ export default function AccountClient({ user }: AccountClientProps) {
     )
   }
 
-  const userRoles = Array.isArray(user.role) ? user.role : []
+  const userRoles = Array.isArray(user.role) ? (user.role as string[]) : user.role ? [user.role] : []
   const isHost = userRoles.includes('host')
   const isAdmin = userRoles.includes('admin')
   const isCustomer = userRoles.includes('customer')
@@ -170,6 +201,42 @@ export default function AccountClient({ user }: AccountClientProps) {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Yoco Payments</CardTitle>
+              <CardDescription>Manual reference for your subscription access</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {loadingTransactions ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading payment history...
+                </div>
+              ) : transactions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No Yoco transactions recorded yet.</p>
+              ) : (
+                transactions.map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between rounded-lg border border-border p-3 text-sm">
+                    <div>
+                      <p className="font-medium text-foreground">{transaction.packageName || 'Subscription payment'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {transaction.createdAt ? new Date(transaction.createdAt).toLocaleDateString() : 'Unknown date'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-foreground">
+                        {transaction.currency || 'ZAR'} {transaction.amount?.toFixed(2) ?? '0.00'}
+                      </p>
+                      <p className="text-xs text-muted-foreground capitalize">{transaction.status || 'pending'}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+              <Link href="/subscribe">
+                <Button variant="outline" className="w-full">View full history</Button>
+              </Link>
             </CardContent>
           </Card>
         </div>

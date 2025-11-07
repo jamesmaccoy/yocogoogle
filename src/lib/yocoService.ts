@@ -1,3 +1,16 @@
+type BookingMetadata = {
+  estimateId?: string
+  postId?: string
+  duration?: number
+  startDate?: string
+  endDate?: string
+  transactionId?: string
+  intent?: 'booking' | 'subscription' | 'product'
+  entitlement?: string
+  plan?: string
+  periodDays?: number
+}
+
 export interface YocoProduct {
   id: string
   title: string
@@ -196,7 +209,13 @@ class YocoService {
     ]
   }
 
-  async createPaymentLink(product: YocoProduct, customerId: string, customerName: string, version?: string, bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }): Promise<YocoPaymentLink | null> {
+  async createPaymentLink(
+    product: YocoProduct,
+    customerId: string,
+    customerName: string,
+    version?: string,
+    bookingData?: BookingMetadata,
+  ): Promise<YocoPaymentLink | null> {
     await this.initialize()
     
     const apiKey = this.getApiKey(version)
@@ -216,6 +235,11 @@ class YocoService {
       if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
       if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
       if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
+      if (bookingData?.transactionId) successParams.set('transactionId', bookingData.transactionId)
+      if (bookingData?.intent) successParams.set('intent', bookingData.intent)
+      if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
+      if (bookingData?.plan) successParams.set('plan', bookingData.plan)
+      if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
 
       // Create checkout via Yoco Checkout API
       const requestBody = {
@@ -320,7 +344,7 @@ class YocoService {
     customerName: string,
     total: number,
     version?: string,
-    bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }
+    bookingData?: BookingMetadata,
   ): Promise<YocoPaymentLink | null> {
     await this.initialize()
 
@@ -350,6 +374,11 @@ class YocoService {
       if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
       if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
       if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
+      if (bookingData?.transactionId) successParams.set('transactionId', bookingData.transactionId)
+      if (bookingData?.intent) successParams.set('intent', bookingData.intent)
+      if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
+      if (bookingData?.plan) successParams.set('plan', bookingData.plan)
+      if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
 
       // Create checkout via Yoco Checkout API
       // Note: The Checkout API creates a checkout session, not a direct payment link
@@ -447,7 +476,12 @@ class YocoService {
     }
   }
 
-  private getMockPaymentLink(product: YocoProduct, customerId: string, customerName: string, bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }): YocoPaymentLink {
+  private getMockPaymentLink(
+    product: YocoProduct,
+    customerId: string,
+    customerName: string,
+    bookingData?: BookingMetadata,
+  ): YocoPaymentLink {
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
     const successParams = new URLSearchParams({ success: 'true' })
     if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
@@ -455,6 +489,11 @@ class YocoService {
     if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
     if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
     if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
+    if (bookingData?.transactionId) successParams.set('transactionId', bookingData.transactionId)
+    if (bookingData?.intent) successParams.set('intent', bookingData.intent)
+    if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
+    if (bookingData?.plan) successParams.set('plan', bookingData.plan)
+    if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
     return {
       id: `mock-${Date.now()}`,
       url: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
@@ -498,7 +537,7 @@ class YocoService {
     customerId: string,
     customerName: string,
     total: number,
-    bookingData?: { estimateId?: string; postId?: string; duration?: number; startDate?: string; endDate?: string }
+    bookingData?: BookingMetadata,
   ): YocoPaymentLink {
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
     const successParams = new URLSearchParams({ success: 'true' })
@@ -507,6 +546,11 @@ class YocoService {
     if (bookingData?.duration) successParams.set('duration', String(bookingData.duration))
     if (bookingData?.startDate) successParams.set('startDate', bookingData.startDate)
     if (bookingData?.endDate) successParams.set('endDate', bookingData.endDate)
+    if (bookingData?.transactionId) successParams.set('transactionId', bookingData.transactionId)
+    if (bookingData?.intent) successParams.set('intent', bookingData.intent)
+    if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
+    if (bookingData?.plan) successParams.set('plan', bookingData.plan)
+    if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
     console.warn('⚠️ Using mock payment link - Yoco API requires OAuth 2.0 for Payment Links')
     console.warn('💡 To use real Yoco payments, you need to:')
     console.warn('   1. Get OAuth 2.0 credentials from Yoco')

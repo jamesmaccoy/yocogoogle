@@ -1,346 +1,401 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react'
 import { useUserContext } from '@/context/UserContext'
 import { useYoco } from '@/providers/Yoco'
 import { useSubscription } from '@/hooks/useSubscription'
-import { yocoService, YocoProduct } from '@/lib/yocoService'
-import { useRouter } from 'next/navigation'
-import { getZARPriceFromRevenueCatProduct, getDualCurrencyPrice } from '@/lib/currency'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
+import type { YocoProduct } from '@/lib/yocoService'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { format } from 'date-fns'
+
+type YocoTransaction = {
+  id: string
+  intent: 'booking' | 'subscription' | 'product'
+  status: 'pending' | 'completed' | 'failed' | 'cancelled'
+  packageName?: string
+  amount?: number
+  currency?: string
+  entitlement?: 'none' | 'standard' | 'pro'
+  plan?: 'free' | 'standard' | 'pro'
+  createdAt?: string
+  completedAt?: string
+  expiresAt?: string
+  paymentUrl?: string
+}
+
+const periodToDays = (product: YocoProduct) => {
+  switch (product.period) {
+    case 'day':
+      return product.periodCount
+    case 'week':
+      return product.periodCount * 7
+    case 'month':
+      return product.periodCount * 30
+    case 'year':
+      return product.periodCount * 365
+    default:
+      return 30
+  }
+}
 
 export default function SubscribePage() {
   const router = useRouter()
   const { currentUser } = useUserContext()
-  const { customerInfo, isInitialized } = useYoco()
-  const { isSubscribed, isLoading } = useSubscription()
-  const [offerings, setOfferings] = useState<YocoProduct[]>([])
-  const [loadingOfferings, setLoadingOfferings] = useState(true)
+  const { createPaymentLink, isInitialized } = useYoco()
+  const subscriptionStatus = useSubscription()
+
+  const [products, setProducts] = useState<YocoProduct[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [transactions, setTransactions] = useState<YocoTransaction[]>([])
+  const [loadingTransactions, setLoadingTransactions] = useState(false)
+  const [paymentLoading, setPaymentLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showProEntitlements, setShowProEntitlements] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  const fetchProducts = useCallback(async () => {
+    setLoadingProducts(true)
+    try {
+      const response = await fetch('/api/yoco/products', { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error('Failed to load products')
+      }
+      const data = await response.json()
+      setProducts(data.products || [])
+    } catch (err) {
+      console.error('Failed to fetch Yoco products:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch products')
+    } finally {
+      setLoadingProducts(false)
+    }
+  }, [])
+
+  const fetchTransactions = useCallback(async () => {
+    if (!currentUser) return
+    setLoadingTransactions(true)
+    try {
+      const response = await fetch('/api/yoco/transactions', { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error('Failed to load transactions')
+      }
+      const data = await response.json()
+      setTransactions(data.transactions || [])
+    } catch (err) {
+      console.error('Failed to fetch transactions:', err)
+    } finally {
+      setLoadingTransactions(false)
+    }
+  }, [currentUser])
 
   useEffect(() => {
     if (isInitialized) {
-      loadOfferings()
+      fetchProducts()
+      fetchTransactions()
     }
-  }, [isInitialized])
+  }, [fetchProducts, fetchTransactions, isInitialized])
 
   useEffect(() => {
-    if (!isLoading && isSubscribed) {
-      console.log('User already subscribed, redirecting to /bookings from useEffect.')
-      router.push('/bookings')
-    }
-  }, [isLoading, isSubscribed, router])
+    const params = new URLSearchParams(window.location.search)
+    const isSuccess = params.get('success') === 'true'
+    const transactionId = params.get('transactionId')
 
-  const loadOfferings = async () => {
-    setLoadingOfferings(true)
-    try {
-      const purchases = await Purchases.getSharedInstance()
-      const fetchedOfferings = await purchases.getOfferings()
-      if (fetchedOfferings.all) {
-        setOfferings(Object.values(fetchedOfferings.all))
-      } else {
-        console.warn("No current offering or packages found.")
-        setOfferings([])
-      }
-    } catch (err) {
-      console.error('Error loading offerings:', err)
-      setError('Failed to load subscription offerings: ' + (err instanceof Error ? err.message : JSON.stringify(err)))
-    } finally {
-      setLoadingOfferings(false)
-    }
-  }
+    const finalize = async () => {
+      if (isSuccess && transactionId) {
+        try {
+          const response = await fetch('/api/yoco/transactions/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ transactionId }),
+          })
 
-  const handlePurchase = async (pkg: Package) => {
-    if (!currentUser) {
-      router.push(`/login?redirect=/subscribe&packageId=${pkg.identifier}`)
-      return
-    }
-    try {
-      setError(null)
-      const purchases = await Purchases.getSharedInstance()
-      await purchases.purchase({
-        rcPackage: pkg
-      })
-      
-      // Smart redirect based on package type
-      if (pkg.identifier === '$rc_weekly') {
-        // Virtual wine package grants standard entitlement
-        router.push('/bookings')
-      } else if (pkg.identifier === '$rc_six_month') {
-        // Professional plan grants admin entitlement
-        router.push('/admin')
-      } else {
-        // Default for other packages (monthly/annual subscriptions)
-        router.push('/bookings')
-      }
-    } catch (purchaseError) {
-      const rcError = purchaseError as PurchasesError
-      console.error('RevenueCat Purchase Error (Full Object):', rcError)
-      console.error('RevenueCat Purchase Error Name:', rcError.name)
-      console.error('RevenueCat Purchase Error Message:', rcError.message)
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}))
+            throw new Error(data.error || 'Failed to confirm transaction')
+          }
 
-      let isCancelled = false
-      try {
-        if (rcError && typeof rcError === 'object' && 'code' in rcError && (rcError as { code: unknown }).code === ErrorCode.UserCancelledError) {
-          isCancelled = true
+          setSuccessMessage('Payment confirmed. Your subscription has been updated.')
+          fetchTransactions()
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('yoco:subscription-updated'))
+          }
+        } catch (err) {
+          console.error('Failed to confirm transaction:', err)
+          setError(err instanceof Error ? err.message : 'Failed to confirm payment')
+        } finally {
+          router.replace('/subscribe')
         }
-      } catch (e) { /* Silently ignore if .code access fails */ }
+      }
+    }
 
-      if (isCancelled) {
-        console.log('User cancelled the purchase flow.')
+    finalize()
+  }, [fetchTransactions, router])
+
+  const standardProduct = useMemo(
+    () => products.find((product) => product.entitlement !== 'pro'),
+    [products],
+  )
+
+  const proProduct = useMemo(
+    () => products.find((product) => product.entitlement === 'pro'),
+    [products],
+  )
+
+  const handleSubscribe = useCallback(
+    async (product: YocoProduct | undefined) => {
+      if (!product || paymentLoading) return
+      if (!currentUser) {
+        router.push('/login?redirect=/subscribe')
         return
       }
-      
-      setError('Failed to complete purchase. Please try again or contact support.')
+
+      setPaymentLoading(true)
+      setError(null)
+      setSuccessMessage(null)
+
+      try {
+        const metadata = {
+          intent: 'subscription' as const,
+          entitlement: (product.entitlement as 'pro' | 'standard' | 'none') || 'none',
+          plan: product.entitlement === 'pro' ? 'pro' : 'standard',
+          periodDays: periodToDays(product),
+        }
+
+        const paymentLink = await createPaymentLink(product.id, currentUser.name || currentUser.email || undefined, metadata)
+
+        if (!paymentLink?.url) {
+          throw new Error('Unable to start checkout')
+        }
+
+        window.location.href = paymentLink.url
+      } catch (err) {
+        console.error('Error creating payment link:', err)
+        setError(err instanceof Error ? err.message : 'Failed to create payment link')
+      } finally {
+        setPaymentLoading(false)
+      }
+    },
+    [createPaymentLink, currentUser, paymentLoading, router],
+  )
+
+  const activeSubscriptionBadge = subscriptionStatus.isSubscribed ? (
+    <Badge className="bg-green-100 text-green-800">Active</Badge>
+  ) : (
+    <Badge variant="outline">Inactive</Badge>
+  )
+
+  const renderTransactionStatus = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800">Completed</Badge>
+      case 'pending':
+        return <Badge className="bg-amber-100 text-amber-800">Pending</Badge>
+      case 'failed':
+        return <Badge className="bg-red-100 text-red-800">Failed</Badge>
+      default:
+        return <Badge variant="secondary">{status}</Badge>
     }
   }
 
-  // Find the correct offerings
-  const adminOffering = offerings.find(offering => offering.identifier === "simpleplek_admin");
-  const perNightOffering = offerings.find(offering => offering.identifier === "per_night");
-  const standardOffering = offerings.find(offering => offering.identifier === "Standard");
+  const renderTransaction = (transaction: YocoTransaction) => {
+    const created = transaction.createdAt ? format(new Date(transaction.createdAt), 'PP') : 'Unknown'
+    const expires = transaction.expiresAt ? format(new Date(transaction.expiresAt), 'PP') : 'Manual review'
 
-  const monthly_subscription_plan = adminOffering?.availablePackages.find(pkg => pkg.identifier === "$rc_monthly");
-  const annual_subscription_plan = adminOffering?.availablePackages.find(pkg => pkg.identifier === "$rc_annual");
-  const professional_plan = adminOffering?.availablePackages.find(pkg => pkg.identifier === "$rc_six_month");
-  const virtual_wine_plan = perNightOffering?.availablePackages.find(pkg => pkg.identifier === "$rc_weekly");
-  
-  console.log("Monthly Plan Found:", monthly_subscription_plan)
-  console.log("Annual Plan Found:", annual_subscription_plan)
-  console.log("Professional Plan Found:", professional_plan)
-  console.log("Virtual Wine Plan Found:", virtual_wine_plan)
-  console.log("Admin Offering:", adminOffering?.identifier)
-  console.log("Admin Packages:", adminOffering?.availablePackages?.map(p => p.identifier))
-  console.log("Standard Offering:", standardOffering?.identifier)
-  console.log("Standard Packages:", standardOffering?.availablePackages?.map(p => p.identifier))
-  console.log("Per Night Offering:", perNightOffering?.identifier)
-  console.log("Per Night Packages:", perNightOffering?.availablePackages?.map(p => p.identifier))
-  console.log("Show Pro Entitlements:", showProEntitlements)
-  console.log("Virtual Wine Plan exists:", !!virtual_wine_plan)
-  console.log({ monthly_subscription_plan, annual_subscription_plan, professional_plan, virtual_wine_plan });
+    return (
+      <div key={transaction.id} className="flex flex-col gap-2 rounded-lg border border-border p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">{created}</p>
+            <p className="font-medium">{transaction.packageName || 'Subscription payment'}</p>
+          </div>
+          {renderTransactionStatus(transaction.status)}
+        </div>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <p>
+            Amount: <span className="font-medium text-foreground">{transaction.currency || 'ZAR'}{' '}{transaction.amount?.toFixed(2) || '0.00'}</span>
+          </p>
+          <p>
+            Plan: <span className="font-medium text-foreground">{transaction.plan || 'n/a'}</span>
+          </p>
+          <p>
+            Entitlement: <span className="font-medium text-foreground">{transaction.entitlement || 'none'}</span>
+          </p>
+          <p>
+            Expires: <span className="font-medium text-foreground">{expires}</span>
+          </p>
+        </div>
+        {transaction.paymentUrl && transaction.status === 'pending' && (
+          <Button asChild variant="link" className="gap-2 p-0 h-auto">
+            <a href={transaction.paymentUrl} target="_blank" rel="noopener noreferrer">
+              Resume payment
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Button>
+        )}
+      </div>
+    )
+  }
 
   if (!isInitialized) {
-    return <div>Please log in</div>;
+    return (
+      <div className="container py-16">
+        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading subscription data...
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="container py-16 sm:py-24">
-      {error && offerings.length > 0 && (
-        <div className="mb-8 p-4 text-center text-sm text-destructive bg-destructive/10 rounded-md">
-          <p>{error}</p>
-        </div>
-      )}
-      <div className="mx-auto max-w-2xl text-center mb-12 sm:mb-16">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Curated Simple pleks, and access to garden community</h1>  
-        <p className="mt-4 text-lg leading-8 text-muted-foreground">
-        Packages from each plek made by their hosts</p>
-      </div>
-
-      {/* Entitlement Toggle */}
-      <div className="mx-auto max-w-4xl mb-8 flex justify-center">
-        <div className="flex items-center space-x-4 p-4 bg-card rounded-lg border border-border">
-          <Label htmlFor="entitlement-toggle" className="text-sm font-medium">
-            Standard Access
-          </Label>
-          <Switch
-            id="entitlement-toggle"
-            checked={showProEntitlements}
-            onCheckedChange={setShowProEntitlements}
-          />
-          <Label htmlFor="entitlement-toggle" className="text-sm font-medium">
-            Unlock Pro Pleks
-          </Label>
+      <div className="mx-auto max-w-3xl text-center mb-12">
+        <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">Choose your Simple Plek access</h1>
+        <p className="mt-4 text-lg leading-7 text-muted-foreground">
+          Unlock curated spaces, community events, and pro hosting features with secure Yoco payments. Review your history below for manual verification.
+        </p>
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm">
+          Subscription status: {activeSubscriptionBadge}
         </div>
       </div>
 
-
-
-      {/* Standard Access Products */}
-      {!showProEntitlements && (
-        <div className="mx-auto max-w-4xl">
-          {virtual_wine_plan ? (() => {
-            const product = virtual_wine_plan.webBillingProduct
-            const dualPrice = getDualCurrencyPrice(product)
-            
-            console.log('Virtual Wine Debug:', {
-              isSubscribed,
-              showProEntitlements,
-              virtual_wine_plan: !!virtual_wine_plan,
-              product: product?.displayName
-            })
-            
-            return (
-              <div className="relative rounded-2xl border border-primary p-8 shadow-lg max-w-2xl mx-auto">
-                <div className="absolute top-0 -translate-y-1/2 transform rounded-full bg-primary px-3 py-1 text-xs font-semibold tracking-wide text-primary-foreground">
-                  Standard Plan
-                </div>
-                <h2 className="text-2xl font-semibold leading-8 text-foreground text-center">{product.displayName}</h2>
-                <p className="mt-4 text-lg leading-6 text-muted-foreground text-center">{product.description || 'Weekly virtual wine tasting experience.'}</p>
-                <div className="mt-8 text-center">
-                  <p className="flex items-baseline gap-x-1 justify-center">
-                    <span className="text-5xl font-bold tracking-tight text-foreground">{dualPrice.zar}</span>
-                    <span className="text-lg font-semibold leading-6 text-muted-foreground">/week</span>
-                  </p>
-                  <p className="text-lg text-muted-foreground mt-2">
-                    {dualPrice.usd} USD
-                  </p>
-                </div>
-                <ul role="list" className="mt-10 space-y-4 text-base leading-6 text-muted-foreground">
-                  <li className="flex gap-x-3 items-center">
-                    <span className="text-primary text-xl">🧘</span>
-                    <span>Masterclass including Booking access for a week</span>
-                  </li>
-                  <li className="flex gap-x-3 items-center">
-                    <span className="text-primary text-xl">🥂</span>
-                    <span>Wine tasting experience in spontaneous pop ups in extravogent locations</span>
-                  </li>
-                  <li className="flex gap-x-3 items-center">
-                    <span className="text-primary text-xl">🎯</span>
-                    <span>A weekly bottle of Curated selection of the capes finest wines</span>
-                  </li>
-                  <li className="flex gap-x-3 items-center">
-                    <span className="text-primary text-xl">📝</span>
-                    <span>Have your order waiting for you at your plek</span>
-                  </li>
-                  <li className="flex gap-x-3 items-center">
-                    <span className="text-primary text-xl">🍷</span>
-                    <span>Weekly sessions with wine makers, and servant in their journey</span>
-                  </li>
-                </ul>
-                
-                <button
-                  onClick={() => handlePurchase(virtual_wine_plan)}
-                  className="mt-10 block w-full rounded-md bg-primary px-6 py-4 text-center text-lg font-semibold text-primary-foreground shadow-lg hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 transition-all duration-200"
-                >
-                  Subscribe to Simple Plek
-                </button>
-              </div>
-            )
-          })() : (
-            <div className="text-center p-8">
-              <p className="text-muted-foreground">Virtual wine package not found. Check console for details.</p>
-              <p className="text-sm text-muted-foreground mt-2">Debug: virtual_wine_plan = {String(virtual_wine_plan)}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Pro Entitlement Products */}
-      {showProEntitlements && (
-        <div className="mx-auto max-w-4xl grid grid-cols-1 gap-8 md:grid-cols-2 items-start">
-          {monthly_subscription_plan && (() => {
-            const product = monthly_subscription_plan.webBillingProduct
-            const dualPrice = getDualCurrencyPrice(product)
-            return (
-              <div key={monthly_subscription_plan.identifier} className="rounded-2xl border border-border p-8 shadow-sm">
-                <h2 className="text-lg font-semibold leading-8 text-foreground">{product.displayName}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description || 'Access all standard features.'}</p>
-                <p className="mt-6 flex items-baseline gap-x-1">
-                  <span className="text-4xl font-bold tracking-tight text-foreground">{dualPrice.zar}</span>
-                  <span className="text-sm font-semibold leading-6 text-muted-foreground">/month</span>
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {dualPrice.usd} USD
-                </p>
-                <ul role="list" className="mt-8 space-y-3 text-sm leading-6 text-muted-foreground xl:mt-10">
-                  <li className="flex gap-x-3">🧘‍♂️ Monthly Yoga deck</li>
-                  <li className="flex gap-x-3">CID greening initiative</li>
-                  <li className="flex gap-x-3">Unlock Month to month packages</li>
-                </ul>
-                <button
-                  onClick={() => handlePurchase(monthly_subscription_plan)}
-                  className="mt-8 block w-full rounded-md bg-secondary px-3.5 py-2.5 text-center text-sm font-semibold text-secondary-foreground shadow-sm hover:bg-secondary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                >
-                  Subscribe to simple plek
-                </button>
-              </div>
-            )
-          })()}
-
-          {annual_subscription_plan && (() => {
-            const product = annual_subscription_plan.webBillingProduct
-            const dualPrice = getDualCurrencyPrice(product)
-            return (
-              <div key={annual_subscription_plan.identifier} className="relative rounded-2xl border border-primary p-8 shadow-lg">
-                <div className="absolute top-0 -translate-y-1/2 transform rounded-full bg-primary px-3 py-1 text-xs font-semibold tracking-wide text-primary-foreground">
-                   Pro - Save 20%
-                </div>
-                <h2 className="text-lg font-semibold leading-8 text-foreground">{product.displayName}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description || 'Get the best value with annual billing.'}</p>
-                <p className="mt-6 flex items-baseline gap-x-1">
-                  <span className="text-4xl font-bold tracking-tight text-foreground">{dualPrice.zar}</span>
-                  <span className="text-sm font-semibold leading-6 text-muted-foreground">/year</span>
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {dualPrice.usd} USD
-                </p>
-                <ul role="list" className="mt-8 space-y-3 text-sm leading-6 text-muted-foreground xl:mt-10">
-                  <li className="flex gap-x-3">Hourly Studio - 🍤 Hosted all inclusive packages</li>
-                  <li className="flex gap-x-3">CID greening initiative</li>
-                  <li className="flex gap-x-3">unlock all packages</li>
-                  <li className="flex gap-x-3">1 year access to Simple plek garden community</li>
-                </ul>
-                <button
-                  onClick={() => handlePurchase(annual_subscription_plan)}
-                  className="mt-8 block w-full rounded-md bg-primary px-3.5 py-2.5 text-center text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                >
-                  Unlock Now - Save
-                </button>
-              </div>
-            )
-          })()}
-        </div>
-      )}
-
-      {/* Professional Plan - Always visible but styled differently for Pro */}
-      {showProEntitlements && professional_plan && (() => {
-        const product = professional_plan.webBillingProduct;
-        const dualPrice = getDualCurrencyPrice(product);
-        return (
-          <div 
-            className="mt-16 pt-16 pb-16 md:border-t border-border bg-cover bg-center relative rounded-lg shadow-md"
-            style={{ backgroundImage: `url('https://www.simpleplek.co.za/api/media/file/gardencommunity%20(3).jpg')` }}
-          >
-            <div className="absolute inset-0 bg-black/30 rounded-lg"></div> 
-
-            <div className="relative max-w-4xl mx-auto px-4 flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12"> 
-              
-              <div className="text-center lg:text-left text-white">
-                 <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Host a masterclass at our Plek</h2>
-                 <p className="mt-4 text-lg leading-8 text-muted-foreground">Manage packages using our sugegsted packages with capped pricing</p>
-              </div>
-
-              <div className="w-full max-w-md">
-                <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
-                  <h3 className="text-lg font-semibold leading-8 text-foreground">{product.displayName}</h3>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{product.description || 'Advanced features for professionals.'}</p>
-                  <p className="mt-6 flex items-baseline gap-x-1">
-                    <span className="text-4xl font-bold tracking-tight text-foreground">{dualPrice.zar}</span>
-                    <span className="text-sm font-semibold leading-6 text-muted-foreground">/bi-annual</span>
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {dualPrice.usd} USD
-                  </p>
-                  <ul role="list" className="mt-8 space-y-3 text-sm leading-6 text-muted-foreground xl:mt-10">
-                    <li className="flex gap-x-3">Share your plek booking with guests</li>
-                    <li className="flex gap-x-3">Suggested capped pricing for your packages</li>
-                    <li className="flex gap-x-3">Reoccuring payments for your masterclass</li>
-                    <li className="flex gap-x-3">Join the network of simple pleks and their masterclass community</li>
-                  </ul>
-                  <button
-                    onClick={() => handlePurchase(professional_plan)}
-                    className="mt-8 block w-full rounded-md bg-secondary px-3.5 py-2.5 text-center text-sm font-semibold text-secondary-foreground shadow-sm hover:bg-secondary/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-                  >
-                    Host a plek
-                  </button>
-                </div>
-              </div>
+      {error && (
+        <div className="mx-auto mb-8 max-w-2xl rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5" />
+            <div>
+              <p className="font-medium">Something went wrong</p>
+              <p>{error}</p>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mx-auto mb-8 max-w-2xl rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4" />
+            <p>{successMessage}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="border-primary/30">
+          <CardHeader>
+            <Badge className="w-fit bg-primary text-primary-foreground">Standard Access</Badge>
+            <CardTitle className="text-2xl">Garden Community</CardTitle>
+            <CardDescription>
+              Weekly membership to curated simple pleks with flexible bookings and virtual wine experiences.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              {loadingProducts ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading pricing...
+                </div>
+              ) : standardProduct ? (
+                <div>
+                  <div className="text-4xl font-bold text-foreground">
+                    R{standardProduct.price.toFixed(2)}
+                    <span className="text-base font-normal text-muted-foreground"> / {standardProduct.period}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">Equivalent to {standardProduct.periodCount} {standardProduct.period}{standardProduct.periodCount > 1 ? 's' : ''}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Standard plan currently unavailable.</p>
+              )}
+            </div>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li>• Book pleks for weekly retreats and gatherings</li>
+              <li>• Virtual wine curation with local makers</li>
+              <li>• Member pricing on hosted add-ons</li>
+              <li>• Supports CID greening & community events</li>
+            </ul>
+            <Button
+              onClick={() => handleSubscribe(standardProduct)}
+              disabled={!standardProduct || paymentLoading}
+              className="w-full"
+            >
+              {paymentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {subscriptionStatus.isSubscribed && subscriptionStatus.entitlements.includes('standard')
+                ? 'Standard access active'
+                : 'Subscribe with Yoco'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-purple-300">
+          <CardHeader>
+            <Badge className="w-fit bg-purple-600 text-purple-100">Pro Hosting</Badge>
+            <CardTitle className="text-2xl">Annual Pro Plek</CardTitle>
+            <CardDescription>
+              Unlock pro masterclasses, host pricing tools, and annual access to the Simple Plek garden network.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              {loadingProducts ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading pricing...
+                </div>
+              ) : proProduct ? (
+                <div>
+                  <div className="text-4xl font-bold text-foreground">
+                    R{proProduct.price.toFixed(2)}
+                    <span className="text-base font-normal text-muted-foreground"> / {proProduct.period}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">Includes {proProduct.periodCount} {proProduct.period}{proProduct.periodCount > 1 ? 's' : ''} of pro hosting</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Pro plan currently unavailable.</p>
+              )}
+            </div>
+            <ul className="space-y-3 text-sm text-muted-foreground">
+              <li>• Publish and manage hosted masterclasses</li>
+              <li>• Annual access to garden community events</li>
+              <li>• Pro-level entitlements for revenue share</li>
+              <li>• Unlocks admin/host upgrades inside Simple Plek</li>
+            </ul>
+            <Button
+              onClick={() => handleSubscribe(proProduct)}
+              disabled={!proProduct || paymentLoading}
+              className="w-full bg-purple-600 hover:bg-purple-500"
+            >
+              {paymentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {subscriptionStatus.isSubscribed && subscriptionStatus.entitlements.some((entitlement) => entitlement.includes('pro'))
+                ? 'Pro access active'
+                : 'Upgrade to Pro with Yoco'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="mt-12">
+        <CardHeader>
+          <CardTitle>Payment history</CardTitle>
+          <CardDescription>
+            Track every Yoco checkout request. Use this list for manual verification if needed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingTransactions ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Fetching transactions...
+            </div>
+          ) : transactions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No subscription payments recorded yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {transactions.map(renderTransaction)}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
-  );
+  )
 }

@@ -1,44 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { yocoService } from '@/lib/yocoService'
+import { getPayload } from 'payload'
+import configPromise from '@payload-config'
 
 export async function GET(request: NextRequest) {
   try {
-    const authCookie = request.cookies.get('payload-token')
-    if (!authCookie?.value) {
-      return NextResponse.json({ hasActiveSubscription: false }, { status: 200 })
-      // display pricing regardless of authentication
+    const payload = await getPayload({ config: configPromise })
+    const { user } = await payload.auth({ headers: request.headers })
+
+    if (!user) {
+      return NextResponse.json({ hasActiveSubscription: false, activeEntitlements: [] }, { status: 200 })
     }
 
-    // Get the user ID from the auth token
-    const token = authCookie.value
-    const [header, payload, signature] = token.split('.')
-    if (!payload) throw new Error('Invalid token: missing payload')
-    const decodedPayload = JSON.parse(Buffer.from(payload, 'base64').toString())
-    const userId = decodedPayload.id
+    const now = new Date()
 
-    // Initialize Yoco service
-    await yocoService.initialize()
-
-    // Get customer info from Yoco
-    const customerInfo = await yocoService.getCustomerInfo(userId)
-    
-    // Extract active entitlement IDs
-    const activeEntitlements = Object.keys(customerInfo?.entitlements?.active || {});
-    const hasActiveSubscription = activeEntitlements.length > 0;
-    
-    // Set the Yoco customer ID in a cookie for cross-device sync
-    const response = NextResponse.json({ 
-      hasActiveSubscription,
-      customerId: customerInfo?.id || userId,
-      activeEntitlements: activeEntitlements,
+    const transactions = await payload.find({
+      collection: 'yoco-transactions',
+      where: {
+        and: [
+          {
+            user: {
+              equals: user.id,
+            },
+          },
+          {
+            status: {
+              equals: 'completed',
+            },
+          },
+          {
+            intent: {
+              equals: 'subscription',
+            },
+          },
+        ],
+      },
+      sort: '-completedAt',
+      limit: 10,
     })
 
-    // Set the Yoco customer ID cookie
-    response.cookies.set('yoco-customer-id', customerInfo?.id || userId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
+    const activeTransaction = transactions.docs.find((tx: any) => {
+      if (!tx) return false
+      if (!tx.expiresAt) return true
+      return new Date(tx.expiresAt) > now
+    })
+
+    const hasActiveSubscription = Boolean(activeTransaction)
+    const activeEntitlements = activeTransaction?.entitlement ? [activeTransaction.entitlement] : []
+
+    const response = NextResponse.json({
+      hasActiveSubscription,
+      activeEntitlements,
+      transactions: transactions.docs,
     })
 
     return response

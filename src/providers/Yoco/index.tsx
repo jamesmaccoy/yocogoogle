@@ -14,6 +14,10 @@ type PaymentLinkMetadata = {
   startDate?: string
   endDate?: string
   version?: string
+  intent?: 'booking' | 'subscription' | 'product'
+  entitlement?: 'none' | 'standard' | 'pro'
+  plan?: 'free' | 'standard' | 'pro'
+  periodDays?: number
 }
 
 type YocoContextType = {

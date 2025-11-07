@@ -1,31 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import payload from 'payload'
-import { yocoService } from '@/lib/yocoService'
+import { getPayload } from 'payload'
+import configPromise from '@payload-config'
 
 export async function POST(request: NextRequest) {
   try {
     const { targetRole } = await request.json()
 
-    // Get user from auth token
-    const authCookie = request.cookies.get('payload-token')
-    if (!authCookie?.value) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    const token = authCookie.value
-    const [header, payloadData, signature] = token.split('.')
-    if (!payloadData) throw new Error('Invalid token: missing payload')
-    const decodedPayload = JSON.parse(Buffer.from(payloadData, 'base64').toString())
-    const userId = decodedPayload.id
-
-    // Get user from database
-    const user = await payload.findByID({
-      collection: 'users',
-      id: userId,
-    })
+    const payload = await getPayload({ config: configPromise })
+    const { user } = await payload.auth({ headers: request.headers })
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
     // Validate target role
@@ -37,61 +22,67 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Check if user has an active subscription with Yoco
-    try {
-      await yocoService.initialize()
-      const customerInfo = await yocoService.getCustomerInfo(userId)
-      
-      // Check for active entitlements
-      const activeEntitlements = Object.keys(customerInfo?.entitlements?.active || {})
-      const hasActiveSubscription = activeEntitlements.length > 0
+    const subscriptionCheck = await payload.find({
+      collection: 'yoco-transactions',
+      where: {
+        and: [
+          {
+            user: {
+              equals: user.id,
+            },
+          },
+          {
+            intent: {
+              equals: 'subscription',
+            },
+          },
+          {
+            status: {
+              equals: 'completed',
+            },
+          },
+          {
+            entitlement: {
+              equals: 'pro',
+            },
+          },
+        ],
+      },
+      sort: '-completedAt',
+      limit: 1,
+    })
 
-      if (!hasActiveSubscription) {
-        return NextResponse.json({ 
-          error: 'Active host subscription required to upgrade role',
-          hasSubscription: false,
-          activeEntitlements: activeEntitlements
-        }, { status: 403 })
-      }
+    const activeTransaction = subscriptionCheck.docs[0]
+    const now = new Date()
+    const hasActiveSubscription = Boolean(
+      activeTransaction && (!activeTransaction.expiresAt || new Date(activeTransaction.expiresAt) > now),
+    )
 
-      // Update user role
-      const currentRoles = user.role || []
-      let newRoles = [...currentRoles]
-
-      // Remove guest role if present and add target role
-      if (newRoles.includes('guest')) {
-        newRoles = newRoles.filter(role => role !== 'guest')
-      }
-      
-      if (!newRoles.includes(targetRole)) {
-        newRoles.push(targetRole)
-      }
-
-      // Update the user in the database
-      const updatedUser = await payload.update({
-        collection: 'users',
-        id: userId,
-        data: {
-          role: newRoles,
-        },
-      })
-
+    if (!hasActiveSubscription) {
       return NextResponse.json({
-        success: true,
-        message: `Successfully upgraded to ${targetRole} role`,
-        previousRoles: user.role,
-        newRoles: updatedUser.role,
-        hasActiveSubscription: true,
-        activeEntitlements: activeEntitlements
-      })
-
-    } catch (yocoError) {
-      console.error('Yoco error:', yocoError)
-      return NextResponse.json({ 
-        error: 'Failed to verify subscription status',
-        details: yocoError instanceof Error ? yocoError.message : 'Unknown error'
-      }, { status: 500 })
+        error: 'Active pro subscription required to upgrade role',
+        hasSubscription: false,
+        activeEntitlements: activeTransaction ? [activeTransaction.entitlement] : [],
+      }, { status: 403 })
     }
+
+    // Update user role
+    const updatedUser = await payload.update({
+      collection: 'users',
+      id: user.id,
+      data: {
+        role: targetRole,
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: `Successfully upgraded to ${targetRole} role`,
+      previousRoles: user.role,
+      newRoles: [updatedUser.role],
+      hasActiveSubscription: true,
+      activeEntitlements: [activeTransaction.entitlement],
+    })
 
   } catch (error) {
     console.error('Error upgrading role:', error)

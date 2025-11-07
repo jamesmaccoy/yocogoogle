@@ -22,6 +22,7 @@ import { Booking } from './collections/Bookings'
 import { Estimate } from './collections/Estimates'
 import Packages from './collections/Packages'
 import { AuthRequests } from './collections/AuthRequests'
+import { YocoTransactions } from './collections/YocoTransactions'
 //import analyticsRouter from '@/app/api/analytics/route'
 
 const filename = fileURLToPath(import.meta.url)
@@ -85,7 +86,7 @@ export default buildConfig({
         },
       })
     : nodemailerAdapter(),
-  collections: [Booking, Estimate, Pages, Posts, Media, Categories, Users, Packages, AuthRequests],
+  collections: [Booking, Estimate, Pages, Posts, Media, Categories, Users, Packages, AuthRequests, YocoTransactions],
   cors: [getServerSideURL()].filter(Boolean),
   globals: [Header, Footer],
   plugins: [
