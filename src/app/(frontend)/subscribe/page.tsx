@@ -27,6 +27,15 @@ type YocoTransaction = {
   paymentUrl?: string
 }
 
+type TokenUsageSummary = {
+  total: number | null
+  prompt: number | null
+  candidates: number | null
+  cached: number | null
+  thoughts: number | null
+  timestamp: number
+}
+
 const periodToDays = (product: YocoProduct) => {
   switch (product.period) {
     case 'day':
@@ -55,6 +64,7 @@ export default function SubscribePage() {
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
 
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true)
@@ -139,6 +149,41 @@ export default function SubscribePage() {
 
     finalize()
   }, [fetchTransactions, router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const readStoredUsage = (): TokenUsageSummary | null => {
+      try {
+        const stored = window.localStorage.getItem('ai:lastTokenUsage')
+        if (!stored) return null
+        const parsed = JSON.parse(stored)
+        if (!parsed || typeof parsed !== 'object') return null
+        return parsed as TokenUsageSummary
+      } catch (storageError) {
+        console.warn('Failed to load stored AI token usage', storageError)
+        return null
+      }
+    }
+
+    const initialUsage = readStoredUsage()
+    if (initialUsage) {
+      setLatestTokenUsage(initialUsage)
+    }
+
+    const handleTokenUsage = (event: Event) => {
+      const customEvent = event as CustomEvent<TokenUsageSummary>
+      if (customEvent.detail) {
+        setLatestTokenUsage(customEvent.detail)
+      }
+    }
+
+    window.addEventListener('aiTokenUsage', handleTokenUsage as EventListener)
+
+    return () => {
+      window.removeEventListener('aiTokenUsage', handleTokenUsage as EventListener)
+    }
+  }, [])
 
   const standardProduct = useMemo(
     () => products.find((product) => product.entitlement !== 'pro'),
@@ -325,9 +370,16 @@ export default function SubscribePage() {
                 <div>
                   <div className="text-4xl font-bold text-foreground">
                     R{standardProduct.price.toFixed(2)}
-                    <span className="text-base font-normal text-muted-foreground"> / {standardProduct.period}</span>
+                    <span className="text-base font-normal text-muted-foreground">
+                      {' '}
+                      / {typeof latestTokenUsage?.total === 'number' ? `${latestTokenUsage.total} tokens` : 'tokens'}
+                    </span>
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground">Equivalent to {standardProduct.periodCount} {standardProduct.period}{standardProduct.periodCount > 1 ? 's' : ''}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {latestTokenUsage
+                      ? `Prompt ${typeof latestTokenUsage.prompt === 'number' ? latestTokenUsage.prompt : '—'} • Response ${typeof latestTokenUsage.candidates === 'number' ? latestTokenUsage.candidates : '—'}${typeof latestTokenUsage.cached === 'number' ? ` • Cached ${latestTokenUsage.cached}` : ''}`
+                      : 'Token usage appears here after your first AI request.'}
+                  </p>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Standard plan currently unavailable.</p>

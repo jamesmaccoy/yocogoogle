@@ -17,6 +17,15 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 import { formatAmountToZAR } from "@/lib/currency"
 
+type TokenUsageSummary = {
+  total: number | null
+  prompt: number | null
+  candidates: number | null
+  cached: number | null
+  thoughts: number | null
+  timestamp: number
+}
+
 // Add type for RevenueCat error with code
 interface RevenueCatError extends Error {
   code?: ErrorCode;
@@ -46,6 +55,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   const [offerings, setOfferings] = useState<Package[]>([])
   const [loadingOfferings, setLoadingOfferings] = useState(true)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
+  const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
   
   // Get postId from URL if available
   const postId = searchParams?.get('postId') || ''
@@ -394,6 +404,41 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     fetchGuests()
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const readStoredUsage = (): TokenUsageSummary | null => {
+      try {
+        const stored = window.localStorage.getItem('ai:lastTokenUsage')
+        if (!stored) return null
+        const parsed = JSON.parse(stored)
+        if (!parsed || typeof parsed !== 'object') return null
+        return parsed as TokenUsageSummary
+      } catch (storageError) {
+        console.warn('Failed to load stored AI token usage', storageError)
+        return null
+      }
+    }
+
+    const initialUsage = readStoredUsage()
+    if (initialUsage) {
+      setLatestTokenUsage(initialUsage)
+    }
+
+    const handleTokenUsage = (event: Event) => {
+      const customEvent = event as CustomEvent<TokenUsageSummary>
+      if (customEvent.detail) {
+        setLatestTokenUsage(customEvent.detail)
+      }
+    }
+
+    window.addEventListener('aiTokenUsage', handleTokenUsage as EventListener)
+
+    return () => {
+      window.removeEventListener('aiTokenUsage', handleTokenUsage as EventListener)
+    }
+  }, [])
+
   const handleBooking = async () => {
     setPaymentLoading(true)
     setPaymentError(null)
@@ -561,6 +606,19 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     <div className="container py-10">
       <h1 className="text-4xl font-bold tracking-tighter mb-8">Start your curated stay</h1>
       <AIAssistant />
+      <div className="mb-6 rounded-lg border border-border bg-muted/40 p-4">
+        <h3 className="text-sm font-semibold text-foreground">Latest AI tokens</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {latestTokenUsage
+            ? `Total ${typeof latestTokenUsage.total === 'number' ? latestTokenUsage.total : '—'} • Prompt ${typeof latestTokenUsage.prompt === 'number' ? latestTokenUsage.prompt : '—'} • Response ${typeof latestTokenUsage.candidates === 'number' ? latestTokenUsage.candidates : '—'}${typeof latestTokenUsage.cached === 'number' ? ` • Cached ${latestTokenUsage.cached}` : ''}`
+            : 'Run the assistant to see how many Gemini tokens your request used.'}
+        </p>
+        {latestTokenUsage?.timestamp && (
+          <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/80">
+            Updated {new Date(latestTokenUsage.timestamp).toLocaleString()}
+          </p>
+        )}
+      </div>
       {/* User role info */}
       <div className="mb-4">
         {isUserLoading || isSubscriptionLoading ? (

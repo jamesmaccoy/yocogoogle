@@ -70,6 +70,15 @@ interface PackageSuggestion {
   }
 }
 
+interface TokenUsageDetails {
+  total: number | null
+  prompt: number | null
+  candidates: number | null
+  cached: number | null
+  thoughts: number | null
+  timestamp: number
+}
+
 const LoadingDots = () => {
   return (
     <div className="flex space-x-1 items-center">
@@ -84,6 +93,59 @@ export const AIAssistant = () => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
   const router = useRouter()
+  
+  const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
+    if (!usage || typeof usage !== 'object') return null
+
+    const normalize = (value: any) =>
+      typeof value === 'number' && Number.isFinite(value) ? value : null
+
+    const normalized: TokenUsageDetails = {
+      total: normalize(usage.total),
+      prompt: normalize(usage.prompt),
+      candidates: normalize(usage.candidates),
+      cached: normalize(usage.cached),
+      thoughts: normalize(usage.thoughts),
+      timestamp: Date.now(),
+    }
+
+    const hasData = [
+      normalized.total,
+      normalized.prompt,
+      normalized.candidates,
+      normalized.cached,
+      normalized.thoughts,
+    ].some((value) => value !== null)
+
+    return hasData ? normalized : null
+  }
+
+  const appendUsageToContent = (content: string, usage: TokenUsageDetails | null) => {
+    if (!usage || usage.total === null) return content
+
+    const detailParts: string[] = []
+
+    if (usage.prompt !== null) detailParts.push(`prompt ${usage.prompt}`)
+    if (usage.candidates !== null) detailParts.push(`response ${usage.candidates}`)
+    if (usage.cached !== null) detailParts.push(`cached ${usage.cached}`)
+    if (usage.thoughts !== null) detailParts.push(`thoughts ${usage.thoughts}`)
+
+    const details =
+      detailParts.length > 0 ? ` (${detailParts.join(', ')})` : ''
+
+    return `${content}<div class="mt-2 text-xs text-muted-foreground">Tokens used: ${usage.total}${details}</div>`
+  }
+
+  const persistTokenUsage = (usage: TokenUsageDetails | null) => {
+    if (!usage || typeof window === 'undefined') return
+
+    try {
+      window.localStorage.setItem('ai:lastTokenUsage', JSON.stringify(usage))
+      window.dispatchEvent(new CustomEvent('aiTokenUsage', { detail: usage }))
+    } catch (error) {
+      console.warn('Failed to persist AI token usage', error)
+    }
+  }
   
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -384,12 +446,20 @@ export const AIAssistant = () => {
         
         if (res.ok) {
           const data = await res.json()
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: data.response || 'I\'ve provided some suggestions for renaming your package. You can review and apply them as needed.' 
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent =
+            data.response ||
+            "I've provided some suggestions for renaming your package. You can review and apply them as needed."
+          
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
           }
+
           setMessages((prev) => [...prev, assistantMessage])
-          speak('I\'ve provided suggestions for renaming your package.')
+          speak("I've provided suggestions for renaming your package.")
         } else {
           const assistantMessage: Message = { 
             role: 'assistant', 
@@ -419,12 +489,20 @@ export const AIAssistant = () => {
         
         if (res.ok) {
           const data = await res.json()
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: data.response || 'I\'ve provided some suggestions for updating your package. You can review and apply them as needed.' 
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent =
+            data.response ||
+            "I've provided some suggestions for updating your package. You can review and apply them as needed."
+
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
           }
+
           setMessages((prev) => [...prev, assistantMessage])
-          speak('I\'ve provided suggestions for updating your package.')
+          speak("I've provided suggestions for updating your package.")
         } else {
           const assistantMessage: Message = { 
             role: 'assistant', 
@@ -495,9 +573,17 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
+        const usage = normalizeTokenUsage(data.usage)
+        const baseContent = data.message || data.response || 'No response received'
+
+        persistTokenUsage(usage)
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: appendUsageToContent(baseContent, usage),
+        }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message || data.response || 'No response received')
+        speak(baseContent)
       } else if (currentContext?.context === 'post-article') {
         // Handle post article queries
         const postContext = currentContext
@@ -524,9 +610,17 @@ ${JSON.stringify(postContext.post?.content || 'No content available')}
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
+        const usage = normalizeTokenUsage(data.usage)
+        const baseContent = data.message || data.response || 'No response received'
+
+        persistTokenUsage(usage)
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: appendUsageToContent(baseContent, usage),
+        }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message || data.response || 'No response received')
+        speak(baseContent)
       } else if (messageToSend.toLowerCase().includes('debug packages') || 
                  messageToSend.toLowerCase().includes('debug') ||
                  messageToSend.toLowerCase().includes('show packages')) {
@@ -606,9 +700,17 @@ ${packages.map((pkg: any, index: number) =>
         })
 
         const data = await response.json()
-        const assistantMessage: Message = { role: 'assistant', content: data.message || data.response || 'No response received' }
+        const usage = normalizeTokenUsage(data.usage)
+        const baseContent = data.message || data.response || 'No response received'
+
+        persistTokenUsage(usage)
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: appendUsageToContent(baseContent, usage),
+        }
         setMessages((prev) => [...prev, assistantMessage])
-        speak(data.message || data.response || 'No response received')
+        speak(baseContent)
       }
     } catch (error) {
       console.error('Error:', error)

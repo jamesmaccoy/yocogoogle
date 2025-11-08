@@ -7,6 +7,20 @@ import { getMeUser } from '@/utilities/getMeUser'
 // Use the GEMINI_API_KEY environment variable defined in your .env file
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
+const serializeUsageMetadata = (usage: any) => {
+  if (!usage) return undefined
+
+  const safeNumber = (value: any) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+
+  return {
+    total: safeNumber(usage.totalTokenCount),
+    prompt: safeNumber(usage.promptTokenCount),
+    candidates: safeNumber(usage.candidatesTokenCount),
+    cached: safeNumber(usage.cachedContentTokenCount),
+    thoughts: safeNumber(usage.thoughtsTokenCount),
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { message, bookingContext, context, packageId, postId } = await req.json()
@@ -198,8 +212,9 @@ Respond with clear, specific suggestions for updating the package.`
         const result = await chat.sendMessage(message)
         const response = await result.response
         const text = response.text()
+        const usage = serializeUsageMetadata(response.usageMetadata)
 
-        return NextResponse.json({ response: text })
+        return NextResponse.json({ response: text, usage })
       } catch (error) {
         console.error('Error in package update:', error)
         return NextResponse.json({ response: 'Sorry, I encountered an error while updating the package. Please try again.' })
@@ -258,7 +273,9 @@ Respond to the user's message naturally, as if you're a knowledgeable booking as
 USER'S DATA:
 - Total Bookings: ${userContext.bookings.length}
 - Recent Estimates: ${userContext.estimates.length}
-- Available Packages: ${packagesInfo.length}
+ - Available Packages: ${packagesInfo.length}
+ - Available Addons: ${packagesInfo.filter(pkg => pkg.category === 'addon' && pkg.isEnabled).length}
+ - Page Summary: ${userContext.currentBooking?.postDetails?.description || 'No additional property summary'}
 
 Be helpful, concise, and guide users to make great booking decisions.`
 
@@ -280,8 +297,9 @@ Be helpful, concise, and guide users to make great booking decisions.`
     const result = await chat.sendMessage(message)
     const response = await result.response
     const text = response.text()
+    const usage = serializeUsageMetadata(response.usageMetadata)
 
-    return NextResponse.json({ message: text })
+    return NextResponse.json({ message: text, usage })
   } catch (error) {
     console.error('Error in chat API:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
