@@ -44,6 +44,24 @@ export default buildConfig({
     importMap: {
       baseDir: path.resolve(dirname),
     },
+    navigation: [
+      {
+        label: 'Dashboard',
+        path: '/',
+      },
+      {
+        label: 'Collections',
+        path: '/collections',
+      },
+      {
+        label: 'Globals',
+        path: '/globals',
+      },
+      {
+        label: 'Job Queue',
+        path: '/jobs',
+      },
+    ],
     user: Users.slug,
     livePreview: {
       breakpoints: [
