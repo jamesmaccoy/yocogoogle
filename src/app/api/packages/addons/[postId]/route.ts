@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
+import { yocoService } from '@/lib/yocoService'
 
 export async function GET(
   request: NextRequest,
@@ -32,35 +33,70 @@ export async function GET(
       },
       depth: 2, // Increased depth to include related page data
     })
+    const yocoProducts = await yocoService.getProducts()
     
-    // Helper function to get custom name from packageSettings
-    const getCustomName = (packageId: string) => {
+    const findPackageSetting = (packageId: string) => {
       if (!postData?.packageSettings || !Array.isArray(postData.packageSettings)) {
         return null
       }
-      const packageSetting = postData.packageSettings.find((setting: any) => {
-        const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package
-        return pkgId === packageId
-      })
+      return (
+        postData.packageSettings.find((setting: any) => {
+          if (!setting?.package) return false
+          if (typeof setting.package === 'string') {
+            return setting.package === packageId
+          }
+          const pkg = setting.package
+          const pkgId =
+            typeof pkg === 'object' && pkg !== null
+              ? pkg.id || pkg?.value
+              : undefined
+          const pkgRevenueCatId =
+            typeof pkg === 'object' && pkg !== null ? pkg.revenueCatId : undefined
+          return pkgId === packageId || pkgRevenueCatId === packageId
+        }) || null
+      )
+    }
+
+    // Helper function to get custom name from packageSettings
+    const getCustomName = (packageId: string) => {
+      const packageSetting = findPackageSetting(packageId)
       return packageSetting?.customName || null
     }
     
     // Helper function to check DB package is enabled for this post
     const isDbPackageEnabledForPost = (packageId: string) => {
-      if (!postData?.packageSettings || !Array.isArray(postData.packageSettings)) {
-        return true // Default to enabled if no settings exist for DB packages
-      }
-      const packageSetting = postData.packageSettings.find((setting: any) => {
-        const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package
-        return pkgId === packageId
-      })
-      // If not configured, default to true for DB packages
-      if (!packageSetting) return true
+      const packageSetting = findPackageSetting(packageId)
+      if (!packageSetting) return true // Default to enabled if no settings exist for DB packages
       return packageSetting?.enabled !== false // Default to true if not explicitly set to false
+    }
+
+    const isYocoAddonEnabledForPost = (productId: string, defaultEnabled: boolean) => {
+      if (!defaultEnabled) return false
+      const packageSetting = findPackageSetting(productId)
+      if (!packageSetting) return defaultEnabled
+      return packageSetting?.enabled !== false
+    }
+
+    const getAddonDuration = (product: any) => {
+      const count = Number(product.periodCount) || 1
+      switch (product.period) {
+        case 'hour':
+          return 1
+        case 'day':
+          return count
+        case 'week':
+          return count * 7
+        case 'month':
+          return count * 30
+        case 'year':
+          return count * 365
+        default:
+          return count
+      }
     }
     
     // Process addon packages
-    const addonPackages = dbPackages.docs.map(pkg => {
+    const dbAddonPackages = dbPackages.docs.map(pkg => {
       const customName = getCustomName(pkg.id)
       return {
         id: pkg.id,
@@ -79,7 +115,35 @@ export async function GET(
         source: 'database',
         hasCustomName: !!customName
       }
-    }).filter(pkg => pkg.isEnabled) // Only include enabled packages
+    }).filter(pkg => pkg.isEnabled)
+
+    const yocoAddonPackages = yocoProducts
+      .filter(product => product.category === 'addon')
+      .map(product => {
+        const customName = getCustomName(product.id)
+        const isEnabled = isYocoAddonEnabledForPost(product.id, product.isEnabled)
+        const duration = getAddonDuration(product)
+        return {
+          id: product.id,
+          name: customName || product.title,
+          originalName: product.title,
+          description: product.description,
+          multiplier: 1,
+          category: product.category,
+          minNights: duration,
+          maxNights: duration,
+          revenueCatId: product.id,
+          baseRate: product.price,
+          isEnabled,
+          features: Array.isArray(product.features) ? product.features : [],
+          relatedPage: null,
+          source: 'yoco',
+          hasCustomName: !!customName
+        }
+      })
+      .filter(pkg => pkg.isEnabled)
+
+    const addonPackages = [...dbAddonPackages, ...yocoAddonPackages]
 
     const response = NextResponse.json({
       addons: addonPackages,

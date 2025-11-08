@@ -69,7 +69,8 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  const { isInitialized } = useYoco();
+  const [currentAddonId, setCurrentAddonId] = useState<string | null>(null)
+  const { isInitialized, createPaymentLinkFromDatabase } = useYoco();
 
   // Related pages state
   const [relatedPages, setRelatedPages] = useState<any[]>([])
@@ -132,11 +133,12 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         ? Number(resolvedBaseRateRaw)
         : fallbackBaseRate
 
+    const selectedPackageMultiplier = selectedPackage ? (selectedPackage as any).multiplier : undefined
     const resolvedMultiplier =
-      selectedPackage?.multiplier !== undefined && !isNaN(Number(selectedPackage.multiplier))
-        ? Number(selectedPackage.multiplier)
-        : resolvedPackage?.multiplier && !isNaN(Number(resolvedPackage.multiplier))
-        ? Number(resolvedPackage.multiplier)
+      selectedPackageMultiplier !== undefined && !isNaN(Number(selectedPackageMultiplier))
+        ? Number(selectedPackageMultiplier)
+        : resolvedPackage && (resolvedPackage as any).multiplier !== undefined && !isNaN(Number((resolvedPackage as any).multiplier))
+        ? Number((resolvedPackage as any).multiplier)
         : 1
 
     const resolvedName =
@@ -385,6 +387,70 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       setEstimateError('Failed to prepare estimate. Please try again.')
     } finally {
       setIsSubmittingEstimate(false)
+    }
+  }
+
+  const handleAddonPurchase = async (addon: AddonPackage) => {
+    if (!createPaymentLinkFromDatabase) {
+      setPaymentError('Payments are not available right now. Please try again later.')
+      return
+    }
+
+    const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+
+    if (!postId) {
+      setPaymentError('Missing property information for this add-on.')
+      return
+    }
+
+    const baseRate = Number(addon.baseRate ?? 0)
+    const multiplier = Number(addon.multiplier ?? 1)
+    const total = Number((baseRate * multiplier).toFixed(2))
+
+    if (!total || total <= 0) {
+      setPaymentError('This add-on is not available for online purchase yet.')
+      return
+    }
+
+    setPaymentLoading(true)
+    setCurrentAddonId(addon.id)
+    setPaymentError(null)
+    setPaymentSuccess(false)
+
+    try {
+      const metadata = {
+        postId,
+        duration: bookingDuration ?? undefined,
+        startDate: data?.fromDate ? new Date(data.fromDate).toISOString() : undefined,
+        endDate: data?.toDate ? new Date(data.toDate).toISOString() : undefined,
+        intent: 'product' as const,
+      }
+
+      const paymentLink = await createPaymentLinkFromDatabase(
+        {
+          id: addon.id,
+          name: addon.name,
+          description: addon.description,
+          baseRate: addon.baseRate,
+          revenueCatId: addon.revenueCatId,
+        },
+        user?.name || user?.email || 'Guest',
+        total,
+        metadata,
+      )
+
+      if (!paymentLink) {
+        throw new Error('Failed to create payment link for this add-on.')
+      }
+
+      setPaymentSuccess(true)
+      window.location.href = paymentLink.url
+    } catch (err) {
+      console.error('Failed to purchase add-on:', err)
+      setPaymentError(err instanceof Error ? err.message : 'Failed to create payment link. Please try again.')
+    } finally {
+      setPaymentLoading(false)
+      setCurrentAddonId(null)
     }
   }
 
@@ -749,29 +815,20 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                       isHike ? "bg-green-200 text-green-900" : 
                       isBathBomb ? "bg-pink-200 text-pink-900" : ""
                     }
-                    onClick={async () => {
-                      setPaymentLoading(true)
-                      setPaymentError(null)
-                      try {
-                        // For now, we'll use a placeholder purchase flow
-                        // In the future, this could integrate with RevenueCat or a custom payment system
-                        console.log('Purchasing addon:', addon)
-                        // Simulate purchase delay
-                        await new Promise(resolve => setTimeout(resolve, 1000))
-                        setPaymentSuccess(true)
-                      } catch (err) {
-                        setPaymentError('Failed to purchase add-on')
-                      } finally {
-                        setPaymentLoading(false)
-                      }
-                    }}
-                    disabled={paymentLoading}
+                    onClick={() => handleAddonPurchase(addon)}
+                    disabled={paymentLoading || !isInitialized}
                   >
-                    {isWine ? 'Buy Bottle of Wine' : 
-                     isCleaning ? 'Add Cleaning' : 
-                     isHike ? 'Book Guided Hike' : 
-                     isBathBomb ? 'Add Bath Bomb' : 
-                     `Purchase ${addon.name}`}
+                    {paymentLoading && currentAddonId === addon.id
+                      ? 'Preparing checkout...'
+                      : isWine
+                      ? 'Buy Bottle of Wine'
+                      : isCleaning
+                      ? 'Add Cleaning'
+                      : isHike
+                      ? 'Book Guided Hike'
+                      : isBathBomb
+                      ? 'Add Bath Bomb'
+                      : `Purchase ${addon.name}`}
                   </Button>
                 </div>
               )
