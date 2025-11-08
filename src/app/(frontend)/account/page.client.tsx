@@ -5,7 +5,7 @@ import { User } from '@/payload-types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2 } from 'lucide-react'
+import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useSubscription } from '@/hooks/useSubscription'
 import { EditPostsLink } from '@/components/EditPostsLink'
 import Link from 'next/link'
@@ -28,6 +28,10 @@ export default function AccountClient({ user }: AccountClientProps) {
   const { isSubscribed, isLoading } = useSubscription()
   const [transactions, setTransactions] = useState<YocoTransaction[]>([])
   const [loadingTransactions, setLoadingTransactions] = useState(false)
+  const [activeTransaction, setActiveTransaction] = useState<YocoTransaction | null>(null)
+  const [cancelLoading, setCancelLoading] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [cancelSuccess, setCancelSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     const loadTransactions = async () => {
@@ -38,6 +42,12 @@ export default function AccountClient({ user }: AccountClientProps) {
         if (!response.ok) return
         const data = await response.json()
         setTransactions(data.transactions || [])
+        const current = (data.transactions || []).find((tx: YocoTransaction) => {
+          if (tx.status !== 'completed') return false
+          if (!tx.expiresAt) return true
+          return new Date(tx.expiresAt) > new Date()
+        })
+        setActiveTransaction(current || null)
       } catch (error) {
         console.error('Failed to fetch Yoco transactions:', error)
       } finally {
@@ -63,6 +73,42 @@ export default function AccountClient({ user }: AccountClientProps) {
   const isHost = userRoles.includes('host')
   const isAdmin = userRoles.includes('admin')
   const isCustomer = userRoles.includes('customer')
+
+  const handleCancelMembership = async () => {
+    if (!activeTransaction) return
+    setCancelLoading(true)
+    setCancelError(null)
+    setCancelSuccess(null)
+    try {
+      const response = await fetch('/api/yoco/subscriptions/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ transactionId: activeTransaction.id }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to cancel membership')
+      }
+      setCancelSuccess('Membership cancellation requested. Access will be downgraded shortly.')
+      setActiveTransaction(null)
+      setTransactions((prev) =>
+        prev.map((tx) =>
+          tx.id === activeTransaction.id
+            ? { ...tx, status: 'cancelled', expiresAt: tx.expiresAt || new Date().toISOString() }
+            : tx,
+        ),
+      )
+      window.dispatchEvent(new Event('yoco:subscription-updated'))
+    } catch (error) {
+      console.error('Failed to cancel membership:', error)
+      setCancelError(error instanceof Error ? error.message : 'Failed to cancel membership.')
+    } finally {
+      setCancelLoading(false)
+    }
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -280,6 +326,43 @@ export default function AccountClient({ user }: AccountClientProps) {
                   <Badge variant={isSubscribed ? 'default' : 'secondary'}>
                     {isSubscribed ? 'Active' : 'None'}
                   </Badge>
+                  {isSubscribed && activeTransaction && (
+                    <div className="mt-3 space-y-2 text-sm">
+                      {activeTransaction.expiresAt && (
+                        <p className="text-gray-600">
+                          Renewing on{' '}
+                          {new Date(activeTransaction.expiresAt).toLocaleDateString()}
+                        </p>
+                      )}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleCancelMembership}
+                        disabled={cancelLoading}
+                      >
+                        {cancelLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          'Cancel Membership'
+                        )}
+                      </Button>
+                      {cancelError && (
+                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+                          <AlertCircle className="mt-0.5 h-4 w-4" />
+                          <span>{cancelError}</span>
+                        </div>
+                      )}
+                      {cancelSuccess && (
+                        <div className="flex items-start gap-2 rounded-md bg-green-50 p-2 text-xs text-green-700">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                          <span>{cancelSuccess}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

@@ -55,27 +55,36 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (transaction.intent === 'subscription' && status === 'completed') {
-      const plan = transaction.plan || (transaction.entitlement === 'pro' ? 'pro' : 'standard')
+    if (transaction.intent === 'subscription') {
+      const plan =
+        transaction.plan || (transaction.entitlement === 'pro' ? 'pro' : 'standard')
 
-      await payload.update({
-        collection: 'users',
-        id: typeof transaction.user === 'string' ? transaction.user : transaction.user?.id,
-        data: {
-          subscriptionStatus: {
-            status: 'active',
+      if (status === 'completed') {
+        await payload.jobs.queue({
+          task: 'handleSubscriptionEvent',
+          queue: 'subscription-events',
+          input: {
+            event: 'RENEWED',
+            userId: typeof transaction.user === 'string' ? transaction.user : transaction.user?.id,
+            subscriptionId: transactionId,
             plan,
+            entitlement: transaction.entitlement || (plan === 'pro' ? 'pro' : 'standard'),
             expiresAt: expiresAt?.toISOString(),
           },
-          paymentValidation: {
-            lastPaymentDate: now.toISOString(),
-            paymentMethod: 'credit_card',
-            paymentStatus: status,
+        })
+      } else if (status === 'failed' || status === 'cancelled') {
+        await payload.jobs.queue({
+          task: 'handleSubscriptionEvent',
+          queue: 'subscription-events',
+          input: {
+            event: status === 'failed' ? 'TRIAL_ENDED' : 'CANCELED',
+            userId: typeof transaction.user === 'string' ? transaction.user : transaction.user?.id,
+            subscriptionId: transactionId,
+            plan,
+            entitlement: transaction.entitlement || (plan === 'pro' ? 'pro' : 'standard'),
           },
-        },
-      })
-    } else if (status !== 'completed' && !force) {
-      // Optionally handle downgrades or failed payments here
+        })
+      }
     }
 
     return NextResponse.json({ transaction: updatedTransaction })

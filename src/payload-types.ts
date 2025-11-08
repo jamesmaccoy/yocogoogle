@@ -126,6 +126,7 @@ export interface Config {
     tasks: {
       handleSubscriptionEvent: TaskHandleSubscriptionEvent;
       subscriptionDowngradeCheck: TaskSubscriptionDowngradeCheck;
+      requeueFailedSubscriptions: TaskRequeueFailedSubscriptions;
       schedulePublish: TaskSchedulePublish;
       inline: {
         input: unknown;
@@ -1057,7 +1058,12 @@ export interface PayloadJob {
     | {
         executedAt: string;
         completedAt: string;
-        taskSlug: 'inline' | 'handleSubscriptionEvent' | 'subscriptionDowngradeCheck' | 'schedulePublish';
+        taskSlug:
+          | 'inline'
+          | 'handleSubscriptionEvent'
+          | 'subscriptionDowngradeCheck'
+          | 'requeueFailedSubscriptions'
+          | 'schedulePublish';
         taskID: string;
         input?:
           | {
@@ -1090,7 +1096,15 @@ export interface PayloadJob {
         id?: string | null;
       }[]
     | null;
-  taskSlug?: ('inline' | 'handleSubscriptionEvent' | 'subscriptionDowngradeCheck' | 'schedulePublish') | null;
+  taskSlug?:
+    | (
+        | 'inline'
+        | 'handleSubscriptionEvent'
+        | 'subscriptionDowngradeCheck'
+        | 'requeueFailedSubscriptions'
+        | 'schedulePublish'
+      )
+    | null;
   queue?: string | null;
   waitUntil?: string | null;
   processing?: boolean | null;
@@ -2052,6 +2066,14 @@ export interface TaskHandleSubscriptionEvent {
  * via the `definition` "TaskSubscriptionDowngradeCheck".
  */
 export interface TaskSubscriptionDowngradeCheck {
+  input?: unknown;
+  output?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "TaskRequeueFailedSubscriptions".
+ */
+export interface TaskRequeueFailedSubscriptions {
   input?: unknown;
   output?: unknown;
 }

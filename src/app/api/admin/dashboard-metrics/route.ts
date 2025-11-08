@@ -58,6 +58,34 @@ export async function GET(request: NextRequest) {
     const failedCount = docs.filter((tx) => tx.status === 'failed').length
     const pendingCount = docs.filter((tx) => tx.status === 'pending').length
 
+    const staleTransactions = []
+    for (const tx of docs) {
+      if (tx.status !== 'completed' || !tx.expiresAt) continue
+      if (new Date(tx.expiresAt) > now) continue
+      const userId = typeof tx.user === 'string' ? tx.user : tx.user?.id
+      if (!userId) continue
+      try {
+        const user = await payload.findByID({
+          collection: 'users',
+          id: userId,
+        })
+        const subscriptionStatus = user?.subscriptionStatus
+        if (subscriptionStatus?.status === 'active') {
+          staleTransactions.push({
+            transactionId: tx.id,
+            userId,
+            expiresAt: tx.expiresAt,
+            plan: tx.plan || 'standard',
+          })
+        }
+      } catch (error) {
+        req.payload.logger.warn('[admin/dashboard-metrics] unable to load user for stale check', {
+          userId,
+          error,
+        })
+      }
+    }
+
     const listJobs =
       payload.jobs && typeof (payload.jobs as any).list === 'function'
         ? ((payload.jobs as any).list as (args: { queue: string; limit: number }) => Promise<any>)
@@ -119,6 +147,7 @@ export async function GET(request: NextRequest) {
         failedCount,
         pendingCount,
         upcomingExpiring: upcomingExpirations.length,
+        staleActiveCount: staleTransactions.length,
       },
     })
   } catch (error) {

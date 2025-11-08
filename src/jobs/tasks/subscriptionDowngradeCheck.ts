@@ -46,9 +46,67 @@ export const subscriptionDowngradeCheck: TaskHandler = async ({ req }) => {
       })
     }
 
+    const staleTransactions = await payload.find({
+      collection: 'yoco-transactions',
+      req,
+      where: {
+        and: [
+          {
+            intent: {
+              equals: 'subscription',
+            },
+          },
+          {
+            status: {
+              equals: 'completed',
+            },
+          },
+          {
+            expiresAt: {
+              less_than: now,
+            },
+          },
+        ],
+      },
+      limit: 500,
+    })
+
+    let reconciled = 0
+    for (const tx of staleTransactions.docs) {
+      const userId = typeof tx.user === 'string' ? tx.user : tx.user?.id
+      if (!userId) continue
+      try {
+        const user = await payload.findByID({
+          collection: 'users',
+          id: userId,
+          req,
+        })
+        if (user?.subscriptionStatus?.status === 'active') {
+          await payload.update({
+            collection: 'users',
+            id: userId,
+            req,
+            data: {
+              subscriptionStatus: {
+                status: 'none',
+                plan: 'free',
+                expiresAt: null,
+              },
+            },
+          })
+          reconciled++
+        }
+      } catch (error) {
+        req.payload.logger.warn('[jobs:subscriptionDowngradeCheck] failed reconciling user', {
+          userId,
+          error,
+        })
+      }
+    }
+
     return {
       status: 'Success',
-      message: `Processed ${expiredUsers.docs.length} expired subscriptions`,
+      message: `Processed ${expiredUsers.docs.length} user expiries, reconciled ${reconciled} stale transactions`,
     }
   } catch (error) {
     req.payload.logger.error('[jobs:subscriptionDowngradeCheck] Failed to process expired subscriptions', error)

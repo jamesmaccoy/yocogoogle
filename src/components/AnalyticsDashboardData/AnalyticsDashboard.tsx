@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Line } from 'react-chartjs-2'
 import {
   Chart as ChartJS,
@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
@@ -50,6 +51,7 @@ type SubscriptionMetrics = {
   failedCount: number
   pendingCount: number
   upcomingExpiring: number
+  staleActiveCount: number
 }
 
 type DashboardMetrics = {
@@ -93,6 +95,20 @@ const AnalyticsDashboard: React.FC = () => {
   const displayData = analytics || fallbackData
   const chartData = displayData.historicalData || []
 
+  const loadMetrics = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/dashboard-metrics', { credentials: 'include' })
+      if (!response.ok) throw new Error(`Dashboard metrics error: ${response.status}`)
+      const data = await response.json()
+      setMetrics(data)
+      setMetricsError(null)
+    } catch (err) {
+      console.error('Error loading dashboard metrics:', err)
+      setMetrics(null)
+      setMetricsError(err instanceof Error ? err.message : 'Failed to load metrics')
+    }
+  }, [])
+
   useEffect(() => {
     const loadAnalytics = async () => {
       try {
@@ -117,17 +133,7 @@ const AnalyticsDashboard: React.FC = () => {
     }
 
     const loadMetrics = async () => {
-      try {
-        const response = await fetch('/api/admin/dashboard-metrics', { credentials: 'include' })
-        if (!response.ok) throw new Error(`Dashboard metrics error: ${response.status}`)
-        const data = await response.json()
-        setMetrics(data)
-        setMetricsError(null)
-      } catch (err) {
-        console.error('Error loading dashboard metrics:', err)
-        setMetrics(null)
-        setMetricsError(err instanceof Error ? err.message : 'Failed to load metrics')
-      }
+      await loadMetrics()
     }
 
     loadAnalytics()
@@ -137,7 +143,25 @@ const AnalyticsDashboard: React.FC = () => {
       loadMetrics()
     }, 120000)
     return () => clearInterval(interval)
-  }, [])
+  }, [loadMetrics])
+
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        await fetch('/api/admin/subscriptions/reconcile', {
+          method: 'POST',
+          credentials: 'include',
+        })
+        await loadMetrics()
+      } catch (error) {
+        console.error('Failed to trigger reconciliation', error)
+        setMetricsError('Failed to trigger reconciliation')
+      }
+    }
+
+    window.addEventListener('yoco:subscription-audit', handler)
+    return () => window.removeEventListener('yoco:subscription-audit', handler)
+  }, [loadMetrics])
 
   const subscriptionProgress = useMemo(() => {
     if (!metrics?.subscriptionMetrics) return 0
@@ -201,6 +225,35 @@ const AnalyticsDashboard: React.FC = () => {
 
         <Card>
           <CardHeader>
+            <CardTitle>Attention Needed</CardTitle>
+            <CardDescription>Expired transactions still marked active</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-3xl font-semibold">
+              {metrics?.subscriptionMetrics.staleActiveCount ?? '—'}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {metrics?.subscriptionMetrics.staleActiveCount
+                ? 'Investigate these accounts—payments expired but users remain active.'
+                : 'All active memberships line up with transaction expiries.'}
+            </p>
+            {metrics?.subscriptionMetrics.staleActiveCount ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.dispatchEvent(new CustomEvent('yoco:subscription-audit'))}
+              >
+                Trigger Reconciliation
+              </Button>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              The automated reconciliation job runs every 30 minutes; use this button to re-run immediately if you’ve just fixed a payment.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Subscription Job Queue</CardTitle>
             <CardDescription>handleSubscriptionEvent status</CardDescription>
           </CardHeader>
@@ -222,6 +275,15 @@ const AnalyticsDashboard: React.FC = () => {
               value={metrics?.jobMetrics.subscriptionEvents.failed}
               emphasize={Boolean(metrics?.jobMetrics.subscriptionEvents.failed)}
             />
+            <Button asChild size="sm" variant="outline" className="mt-3 w-full">
+              <a
+                href="/admin/jobs"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View Job Queue
+              </a>
+            </Button>
           </CardContent>
         </Card>
 

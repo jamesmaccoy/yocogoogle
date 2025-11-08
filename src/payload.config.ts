@@ -25,6 +25,7 @@ import { AuthRequests } from './collections/AuthRequests'
 import { YocoTransactions } from './collections/YocoTransactions'
 import { handleSubscriptionEvent } from './jobs/tasks/handleSubscriptionEvent'
 import { subscriptionDowngradeCheck } from './jobs/tasks/subscriptionDowngradeCheck'
+import { requeueFailedSubscriptions } from './jobs/tasks/requeueFailedSubscriptions'
 //import analyticsRouter from '@/app/api/analytics/route'
 
 const filename = fileURLToPath(import.meta.url)
@@ -163,11 +164,23 @@ export default buildConfig({
           queue: 'nightly-cron',
         },
       },
+      {
+        slug: 'requeueFailedSubscriptions',
+        handler: requeueFailedSubscriptions,
+        schedule: {
+          cron: '*/30 * * * *',
+          queue: 'subscription-maintenance',
+        },
+      },
     ],
     autoRun: [
       {
         queue: 'nightly-cron',
         limit: 100,
+      },
+      {
+        queue: 'subscription-maintenance',
+        limit: 25,
       },
     ],
   },
