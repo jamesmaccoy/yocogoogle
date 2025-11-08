@@ -821,7 +821,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                     {paymentLoading && currentAddonId === addon.id
                       ? 'Preparing checkout...'
                       : isWine
-                      ? 'Buy Bottle of Wine'
+                      ? 'Include this'
                       : isCleaning
                       ? 'Add Cleaning'
                       : isHike

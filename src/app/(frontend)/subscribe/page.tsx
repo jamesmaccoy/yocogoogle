@@ -98,6 +98,12 @@ export default function SubscribePage() {
   }, [fetchProducts, fetchTransactions, isInitialized])
 
   useEffect(() => {
+    if (!subscriptionStatus.isLoading && subscriptionStatus.isSubscribed) {
+      router.replace('/bookings')
+    }
+  }, [subscriptionStatus.isLoading, subscriptionStatus.isSubscribed, router])
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const isSuccess = params.get('success') === 'true'
     const transactionId = params.get('transactionId')
@@ -160,7 +166,7 @@ export default function SubscribePage() {
         const metadata = {
           intent: 'subscription' as const,
           entitlement: (product.entitlement as 'pro' | 'standard' | 'none') || 'none',
-          plan: product.entitlement === 'pro' ? 'pro' : 'standard',
+          plan: (product.entitlement === 'pro' ? 'pro' : 'standard') as 'pro' | 'standard',
           periodDays: periodToDays(product),
         }
 
@@ -239,12 +245,29 @@ export default function SubscribePage() {
     )
   }
 
-  if (!isInitialized) {
+  if (!isInitialized || subscriptionStatus.isLoading) {
     return (
       <div className="container py-16">
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading subscription data...
+        </div>
+      </div>
+    )
+  }
+
+  if (subscriptionStatus.isSubscribed) {
+    return (
+      <div className="container py-16">
+        <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-8 text-center">
+          <CheckCircle2 className="mx-auto mb-4 h-10 w-10 text-green-500" />
+          <h1 className="text-2xl font-semibold text-foreground">Subscription Active</h1>
+          <p className="mt-2 text-muted-foreground">
+            You already have an active Simple Plek membership. Head over to your bookings to start planning your stay.
+          </p>
+          <Button className="mt-6" onClick={() => router.push('/bookings')}>
+            Go to bookings
+          </Button>
         </div>
       </div>
     )
