@@ -13,7 +13,10 @@ const defaultQuery = {
   endDate: '2025-09-06T13:34:24.736Z',
 }
 
-const buildEndpointReq = (overrides: Partial<typeof defaultQuery> = {}, docs: unknown[] = []) =>
+const buildEndpointReq = (
+  overrides: Partial<typeof defaultQuery & { bookingId?: string }> = {},
+  docs: unknown[] = [],
+) =>
   ({
     query: { ...defaultQuery, ...overrides },
     payload: {
@@ -33,6 +36,33 @@ describe('checkAvailability endpoint', () => {
           { post: { equals: defaultQuery.postId } },
           { fromDate: { less_than: '2025-09-06' } },
           { toDate: { greater_than: '2025-09-04' } },
+        ],
+      },
+      limit: 1,
+      select: {
+        slug: true,
+      },
+      depth: 0,
+    })
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.isAvailable).toBe(true)
+  })
+
+  it('excludes the current booking when bookingId is provided', async () => {
+    const bookingId = 'booking-1'
+    const req = buildEndpointReq({ bookingId }, [])
+    const response = await checkAvailability.handler(req)
+
+    expect(req.payload.find).toHaveBeenCalledWith({
+      collection: 'bookings',
+      where: {
+        and: [
+          { post: { equals: defaultQuery.postId } },
+          { fromDate: { less_than: '2025-09-06' } },
+          { toDate: { greater_than: '2025-09-04' } },
+          { id: { not_equals: bookingId } },
         ],
       },
       limit: 1,

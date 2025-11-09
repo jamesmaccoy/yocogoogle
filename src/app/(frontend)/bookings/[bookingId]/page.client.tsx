@@ -306,8 +306,18 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         throw new Error('No post ID found')
       }
 
+      const availabilityParams = new URLSearchParams({
+        postId: postId,
+        startDate: selectedDates.from.toISOString(),
+        endDate: selectedDates.to.toISOString(),
+      })
+
+      if (data?.id) {
+        availabilityParams.set('bookingId', data.id)
+      }
+
       const availabilityResponse = await fetch(
-        `/api/bookings/check-availability?postId=${postId}&startDate=${selectedDates.from.toISOString()}&endDate=${selectedDates.to.toISOString()}`,
+        `/api/bookings/check-availability?${availabilityParams.toString()}`,
       )
 
       if (!availabilityResponse.ok) {

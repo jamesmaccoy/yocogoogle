@@ -4,7 +4,7 @@ export const checkAvailability: Endpoint = {
   method: 'get',
   path: '/check-availability',
   handler: async (req) => {
-    const { slug, postId, startDate, endDate } = req.query
+    const { slug, postId, startDate, endDate, bookingId } = req.query
 
     if ((!slug && !postId) || !startDate || !endDate) {
       return Response.json(
@@ -59,14 +59,24 @@ export const checkAvailability: Endpoint = {
       const endFormatted = endDateStr
 
       // Find all bookings for this post that overlap with the requested range
+      const whereConditions: Record<string, any>[] = [
+        { post: { equals: resolvedPostId } },
+        { fromDate: { less_than: endFormatted } },
+        { toDate: { greater_than: startFormatted } },
+      ]
+
+      if (bookingId && typeof bookingId === 'string') {
+        whereConditions.push({
+          id: {
+            not_equals: bookingId,
+          },
+        })
+      }
+
       const bookings = await req.payload.find({
         collection: 'bookings',
         where: {
-          and: [
-            { post: { equals: resolvedPostId } },
-            { fromDate: { less_than: endFormatted } },
-            { toDate: { greater_than: startFormatted } },
-          ],
+          and: whereConditions,
         },
         limit: 1,
         select: {
