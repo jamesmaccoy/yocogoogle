@@ -138,17 +138,17 @@ class YocoService {
     return [
       {
         id: 'per_hour',
-        title: '⏰ Studio Space',
-        description: 'Pay as you go hourly service',
-        price: 25.00,
+        title: '🌿 Member Subscription',
+        description: 'Monthly Simple Plek membership with calendar access and community perks',
+        price: 25.0,
         currency: 'ZAR',
-        period: 'hour' as const,
+        period: 'month' as const,
         periodCount: 1,
         category: 'standard' as const,
-        features: ['Wifi', 'Hourly pricing', 'Parking'],
+        features: ['Unlock the booking calendar', 'Member rates on pleks', 'Community events'],
         isEnabled: true,
         entitlement: 'standard' as const,
-        icon: '⏰',
+        icon: '🌿',
       },
       {
         id: 'virtual_wine',

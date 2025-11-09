@@ -29,9 +29,108 @@ export default async function BookingConfirmationPage({
   const duration = typeof resolvedSearchParams.duration === 'string' ? Number(resolvedSearchParams.duration) : null
   const startDate = typeof resolvedSearchParams.startDate === 'string' ? resolvedSearchParams.startDate : null
   const endDate = typeof resolvedSearchParams.endDate === 'string' ? resolvedSearchParams.endDate : null
+  const transactionId = typeof resolvedSearchParams.transactionId === 'string' ? resolvedSearchParams.transactionId : null
+  const intentParam = typeof resolvedSearchParams.intent === 'string' ? resolvedSearchParams.intent : null
+  const isSubscriptionIntent = intentParam === 'subscription'
+
+  let activatedSubscription: {
+    packageName: string
+    amount: number | null
+    currency: string
+    plan: string
+    expiresAt: string | null
+  } | null = null
+
+  if (success && transactionId) {
+    try {
+      const transaction = await payload.findByID({
+        collection: 'yoco-transactions',
+        id: transactionId,
+      })
+
+      if (transaction) {
+        const transactionUserId =
+          typeof transaction.user === 'string' ? transaction.user : transaction.user?.id
+
+        if (transactionUserId === user.id) {
+          const now = new Date()
+          const periodDays =
+            typeof transaction.periodDays === 'number' && transaction.periodDays > 0
+              ? transaction.periodDays
+              : typeof resolvedSearchParams.periodDays === 'string'
+              ? Number(resolvedSearchParams.periodDays)
+              : null
+          const expiresAtDate =
+            transaction.expiresAt && new Date(transaction.expiresAt) > now
+              ? new Date(transaction.expiresAt)
+              : periodDays
+              ? new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000)
+              : null
+
+          const updateData: Record<string, unknown> = {
+            status: 'completed',
+            completedAt: now.toISOString(),
+          }
+          if (expiresAtDate) {
+            updateData.expiresAt = expiresAtDate.toISOString()
+          }
+
+          if (transaction.status !== 'completed') {
+            await payload.update({
+              collection: 'yoco-transactions',
+              id: transactionId,
+              data: updateData,
+            })
+          }
+
+          if (transaction.intent === 'subscription') {
+            const plan =
+              transaction.plan ||
+              (transaction.entitlement === 'pro' ? 'pro' : transaction.entitlement || 'standard')
+            await payload.update({
+              collection: 'users',
+              id: transactionUserId,
+              data: {
+                subscriptionStatus: {
+                  status: 'active',
+                  plan,
+                  expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
+                },
+              },
+            })
+
+            if (payload.jobs && typeof (payload.jobs as any).queue === 'function') {
+              await (payload.jobs as any).queue({
+                task: 'handleSubscriptionEvent',
+                queue: 'subscription-events',
+                input: {
+                  event: 'RENEWED',
+                  userId: transactionUserId,
+                  subscriptionId: transactionId,
+                  plan,
+                  entitlement: transaction.entitlement || 'standard',
+                  expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
+                },
+              })
+            }
+
+            activatedSubscription = {
+              packageName: transaction.packageName || 'Member Subscription',
+              amount: typeof transaction.amount === 'number' ? transaction.amount : null,
+              currency: transaction.currency || 'ZAR',
+              plan,
+              expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error finalizing transaction:', error)
+    }
+  }
 
   // If payment was successful and we have an estimate ID, confirm estimate and create booking
-  if (success && estimateId) {
+  if (success && estimateId && !isSubscriptionIntent) {
     try {
       console.log('Processing payment success callback:', { estimateId, postId, startDate, endDate, duration })
       
@@ -182,6 +281,60 @@ export default async function BookingConfirmationPage({
       }
       // Continue to show confirmation page even if booking creation fails
     }
+  }
+
+  if (activatedSubscription && success && isSubscriptionIntent) {
+    const formattedAmount =
+      activatedSubscription.amount !== null
+        ? `${activatedSubscription.currency} ${activatedSubscription.amount.toFixed(2)}`
+        : '—'
+    return (
+      <div className="container py-16">
+        <div className="mx-auto max-w-2xl text-center space-y-8">
+          <div className="relative mx-auto max-w-xl">
+            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-primary via-purple-500 to-primary opacity-75 blur-lg animate-pulse" />
+            <div className="relative rounded-3xl border border-primary/40 bg-card p-10 shadow-xl">
+              <h1 className="text-4xl font-extrabold tracking-tight mb-2">Membership Activated</h1>
+              <p className="text-muted-foreground mb-8">
+                Welcome to the Simple Plek community. Your member subscription is now live.
+              </p>
+              <div className="space-y-4 text-left">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Membership</span>
+                  <span className="font-semibold">{activatedSubscription.packageName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Plan</span>
+                  <span className="font-semibold capitalize">{activatedSubscription.plan}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Billing</span>
+                  <span className="font-semibold">{formattedAmount} / month</span>
+                </div>
+                {activatedSubscription.expiresAt && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Renews on</span>
+                    <span className="font-semibold">
+                      {new Date(activatedSubscription.expiresAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/bookings" passHref>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                Explore Calendar
+              </Button>
+            </Link>
+            <Link href="/account" passHref>
+              <Button variant="outline">Manage Membership</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Get the most recent booking for this user
