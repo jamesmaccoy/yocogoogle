@@ -7,6 +7,7 @@ import { generateJwtToken, verifyJwtToken } from '@/utilities/token'
 import { unavailableDates } from './endpoints/unavailable-dates'
 import { checkAvailability } from './endpoints/check-availability'
 import { checkAvailabilityHook } from './hooks/checkAvailability'
+import { sendBookingConfirmationHook } from './hooks/sendBookingConfirmation'
 
 export const Booking: CollectionConfig = {
   slug: 'bookings',
@@ -479,6 +480,7 @@ export const Booking: CollectionConfig = {
   },
   hooks: {
     beforeChange: [checkAvailabilityHook],
+    afterChange: [sendBookingConfirmationHook],
   },
   fields: [
     {

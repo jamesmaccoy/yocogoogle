@@ -30,8 +30,8 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     where: {
       and: [
         { post: { equals: data.post } },
-        { fromDate: { less_than_equal: formattedToDate } },
-        { toDate: { greater_than_equal: formattedFromDate } },
+        { fromDate: { less_than: formattedToDate } },
+        { toDate: { greater_than: formattedFromDate } },
       ],
     },
     limit: 10, // Get more bookings for debugging

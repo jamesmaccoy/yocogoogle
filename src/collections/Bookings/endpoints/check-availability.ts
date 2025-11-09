@@ -64,8 +64,8 @@ export const checkAvailability: Endpoint = {
         where: {
           and: [
             { post: { equals: resolvedPostId } },
-            { fromDate: { less_than_equal: endFormatted } },
-            { toDate: { greater_than_equal: startFormatted } },
+            { fromDate: { less_than: endFormatted } },
+            { toDate: { greater_than: startFormatted } },
           ],
         },
         limit: 1,
