@@ -30,6 +30,7 @@ type PostSummary = {
   authors: string[]
   createdAt?: string
   updatedAt?: string
+  authorRoles?: string[]
 }
 
 type MonthlySummary = {
@@ -141,6 +142,7 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
           id: doc.id ?? postId,
           title: doc.title ?? "Untitled property",
           authors,
+          authorRoles: authors.map(() => "Trustee (Pro host)"),
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
         })
@@ -406,6 +408,17 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : ""
 
+  const transactionTimeline = useMemo(() => {
+    return [...transactionsForPeriod]
+      .filter((transaction) => transaction.createdAt)
+      .sort((a, b) => {
+        const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0
+        const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0
+        return bDate - aDate
+      })
+      .slice(0, 12)
+  }, [transactionsForPeriod])
+
   useEffect(() => {
     if (!shareCopied) return
     const timer = setTimeout(() => setShareCopied(false), 2000)
@@ -527,6 +540,59 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
           </CardContent>
         </Card>
       )}
+
+      {!postLoading && !postError && postDetails?.authors?.length ? (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Trustees & pro hosts</CardTitle>
+            <CardDescription>Trusted parties accountable for this trust deed.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {postDetails.authors.map((author, index) => (
+              <div key={`${author}-${index}`} className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2">
+                <span className="text-sm font-medium text-foreground">{author}</span>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {postDetails.authorRoles?.[index] ?? "Trustee"}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {transactionTimeline.length > 0 ? (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Board resolutions & minutes</CardTitle>
+            <CardDescription>
+              Snapshot of the latest transactions recorded against this trust—use as draft minutes when allocating income.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {transactionTimeline.map((transaction) => (
+              <div key={transaction.id} className="rounded-md border border-border/70 px-3 py-2">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-sm font-semibold text-foreground">
+                    {formatDate(transaction.createdAt)}
+                  </span>
+                  <Badge variant={transaction.status === "completed" ? "default" : "outline"}>
+                    {transaction.status.toUpperCase()}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {transaction.packageName || transaction.plan || transaction.entitlement || "Booking"} •{" "}
+                  {formatAmountToZAR(transaction.amount ?? 0)}
+                </p>
+                {transaction.completedAt ? (
+                  <p className="text-xs text-muted-foreground">
+                    Settled on {formatDate(transaction.completedAt)}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {showGlobalSpinner && (
         <div className="mb-8 flex items-center gap-2 text-sm text-muted-foreground">
@@ -684,6 +750,9 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
                     <p>{beneficiary.email || "No email on record"}</p>
                     <p>Bank details: pending capture</p>
                     <p>Income allocation pending</p>
+                    {beneficiary.createdAt ? (
+                      <p>Joined {formatDate(beneficiary.createdAt)}</p>
+                    ) : null}
                   </div>
                 </div>
               ))}
