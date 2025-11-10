@@ -244,6 +244,10 @@ export interface Package {
   minNights?: number | null;
   maxNights?: number | null;
   /**
+   * Number of bookings allowed for the same dates with this package. Leave at 1 to block overlaps.
+   */
+  maxConcurrentBookings?: number | null;
+  /**
    * Legacy RevenueCat product ID (deprecated, use yocoId instead)
    */
   revenueCatId?: string | null;
@@ -1634,6 +1638,7 @@ export interface PackagesSelect<T extends boolean = true> {
   entitlement?: T;
   minNights?: T;
   maxNights?: T;
+  maxConcurrentBookings?: T;
   revenueCatId?: T;
   yocoId?: T;
   relatedPage?: T;

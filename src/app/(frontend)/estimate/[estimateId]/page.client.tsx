@@ -155,6 +155,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   const [customerEntitlement, setCustomerEntitlement] = useState<CustomerEntitlement>('none')
   const [isWineSelected, setIsWineSelected] = useState(false)
   const [packagePrice, setPackagePrice] = useState<number | null>(null)
+  const [packageTotal, setPackageTotal] = useState<number | null>(null)
   const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
 
   const subscriptionStatus = useSubscription()
@@ -291,25 +292,52 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   useEffect(() => {
     if (!selectedPackage) {
       setPackagePrice(null)
+      setPackageTotal(null)
       return
     }
 
-    // Use package-specific base rate when available, otherwise apply multiplier to the post base rate
-    if (selectedPackage.baseRate && selectedPackage.baseRate > 0) {
-      setPackagePrice(selectedPackage.baseRate)
+    const hasFixedPackageRate = Boolean(selectedPackage.baseRate && selectedPackage.baseRate > 0)
+
+    if (hasFixedPackageRate) {
+      const packageBaseRate = selectedPackage.baseRate ?? 0
+      const effectiveDuration =
+        _bookingDuration > 0
+          ? _bookingDuration
+          : Math.max(selectedPackage.minNights ?? selectedPackage.maxNights ?? 1, 1)
+
+      const perNightRate = effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate
+
+      setPackagePrice(perNightRate)
+      setPackageTotal(packageBaseRate)
       return
     }
 
-    const calculatedPrice = _postBaseRate * (selectedPackage.multiplier || 1)
-    setPackagePrice(calculatedPrice)
-  }, [selectedPackage, _postBaseRate])
+    const perNightRate = _postBaseRate * (selectedPackage.multiplier || 1)
+    setPackagePrice(perNightRate)
+    setPackageTotal(perNightRate * _bookingDuration)
+  }, [selectedPackage, _postBaseRate, _bookingDuration])
 
   const formatPrice = (price: number | null) => {
     if (price === null) return 'N/A'
     return `R${price.toFixed(2)}`
   }
 
-  const bookingTotal = packagePrice !== null ? packagePrice * _bookingDuration : _bookingTotal
+  const bookingTotal =
+    packageTotal !== null
+      ? packageTotal
+      : packagePrice !== null
+        ? packagePrice * _bookingDuration
+        : _bookingTotal
+
+  const isFixedPricePackage = Boolean(selectedPackage?.baseRate && selectedPackage.baseRate > 0)
+  const effectiveNightsForDisplay = isFixedPricePackage
+    ? Math.max(
+        _bookingDuration > 0
+          ? _bookingDuration
+          : selectedPackage?.minNights ?? selectedPackage?.maxNights ?? 1,
+        1,
+      )
+    : _bookingDuration
 
   // Handle estimate completion
   const handleEstimate = async () => {
@@ -583,12 +611,28 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                     <span className="text-muted-foreground">Package:</span>
                     <span className="font-medium">{getPackageDisplayName(selectedPackage)}</span>
                   </div>
+                  {isFixedPricePackage ? (
+                    <>
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="text-muted-foreground">Package total:</span>
+                        <span className="font-medium">{formatPrice(bookingTotal)}</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-4">
+                        <span className="text-muted-foreground">
+                          Approx. per night
+                          {effectiveNightsForDisplay ? ` (${effectiveNightsForDisplay} nights)` : ''}:
+                        </span>
+                        <span className="font-medium">{formatPrice(packagePrice)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-muted-foreground">Rate per night:</span>
+                      <span className="font-medium">{formatPrice(packagePrice)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Rate per night:</span>
-                    <span className="font-medium">{formatPrice(packagePrice)}</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Base rate:</span>
+                    <span className="text-muted-foreground">Property base rate:</span>
                     <span className="font-medium">R{_postBaseRate.toFixed(0)}/night</span>
                   </div>
                   <div className="flex justify-between items-center mb-4">

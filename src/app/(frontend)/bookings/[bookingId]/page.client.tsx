@@ -316,6 +316,10 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         availabilityParams.set('bookingId', data.id)
       }
 
+      if (packageSnapshot.id) {
+        availabilityParams.set('packageId', packageSnapshot.id)
+      }
+
       const availabilityResponse = await fetch(
         `/api/bookings/check-availability?${availabilityParams.toString()}`,
       )

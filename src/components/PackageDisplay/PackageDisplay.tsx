@@ -62,8 +62,20 @@ export const PackageDisplay: React.FC<PackageDisplayProps> = ({
   isCreatingEstimate = false
 }) => {
   const displayName = customName || packageData.name || 'Package'
-  const calculatedTotal = total || (packageData.baseRate || baseRate) * (duration || 1) * (packageData.multiplier || 1)
-  const perNightRate = packageData.baseRate || (calculatedTotal / (duration || 1))
+  const isFixedPricePackage = Boolean(packageData.baseRate && packageData.baseRate > 0)
+  const nightsForCalculation = Math.max(
+    duration ?? packageData.maxNights ?? packageData.minNights ?? 1,
+    1,
+  )
+  const calculatedTotal =
+    typeof total === 'number'
+      ? total
+      : isFixedPricePackage
+        ? packageData.baseRate ?? baseRate
+        : (packageData.baseRate ?? baseRate) * nightsForCalculation * (packageData.multiplier || 1)
+  const perNightRate = isFixedPricePackage
+    ? calculatedTotal / nightsForCalculation
+    : (packageData.baseRate ?? baseRate) * (packageData.multiplier || 1)
   
   // Helper function to safely get features
   const getFeatures = () => {
@@ -79,7 +91,7 @@ export const PackageDisplay: React.FC<PackageDisplayProps> = ({
           <div>
             <p className="font-medium text-sm">{displayName}</p>
             <p className="text-xs text-muted-foreground">
-              {duration} {duration === 1 ? 'night' : 'nights'} • {getFeatures().slice(0, 2).join(', ') || 'Standard package'}
+              {nightsForCalculation} {nightsForCalculation === 1 ? 'night' : 'nights'} • {getFeatures().slice(0, 2).join(', ') || 'Standard package'}
             </p>
             {startDate && endDate && (
               <div className="mt-1">
@@ -107,10 +119,14 @@ export const PackageDisplay: React.FC<PackageDisplayProps> = ({
             <div className="text-lg font-bold text-primary">
               R{calculatedTotal.toFixed(0)}
             </div>
-            <div className="text-xs text-muted-foreground">
-              R{perNightRate.toFixed(0)}/night
-            </div>
-            {packageData.multiplier && packageData.multiplier !== 1 && (
+            {nightsForCalculation > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {isFixedPricePackage
+                  ? `~R${perNightRate.toFixed(0)}/night · ${nightsForCalculation} nights`
+                  : `R${perNightRate.toFixed(0)}/night`}
+              </div>
+            )}
+            {!isFixedPricePackage && packageData.multiplier && packageData.multiplier !== 1 && (
               <div className="text-xs text-muted-foreground">
                 {packageData.multiplier > 1 ? '+' : ''}{((packageData.multiplier - 1) * 100).toFixed(0)}% rate
               </div>

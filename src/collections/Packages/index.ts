@@ -83,6 +83,19 @@ const Packages: CollectionConfig = {
       defaultValue: 7, 
       min: 1 
     },
+    {
+      name: 'maxConcurrentBookings',
+      label: 'Simultaneous bookings allowed',
+      type: 'number',
+      required: false,
+      defaultValue: 1,
+      min: 1,
+      admin: {
+        position: 'sidebar',
+        description:
+          'Number of bookings allowed for the same dates with this package. Leave at 1 to block overlaps.',
+      },
+    },
     { 
       name: 'revenueCatId', 
       type: 'text',

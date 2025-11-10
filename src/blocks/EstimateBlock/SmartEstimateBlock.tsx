@@ -123,7 +123,8 @@ const PackageCard = ({
   onSelect: () => void 
 }) => {
   const total = pkg.baseRate || calculateTotal(baseRate, duration, pkg.multiplier)
-  const pricePerNight = pkg.baseRate ? baseRate : (total / duration)
+  const effectiveDuration = Math.max(duration, pkg.minNights || pkg.maxNights || 1, 1)
+  const pricePerNight = pkg.baseRate ? total / effectiveDuration : total / Math.max(duration, 1)
   const multiplierText = pkg.baseRate 
     ? 'Fixed package price' 
     : pkg.multiplier === 1 
@@ -149,7 +150,9 @@ const PackageCard = ({
           <div className="text-right">
             <div className="text-2xl font-bold text-primary">R{total.toFixed(0)}</div>
             <div className="text-sm text-muted-foreground">
-              R{pricePerNight.toFixed(0)}/night
+              {pkg.baseRate
+                ? `~R${pricePerNight.toFixed(0)}/night · ${effectiveDuration} nights`
+                : `R${pricePerNight.toFixed(0)}/night`}
             </div>
             <div className="text-xs text-muted-foreground">
               {multiplierText}
@@ -216,6 +219,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [offerings, setOfferings] = useState<YocoProduct[]>([])
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false)
+  const selectedPackageTotal =
+    selectedPackage && selectedPackage.baseRate && selectedPackage.baseRate > 0
+      ? selectedPackage.baseRate
+      : selectedPackage
+        ? calculateTotal(baseRate, duration, selectedPackage.multiplier)
+        : null
   
   // Availability checking states
   const [unavailableDates, setUnavailableDates] = useState<string[]>([])
@@ -329,10 +338,17 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     setAvailabilityError(null)
     
     try {
-      
-      const response = await fetch(
-        `/api/bookings/check-availability?postId=${postId}&startDate=${fromDate.toISOString()}&endDate=${toDate.toISOString()}`
-      )
+      const params = new URLSearchParams({
+        postId,
+        startDate: fromDate.toISOString(),
+        endDate: toDate.toISOString(),
+      })
+
+      if (selectedPackage?.id) {
+        params.set('packageId', selectedPackage.id)
+      }
+
+      const response = await fetch(`/api/bookings/check-availability?${params.toString()}`)
       
       if (response.ok) {
         const data = await response.json()
@@ -1822,6 +1838,7 @@ Availability Status:
               onBooking={handleBooking}
               onGoToEstimate={handleGoToEstimate}
               isCreatingEstimate={isCreatingEstimate}
+              total={selectedPackageTotal ?? undefined}
             />
           )}
           
