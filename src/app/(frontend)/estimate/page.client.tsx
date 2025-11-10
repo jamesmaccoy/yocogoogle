@@ -1,13 +1,11 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import type { User } from "@/payload-types"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { useYoco } from "@/providers/RevenueCat"
-import { yocoService, YocoProduct, YocoPaymentLink } from "@/lib/yocoService"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Loader2 } from 'lucide-react'
+import { Loader2, AlertCircle } from 'lucide-react'
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Check } from "lucide-react"
@@ -16,6 +14,7 @@ import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 import { formatAmountToZAR } from "@/lib/currency"
+import { Purchases, type Package, type Product, ErrorCode } from "@revenuecat/purchases-js"
 
 type TokenUsageSummary = {
   total: number | null
@@ -31,11 +30,12 @@ interface RevenueCatError extends Error {
   code?: ErrorCode;
 }
 
-// Add type for RevenueCat product with additional properties
-interface RevenueCatProduct extends Omit<Product, 'price'> {
-  price?: number;
-  priceString?: string;
-  currencyCode?: string;
+type PostSummary = {
+  id: string
+  title: string
+  authors: string[]
+  createdAt?: string
+  updatedAt?: string
 }
 
 export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration = 'N/A' }) {
@@ -47,7 +47,10 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   
   const [guests, setGuests] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [guestError, setGuestError] = useState<string | null>(null)
+  const [postDetails, setPostDetails] = useState<PostSummary | null>(null)
+  const [postLoading, setPostLoading] = useState(false)
+  const [postError, setPostError] = useState<string | null>(null)
   
   // Payment states
   const [paymentLoading, setPaymentLoading] = useState(false)
@@ -308,14 +311,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     setSelectedDuration(duration)
   }, [bookingDuration, isWineSelected])
 
-  // Load RevenueCat offerings when initialized
-  useEffect(() => {
-    if (isInitialized) {
-      loadOfferings()
-    }
-  }, [isInitialized])
-
-  const loadOfferings = async () => {
+  const loadOfferings = useCallback(async () => {
     setLoadingOfferings(true)
     try {
       const fetchedOfferings = await Purchases.getSharedInstance().getOfferings()
@@ -325,12 +321,18 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
       const perNightOffering = fetchedOfferings.all["per_night"]
       
       if (perNightOffering && perNightOffering.availablePackages.length > 0) {
-        console.log("Per Night packages:", perNightOffering.availablePackages.map(pkg => ({
-          identifier: pkg.webBillingProduct?.identifier,
-          product: pkg.webBillingProduct,
-          priceString: (pkg.webBillingProduct as RevenueCatProduct)?.priceString,
-          price: (pkg.webBillingProduct as RevenueCatProduct)?.price
-        })))
+        console.log(
+          "Per Night packages:",
+          perNightOffering.availablePackages.map((pkg) => {
+            const product = pkg.webBillingProduct as Product | undefined
+            return {
+              identifier: product?.identifier,
+              product,
+              price: product?.price?.formattedPrice,
+              amountMicros: product?.price?.amountMicros,
+            }
+          }),
+        )
         setOfferings(perNightOffering.availablePackages)
       } else {
         console.warn("No packages found in per_night offering")
@@ -342,7 +344,92 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     } finally {
       setLoadingOfferings(false)
     }
-  }
+  }, [])
+
+  // Load RevenueCat offerings when initialized
+  useEffect(() => {
+    if (isInitialized) {
+      loadOfferings()
+    }
+  }, [isInitialized, loadOfferings])
+
+  useEffect(() => {
+    if (!postId) {
+      setPostDetails(null)
+      setPostError(null)
+      setPostLoading(false)
+      return
+    }
+
+    let isActive = true
+
+    const fetchPostDetails = async () => {
+      setPostLoading(true)
+      setPostError(null)
+
+      try {
+        const response = await fetch(`/api/posts/${postId}`)
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error('Trust deed record not found for this property.')
+          }
+          if (response.status === 401) {
+            throw new Error('Sign in to review trust deed documents for this property.')
+          }
+          throw new Error('Failed to load trust deed context.')
+        }
+
+        const data = await response.json()
+        const doc = data?.doc
+
+        if (!doc) {
+          throw new Error('Trust deed data missing from response.')
+        }
+
+        const rawAuthors = Array.isArray(doc.populatedAuthors)
+          ? doc.populatedAuthors
+          : doc.authors
+
+        const authors: string[] = Array.isArray(rawAuthors)
+          ? rawAuthors
+              .map((author: any) => {
+                if (!author) return null
+                if (typeof author === 'string') return author
+                if (typeof author === 'object') {
+                  return author.name || author.title || author.email || null
+                }
+                return null
+              })
+              .filter((value): value is string => Boolean(value && value.trim()))
+          : []
+
+        if (!isActive) return
+
+        setPostDetails({
+          id: doc.id ?? postId,
+          title: doc.title ?? 'Untitled property',
+          authors,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt,
+        })
+      } catch (err) {
+        if (!isActive) return
+        setPostDetails(null)
+        setPostError(err instanceof Error ? err.message : 'Failed to load trust deed context.')
+      } finally {
+        if (isActive) {
+          setPostLoading(false)
+        }
+      }
+    }
+
+    fetchPostDetails()
+
+    return () => {
+      isActive = false
+    }
+  }, [postId])
 
   // Update package price when package or duration changes
   useEffect(() => {
@@ -381,21 +468,56 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     return formatAmountToZAR(price)
   }
 
+  const formatTrustDate = (value?: string) => {
+    if (!value) return '—'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '—'
+    return date.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  const trustAuthors = postDetails?.authors?.length
+    ? postDetails.authors.join(', ')
+    : null
+
+  const trustTimeline = postDetails
+    ? [
+        postDetails.createdAt ? `Created ${formatTrustDate(postDetails.createdAt)}` : null,
+        postDetails.updatedAt ? `Updated ${formatTrustDate(postDetails.updatedAt)}` : null,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(' • ')
+    : ''
+
+  const activePackageDetails = selectedPackage
+    ? packageDetails[selectedPackage as keyof typeof packageDetails]
+    : undefined
+
   useEffect(() => {
     // Fetch guests
     const fetchGuests = async () => {
       try {
         console.log("Fetching guests...");
+        setGuestError(null);
         const response = await fetch('/api/guests');
         console.log("Guest response:", response);
         if (!response.ok) {
-          throw new Error('Failed to fetch guests');
+          if (response.status === 401) {
+            throw new Error('Please sign in to view beneficiary records associated with this trust.')
+          }
+          throw new Error('Failed to fetch beneficiaries');
         }
         const data = await response.json();
         console.log("Guest data:", data);
-        setGuests(data);
+        setGuests(Array.isArray(data) ? data : []);
+        setGuestError(null);
       } catch (err) {
-        setError(err.message);
+        console.error('Error loading beneficiaries:', err);
+        setGuests([]);
+        setGuestError(err instanceof Error ? err.message : 'Unable to load beneficiary records at this time.');
       } finally {
         setLoading(false);
       }
@@ -445,19 +567,27 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
     
     try {
       // Find the appropriate package based on RevenueCat configuration
-      const selectedPackageDetails = selectedPackage ? packageDetails[selectedPackage] : null
+      const selectedPackageDetails = selectedPackage
+        ? packageDetails[selectedPackage as keyof typeof packageDetails]
+        : null
       if (!selectedPackageDetails) {
         throw new Error("No package selected")
       }
 
       // Add detailed logging
-      console.log("RevenueCat Debug - Available Offerings:", offerings.map(pkg => ({
-        identifier: pkg.webBillingProduct?.identifier,
-        price: (pkg.webBillingProduct as RevenueCatProduct)?.price,
-        priceString: (pkg.webBillingProduct as RevenueCatProduct)?.priceString,
-        title: pkg.webBillingProduct?.title,
-        description: pkg.webBillingProduct?.description
-      })));
+      console.log(
+        "RevenueCat Debug - Available Offerings:",
+        offerings.map((pkg) => {
+          const product = pkg.webBillingProduct as Product | undefined
+          return {
+            identifier: product?.identifier,
+            price: product?.price?.formattedPrice,
+            amountMicros: product?.price?.amountMicros,
+            title: product?.title,
+            description: product?.description,
+          }
+        }),
+      )
 
       console.log("RevenueCat Debug - Selected Package Details:", {
         packageId: selectedPackage,
@@ -548,7 +678,22 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
           
           if (rcError.code === ErrorCode.PurchaseInvalidError) {
             console.log("Invalid purchase")
-            setPaymentError("There was an issue with the purchase. Please try again or contact support.")
+            const titleFragment = postDetails?.title
+              ? `trust deed "${postDetails.title}"`
+              : 'trust deed supporting this property'
+            const authorFragment = trustAuthors ? ` held by ${trustAuthors}` : ''
+            const timelineFragment = postDetails
+              ? [
+                  postDetails.createdAt ? `created ${formatTrustDate(postDetails.createdAt)}` : null,
+                  postDetails.updatedAt ? `last updated ${formatTrustDate(postDetails.updatedAt)}` : null,
+                ]
+                  .filter((value): value is string => Boolean(value))
+                  .join(' • ')
+              : ''
+            const formattedTimeline = timelineFragment ? ` (${timelineFragment})` : ''
+            setPaymentError(
+              `This purchase cannot be completed because the ${titleFragment}${authorFragment}${formattedTimeline} needs updated supporting documents. Please review the trust records or contact support for assistance.`,
+            )
             return
           }
           
@@ -587,25 +732,73 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   if (loading || loadingOfferings) {
     return (
       <div className="container py-10">
-        <h1 className="text-4xl font-bold tracking-tighter mb-8">Start your curated stay</h1>
-        <p>Loading booking details...</p>
+        <h1 className="text-4xl font-bold tracking-tighter mb-8">Trust deed booking statement</h1>
+        <p>Loading beneficiary records and booking options...</p>
       </div>
     )
   }
 
-  if (error) {
+  if (guestError) {
     return (
       <div className="container py-10">
-        <h1 className="text-4xl font-bold tracking-tighter mb-8">Start your curated stay</h1>
-        <p className="text-error">Error: {error}</p>
+        <h1 className="text-4xl font-bold tracking-tighter mb-8">Trust deed booking statement</h1>
+        <p className="text-error">Error: {guestError}</p>
       </div>
     )
   }
 
   return (
     <div className="container py-10">
-      <h1 className="text-4xl font-bold tracking-tighter mb-8">Start your curated stay</h1>
+      <h1 className="text-4xl font-bold tracking-tighter mb-8">
+        {postDetails ? `Trust deed statement for ${postDetails.title}` : "Trust deed booking statement"}
+      </h1>
+      {postDetails && (
+        <p className="mb-6 text-sm uppercase tracking-wide text-muted-foreground">
+          Supporting documents for {postDetails.id}
+        </p>
+      )}
       <AIAssistant />
+      {postLoading && (
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading trust deed context...
+        </div>
+      )}
+      {!postLoading && postError && (
+        <div className="mb-6 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5" />
+          <span>{postError}</span>
+        </div>
+      )}
+      {!postLoading && !postError && postDetails && (
+        <Card className="mb-6 border-primary/40 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Trust deed overview</CardTitle>
+            <CardDescription>
+              {trustAuthors ? `Compiled by ${trustAuthors}` : "No author information recorded"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm md:grid-cols-2">
+            <div>
+              <p className="text-muted-foreground">Created</p>
+              <p className="font-medium text-foreground">{formatTrustDate(postDetails.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Last updated</p>
+              <p className="font-medium text-foreground">{formatTrustDate(postDetails.updatedAt)}</p>
+            </div>
+            <div className="md:col-span-2">
+              <p className="text-muted-foreground">Trust reference</p>
+              <p className="font-medium text-foreground">{postDetails.id}</p>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <p className="text-xs text-muted-foreground/80">
+              {trustTimeline || 'Timeline unavailable.'}
+            </p>
+          </CardFooter>
+        </Card>
+      )}
       <div className="mb-6 rounded-lg border border-border bg-muted/40 p-4">
         <h3 className="text-sm font-semibold text-foreground">Latest AI tokens</h3>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -660,16 +853,16 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
           <Card className="border-2 border-primary bg-primary/5">
             <CardHeader>
               <CardTitle>
-                {selectedPackage ? packageDetails[selectedPackage]?.title : "Loading..."}
+                {activePackageDetails ? activePackageDetails.title : "Loading..."}
               </CardTitle>
               <CardDescription>
-                {selectedPackage ? packageDetails[selectedPackage]?.description : ""}
+                {activePackageDetails?.description ?? ""}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
-                {selectedPackage && packageDetails[selectedPackage]?.features.map((feature, index) => (
-                  <li key={index} className="flex items-center text-sm">
+                {activePackageDetails?.features?.map((feature: string, index: number) => (
+                  <li key={`${feature}-${index}`} className="flex items-center text-sm">
                     <Check className="mr-2 h-4 w-4 text-primary" />
                     {feature}
                   </li>
@@ -728,7 +921,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
         <div className="flex justify-between items-center mb-4">
           <span className="text-muted-foreground">Package:</span>
           <span className="font-medium">
-            {selectedPackage ? packageDetails[selectedPackage]?.title : "Not selected"}
+            {activePackageDetails ? activePackageDetails.title : "Not selected"}
           </span>
         </div>
         <div className="flex justify-between items-center mb-4">
@@ -799,7 +992,44 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
         )}
       </div>
 
-     
+      <Card className="mb-8 border-border">
+        <CardHeader>
+          <CardTitle>Beneficiary ledger</CardTitle>
+          <CardDescription>
+            Tracking who receives the short-term rental income under this trust deed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {guests.length > 0 ? (
+            <ul className="space-y-3">
+              {guests.map((beneficiary) => (
+                <li
+                  key={beneficiary.id}
+                  className="flex flex-col gap-1 rounded-md border border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {beneficiary.name || 'Unnamed beneficiary'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {beneficiary.email || 'No email on record'}
+                    </p>
+                  </div>
+                  <div className="text-xs text-muted-foreground sm:text-right">
+                    <p>Bank details: pending capture</p>
+                    <p>Income allocation pending</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No beneficiaries recorded yet. Add bookings to populate the ledger.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   )
 } 
