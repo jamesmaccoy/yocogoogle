@@ -54,7 +54,7 @@ export const checkAvailability: Endpoint = {
       // Extract just the date part (YYYY-MM-DD) to avoid timezone issues
       const startDateStr = requestStart.toISOString().split('T')[0]
       const endDateStr = requestEnd.toISOString().split('T')[0]
-
+      
       // Format dates as YYYY-MM-DD for database queries
       const startFormatted = startDateStr
       const endFormatted = endDateStr

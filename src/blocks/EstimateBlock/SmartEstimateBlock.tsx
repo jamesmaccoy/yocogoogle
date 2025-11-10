@@ -1518,6 +1518,7 @@ Availability Status:
                 onChange={(e) => {
                   const date = new Date(e.target.value)
                   setStartDate(date)
+                  packagesSuggestedRef.current = false
                   if (endDate && date > endDate) {
                     setEndDate(new Date(date.getTime() + duration * 24 * 60 * 60 * 1000))
                   }
@@ -1534,6 +1535,7 @@ Availability Status:
                 onChange={(e) => {
                   const date = new Date(e.target.value)
                   setEndDate(date)
+                  packagesSuggestedRef.current = false
                   if (startDate && date < startDate) {
                     setStartDate(new Date(date.getTime() - duration * 24 * 60 * 60 * 1000))
                   }
@@ -1709,53 +1711,54 @@ Availability Status:
     }
   }
 
-  // Update duration when dates change and auto-suggest packages
+  // Update duration when dates change, re-check availability, and decide when to show packages
   useEffect(() => {
-    if (startDate && endDate && !packagesSuggestedRef.current) {
-      const newDuration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (!startDate || !endDate) return
+
+    const msPerDay = 1000 * 60 * 60 * 24
+    const newDuration = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / msPerDay))
+    if (newDuration !== duration) {
       setDuration(newDuration)
-      
-      // Immediately check availability for the selected dates
-      // This ensures availability is checked as soon as dates are selected
-      const checkAvailabilityImmediately = async () => {
-        await checkDateAvailability(startDate, endDate)
-      }
-      checkAvailabilityImmediately()
-      
-      // Check if this is from pre-populated data (latestEstimate) or user selection
-      if (latestEstimate && latestEstimate.fromDate && latestEstimate.toDate) {
-        const estimateFrom = new Date(latestEstimate.fromDate)
-        const estimateTo = new Date(latestEstimate.toDate)
-        const isFromEstimate = startDate.getTime() === estimateFrom.getTime() && 
-                               endDate.getTime() === estimateTo.getTime()
-        
-        if (isFromEstimate && messages.length > 0) {
-          // This is from pre-populated estimate data, suggest packages immediately
-          packagesSuggestedRef.current = true
-          setTimeout(() => {
-            const welcomeBackMessage: Message = {
-              role: 'assistant',
-              content: `I've loaded your previous booking for ${newDuration} ${newDuration === 1 ? 'night' : 'nights'} from ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}. Here are the available packages for your stay:`,
-              type: 'text'
-            }
-            setMessages(prev => [...prev, welcomeBackMessage])
-            
-            setTimeout(() => {
-              showAvailablePackages()
-            }, 500)
-          }, 1000)
-        } else {
-          // This is from user interaction, use normal flow
-          packagesSuggestedRef.current = true
-          suggestPackagesAfterDateSelection()
-        }
-      } else {
-        // No estimate data, use normal flow
+    }
+
+    checkDateAvailability(startDate, endDate)
+
+    if (packagesSuggestedRef.current) {
+      return
+    }
+
+    if (latestEstimate && latestEstimate.fromDate && latestEstimate.toDate) {
+      const estimateFrom = new Date(latestEstimate.fromDate)
+      const estimateTo = new Date(latestEstimate.toDate)
+      const isFromEstimate =
+        startDate.getTime() === estimateFrom.getTime() && endDate.getTime() === estimateTo.getTime()
+
+      if (isFromEstimate && messages.length > 0) {
         packagesSuggestedRef.current = true
-        suggestPackagesAfterDateSelection()
+        setTimeout(() => {
+          const welcomeBackMessage: Message = {
+            role: 'assistant',
+            content: `I've loaded your previous booking for ${newDuration} ${
+              newDuration === 1 ? 'night' : 'nights'
+            } from ${format(startDate, 'MMM dd')} to ${format(
+              endDate,
+              'MMM dd, yyyy',
+            )}. Here are the available packages for your stay:`,
+            type: 'text',
+          }
+          setMessages((prev) => [...prev, welcomeBackMessage])
+
+          setTimeout(() => {
+            showAvailablePackages()
+          }, 500)
+        }, 1000)
+        return
       }
     }
-  }, [startDate, endDate, latestEstimate]) // Removed messages.length from dependencies
+
+    packagesSuggestedRef.current = true
+    suggestPackagesAfterDateSelection()
+  }, [startDate, endDate, latestEstimate, duration, messages.length])
   
   return (
     <Card className={cn("w-full max-w-2xl mx-auto", className)}>

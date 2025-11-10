@@ -115,7 +115,7 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         packageId: resolveBookingPackageId(b),
       })),
     })
-
+    
     throw new APIError(
       `Booking dates are not available. Found ${conflictingBookings.length} conflicting booking(s) and the limit for this package is ${concurrencyLimit}.`,
       400,
