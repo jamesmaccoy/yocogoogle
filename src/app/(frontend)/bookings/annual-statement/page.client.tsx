@@ -4,9 +4,13 @@ import { useEffect, useMemo, useState } from "react"
 import type { User } from "@/payload-types"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { formatAmountToZAR } from "@/lib/currency"
-import { Loader2, AlertCircle } from "lucide-react"
+import { Loader2, AlertCircle, UserIcon, CopyIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { useUserContext } from "@/context/UserContext"
 
 type YocoTransactionRecord = {
   id: string
@@ -92,6 +96,9 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
   const [beneficiaries, setBeneficiaries] = useState<User[]>([])
   const [beneficiariesLoading, setBeneficiariesLoading] = useState(true)
   const [beneficiariesError, setBeneficiariesError] = useState<string | null>(null)
+
+  const { currentUser } = useUserContext()
+  const [shareCopied, setShareCopied] = useState(false)
 
   const effectiveYear = Number.isFinite(year) ? year : undefined
 
@@ -361,6 +368,63 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
     }
   }, [transactionsForPeriod])
 
+  const mostPopularPackage = useMemo(() => {
+    if (!transactionsForPeriod.length) return null
+
+    const counts = new Map<
+      string,
+      {
+        count: number
+        completedRevenue: number
+      }
+    >()
+
+    transactionsForPeriod.forEach((transaction) => {
+      const key =
+        transaction.packageName ||
+        transaction.plan ||
+        transaction.entitlement ||
+        (transaction.status === "completed" ? "Settled booking" : "General booking")
+
+      const current = counts.get(key) ?? { count: 0, completedRevenue: 0 }
+      current.count += 1
+      if (transaction.status === "completed") {
+        current.completedRevenue += transaction.amount ?? 0
+      }
+      counts.set(key, current)
+    })
+
+    let leader: { name: string; count: number; completedRevenue: number } | null = null
+    counts.forEach((value, key) => {
+      if (!leader || value.count > leader.count) {
+        leader = { name: key, count: value.count, completedRevenue: value.completedRevenue }
+      }
+    })
+
+    return leader
+  }, [transactionsForPeriod])
+
+  const shareUrl = typeof window !== "undefined" ? window.location.href : ""
+
+  useEffect(() => {
+    if (!shareCopied) return
+    const timer = setTimeout(() => setShareCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [shareCopied])
+
+  const copyShareUrl = () => {
+    if (!shareUrl) return
+    navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => setShareCopied(true))
+      .catch((error) => console.error("Failed to copy statement URL:", error))
+  }
+
+  const formatRole = (role?: User["role"]) => {
+    if (!role) return "Viewer"
+    return role.charAt(0).toUpperCase() + role.slice(1)
+  }
+
   const trustAuthors = postDetails?.authors?.length ? postDetails.authors.join(", ") : null
   const showGlobalSpinner = transactionsLoading && beneficiariesLoading && (postLoading || Boolean(postId))
 
@@ -397,11 +461,38 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
 
       {!postLoading && !postError && postDetails && (
         <Card className="mb-6 border-primary/40 bg-primary/5">
-          <CardHeader>
-            <CardTitle>{postDetails.title}</CardTitle>
-            <CardDescription>
-              {trustAuthors ? `Trust deed compiled by ${trustAuthors}` : "No author details recorded for this trust."}
-            </CardDescription>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>{postDetails.title}</CardTitle>
+              <CardDescription>
+                {trustAuthors ? `Trust deed compiled by ${trustAuthors}` : "No author details recorded for this trust."}
+              </CardDescription>
+            </div>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline">Share statement</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Share annual booking statement</DialogTitle>
+                  <DialogDescription>Copy the secure link below to share these figures with trustees and beneficiaries.</DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input value={shareUrl} readOnly className="flex-1" />
+                    <Button size="sm" onClick={copyShareUrl}>
+                      <CopyIcon className="mr-2 h-4 w-4" />
+                      {shareCopied ? "Copied!" : "Copy"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {currentUser
+                      ? `Shared by ${currentUser.name || currentUser.email || "You"} (${formatRole(currentUser.role)})`
+                      : "Share link generated for your current session."}
+                  </p>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent className="grid gap-4 text-sm md:grid-cols-2">
             <div>
@@ -467,15 +558,27 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
         </Card>
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total reviews</CardTitle>
-            <Badge className="w-fit bg-primary/10 text-primary">12-month scope</Badge>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Most popular package</CardTitle>
+            <Badge className="w-fit bg-primary/10 text-primary">Top booking</Badge>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-foreground">{statementTotals.totalCount}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Transactions analysed</p>
+            {mostPopularPackage ? (
+              <>
+                <p className="text-2xl font-bold text-foreground">{mostPopularPackage.name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {mostPopularPackage.count} booking{mostPopularPackage.count === 1 ? "" : "s"} •{" "}
+                  {formatAmountToZAR(mostPopularPackage.completedRevenue)} settled
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No package data for the selected period.</p>
+            )}
           </CardContent>
         </Card>
       </div>
+      <p className="mb-8 text-right text-xs text-muted-foreground">
+        Analysed {statementTotals.totalCount} transaction{statementTotals.totalCount === 1 ? "" : "s"} over the period.
+      </p>
 
       <Card className="mb-8 border-border">
         <CardHeader>
@@ -541,25 +644,33 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
               Loading beneficiary records...
             </div>
           ) : beneficiaries.length > 0 ? (
-            <ul className="space-y-3">
+            <div className="space-y-3">
               {beneficiaries.map((beneficiary) => (
-                <li
+                <div
                   key={beneficiary.id}
-                  className="flex flex-col gap-1 rounded-md border border-border/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="shadow-sm p-3 border border-border rounded-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {beneficiary.name || "Unnamed beneficiary"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{beneficiary.email || "No email on record"}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 border border-border rounded-full">
+                      <UserIcon className="size-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {beneficiary.name || beneficiary.email || "Unnamed beneficiary"}
+                      </p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        {formatRole(beneficiary.role)}
+                      </p>
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground sm:text-right">
+                    <p>{beneficiary.email || "No email on record"}</p>
                     <p>Bank details: pending capture</p>
                     <p>Income allocation pending</p>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">
               No beneficiaries recorded yet. Once bookings include guests, their details will appear here for auditing.
