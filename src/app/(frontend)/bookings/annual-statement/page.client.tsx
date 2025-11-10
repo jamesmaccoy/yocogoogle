@@ -47,7 +47,7 @@ interface AnnualStatementClientProps {
   year?: number
 }
 
-const monthLabelFormatter = new Intl.DateTimeFormat(undefined, {
+const monthLabelFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   year: "numeric",
 })
@@ -56,7 +56,7 @@ const formatDate = (value?: string) => {
   if (!value) return "—"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
