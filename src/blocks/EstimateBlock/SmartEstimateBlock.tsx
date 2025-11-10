@@ -344,8 +344,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         endDate: toDate.toISOString(),
       })
 
-      if (selectedPackage?.id) {
-        params.set('packageId', selectedPackage.id)
+      const activePackageId = selectedPackage?.id || packages[0]?.id
+      if (activePackageId) {
+        params.set('packageId', activePackageId)
       }
 
       const response = await fetch(`/api/bookings/check-availability?${params.toString()}`)
@@ -1023,6 +1024,21 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages])
+
+  useEffect(() => {
+    if (packages.length === 0) {
+      return
+    }
+
+    if (selectedPackage && packages.some((pkg) => pkg.id === selectedPackage.id)) {
+      return
+    }
+
+    const nextPackage = packages[0]
+    if (nextPackage) {
+      setSelectedPackage(nextPackage)
+    }
+  }, [packages, selectedPackage?.id])
   
   const handleQuickAction = (action: string, data?: any) => {
     let message = ''
