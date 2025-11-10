@@ -422,7 +422,24 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
 
   const formatRole = (role?: User["role"]) => {
     if (!role) return "Viewer"
-    return role.charAt(0).toUpperCase() + role.slice(1)
+
+    const normalise = (value: unknown): string | null => {
+      if (!value) return null
+      if (typeof value === "string") return value
+      if (typeof value === "object") {
+        if (Array.isArray(value)) {
+          const first = value.find(Boolean)
+          return typeof first === "string" ? first : null
+        }
+        const entries = Object.values(value as Record<string, unknown>).flat()
+        const first = entries.find((item) => typeof item === "string") as string | undefined
+        return first ?? null
+      }
+      return String(value)
+    }
+
+    const resolved = normalise(role) ?? "viewer"
+    return resolved.charAt(0).toUpperCase() + resolved.slice(1)
   }
 
   const trustAuthors = postDetails?.authors?.length ? postDetails.authors.join(", ") : null
