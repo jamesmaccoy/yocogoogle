@@ -16,6 +16,7 @@ import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
+import { enZA } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
 import { calculateTotal } from '@/lib/calculateTotal'
 import { formatAmountToZAR } from '@/lib/currency'
@@ -662,6 +663,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                           </div>
                           <label className="text-lg font-medium">Booking Dates:</label>
                           <Calendar
+                            locale={enZA}
                             mode="range"
                             selected={{
                               from: data?.fromDate ? new Date(data.fromDate) : undefined,
@@ -704,7 +706,8 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                 </Button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-0" align="start">
-                                <Calendar
+                          <Calendar
+                            locale={enZA}
                                   initialFocus
                                   mode="range"
                                   defaultMonth={selectedDates?.from}
