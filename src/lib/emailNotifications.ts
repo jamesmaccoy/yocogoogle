@@ -35,12 +35,24 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     
     // Send email using the configured Resend SMTP transporter
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-      to: data.hostEmail,
+      from:
+        process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
+          ? {
+              name: process.env.EMAIL_FROM_NAME,
+              address: process.env.EMAIL_FROM_ADDRESS,
+            }
+          : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
+      to:
+        data.hostName && data.hostEmail
+          ? {
+              name: data.hostName,
+              address: data.hostEmail,
+            }
+          : data.hostEmail,
       subject: `New Estimate Request for ${data.propertyTitle}`,
       html: generateEstimateRequestEmailHTML(data),
       // Optional: Add text version for better email client compatibility
-      text: generateEstimateRequestEmailText(data)
+      text: generateEstimateRequestEmailText(data),
     })
     
     console.log('✅ Estimate request notification sent successfully')
@@ -74,8 +86,20 @@ export async function sendBookingConfirmationEmail(
   })
 
   await transporter.sendMail({
-    from: process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-    to: data.recipientEmail,
+    from:
+      process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
+        ? {
+            name: process.env.EMAIL_FROM_NAME,
+            address: process.env.EMAIL_FROM_ADDRESS,
+          }
+        : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
+    to:
+      data.recipientName && data.recipientEmail
+        ? {
+            name: data.recipientName,
+            address: data.recipientEmail,
+          }
+        : data.recipientEmail,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
     text: textBody,

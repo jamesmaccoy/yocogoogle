@@ -4,7 +4,7 @@ import { Media } from '@/components/Media'
 import { Booking, User } from '@/payload-types'
 import { formatDateTime } from '@/utilities/formatDateTime'
 import { PlusCircleIcon, TrashIcon, UserIcon, FileText, Lock, Package, Calendar as CalendarIcon } from 'lucide-react'
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import InviteUrlDialog from './_components/invite-url-dialog'
 import SimplePageRenderer from './_components/SimplePageRenderer'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { calculateTotal } from '@/lib/calculateTotal'
 import { formatAmountToZAR } from '@/lib/currency'
+import BookingSidebar from './_components/BookingSidebar'
 
 type Props = {
   data: Booking
@@ -91,6 +92,14 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   
   // Error state for estimate creation
   const [estimateError, setEstimateError] = useState<string | null>(null)
+  const [assistantHistory, setAssistantHistory] = useState<
+    {
+      role: 'user' | 'assistant'
+      content: string
+      timestamp: number
+      threadId: number
+    }[]
+  >([])
 
   const packageSnapshot = React.useMemo(() => {
     const selectedPackage = data?.selectedPackage
@@ -275,7 +284,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     setRemovedGuests((prev) => [...prev, guestId])
   }
 
-  const loadUnavailableDates = async () => {
+  const loadUnavailableDates = useCallback(async () => {
     const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
     if (!postId) return
     
@@ -283,8 +292,8 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     try {
       const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
       if (response.ok) {
-        const data = await response.json()
-        const dates = data.unavailableDates.map((dateStr: string) => new Date(dateStr))
+        const responseData = await response.json()
+        const dates = responseData.unavailableDates.map((dateStr: string) => new Date(dateStr))
         setUnavailableDates(dates)
       }
     } catch (error) {
@@ -292,7 +301,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     } finally {
       setLoadingUnavailableDates(false)
     }
-  }
+  }, [data?.post])
 
   const handleEstimateRequest = async () => {
     if (!selectedDates?.from || !selectedDates?.to) return
@@ -469,7 +478,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   }
 
   // Create booking context for AI Assistant
-  const getBookingContext = () => {
+  const getBookingContext = useCallback(() => {
     const booking = data
     const post = typeof booking?.post === 'string' ? null : booking?.post
     
@@ -517,340 +526,429 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         content: page.layout
       }))
     }
-  }
+  }, [addonPackages, data, relatedPages])
+
+  const handleAskAssistant = useCallback(() => {
+    if (typeof window === 'undefined') return
+
+    window.dispatchEvent(
+      new CustomEvent('openAIAssistant', {
+        detail: getBookingContext(),
+      }),
+    )
+  }, [getBookingContext])
+
+  const handleStartEstimateFlow = useCallback(() => {
+    loadUnavailableDates()
+    setEstimateError(null)
+    setIsDatePickerOpen(true)
+  }, [loadUnavailableDates])
+
+  const handleScrollToAddons = useCallback(() => {
+    const target = document.getElementById('booking-addons')
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [])
+
+  const totalGuests = React.useMemo(() => {
+    const guestCount = Array.isArray(data?.guests)
+      ? data.guests.filter((guest) => {
+          if (typeof guest === 'string') {
+            return !removedGuests.includes(guest)
+          }
+          return !removedGuests.includes(guest.id)
+        }).length
+      : 0
+
+    const hasCustomer = Boolean(data?.customer)
+    return guestCount + (hasCustomer ? 1 : 0)
+  }, [data?.customer, data?.guests, removedGuests])
+
+  const historyKey = React.useMemo(
+    () => (data?.id ? `ai:bookingHistory:${data.id}` : null),
+    [data?.id],
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !historyKey) return
+
+    try {
+      const stored: any[] = JSON.parse(window.localStorage.getItem(historyKey) ?? '[]')
+      setAssistantHistory(stored)
+    } catch {
+      setAssistantHistory([])
+    }
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail
+      if (detail?.key === historyKey && Array.isArray(detail?.history)) {
+        setAssistantHistory(detail.history)
+      }
+    }
+
+    window.addEventListener('aiHistoryUpdate', handler as EventListener)
+    return () => {
+      window.removeEventListener('aiHistoryUpdate', handler as EventListener)
+    }
+  }, [historyKey])
+
+  const clearAssistantHistory = useCallback(() => {
+    if (typeof window === 'undefined' || !historyKey) return
+    window.localStorage.removeItem(historyKey)
+    const empty: any[] = []
+    setAssistantHistory(empty)
+    window.dispatchEvent(
+      new CustomEvent('aiHistoryUpdate', { detail: { key: historyKey, history: empty } }),
+    )
+  }, [historyKey])
 
   return (
     <div className="container my-10">
-      <Tabs defaultValue="details" className="mt-10 max-w-screen-md mx-auto">
-        <TabsList className="mb-6 bg-muted p-2 rounded-full flex flex-row gap-2">
-          <TabsTrigger value="details" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-            <FileText className="h-5 w-5" />
-            <span className="hidden sm:inline">Booking & Guests</span>
-          </TabsTrigger>
-          {relatedPages.length > 0 && (
-            <TabsTrigger value="sensitive" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-              <Lock className="h-5 w-5" />
-              <span className="hidden sm:inline">Check-in Info</span>
-            </TabsTrigger>
-          )}
-        </TabsList>
-        <TabsContent value="details">
-          {data && 'post' in data && typeof data?.post !== 'string' ? (
-            <div className="space-y-8">
-              {/* Booking Details Section */}
-              <div className="flex items-start flex-col md:flex-row gap-5 md:gap-10">
-                <div className="md:py-5 py-3">
-                  <h1 className="text-4xl mb-3 font-bold">{data?.post.title}</h1>
-                  <div className="flex flex-col gap-2">
-                    <label className="text-lg font-medium">Booking Details:</label>
-                    <div className="text-muted-foreground text-sm">
-                      {data?.selectedPackage && data.selectedPackage.package && typeof data.selectedPackage.package === 'object'
-                        ? `Package: ${data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'}`
-                        : data?.selectedPackage && data.selectedPackage.customName
-                        ? `Package: ${data.selectedPackage.customName}`
-                        : 'Package: No package assigned'}
-                    </div>
-                    <div className="text-muted-foreground text-xs">
-                      Rate: {formatAmountToZAR(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
-                      {currentPackageTotal !== null && typeof currentPackageTotal === 'number'
-                        ? ` · Booking total: ${formatAmountToZAR(currentPackageTotal)}`
-                        : ''}
-                    </div>
-                    <label className="text-lg font-medium">Booking Dates:</label>
-                    <Calendar
-                      mode="range"
-                      selected={{
-                        from: data?.fromDate ? new Date(data.fromDate) : undefined,
-                        to: data?.toDate ? new Date(data.toDate) : undefined,
-                      }}
-                      numberOfMonths={2}
-                      className="max-w-md"
-                    />
-                    <div className="text-muted-foreground text-sm mt-1">
-                      {data?.fromDate && data?.toDate
-                        ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
-                        : 'Select a start and end date'}
-                    </div>
-                    
-                    {/* Request New Estimate Button */}
-                    <div className="mt-4">
-                      <Popover open={isDatePickerOpen} onOpenChange={(open) => {
-                        setIsDatePickerOpen(open)
-                        if (open) {
-                          loadUnavailableDates()
-                        }
-                      }}>
-                        <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-full justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {selectedDates?.from ? (
-                              selectedDates.to ? (
-                                <>
-                                  {format(selectedDates.from, "LLL dd, y")} -{" "}
-                                  {format(selectedDates.to, "LLL dd, y")}
-                                </>
-                              ) : (
-                                format(selectedDates.from, "LLL dd, y")
-                              )
-                            ) : (
-                              <span>Request new estimate for different dates</span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
+      <div className="flex flex-col gap-10 lg:flex-row">
+        <div className="lg:w-[280px] lg:flex-shrink-0">
+          <BookingSidebar
+            booking={data}
+            user={user}
+            packageSnapshot={packageSnapshot}
+            bookingDuration={bookingDuration}
+            currentPackageTotal={currentPackageTotal}
+            totalGuests={totalGuests}
+            onAskAssistant={handleAskAssistant}
+            onStartEstimate={handleStartEstimateFlow}
+            onScrollToAddons={handleScrollToAddons}
+            isSubmittingEstimate={isSubmittingEstimate}
+            hasCheckInInfo={relatedPages.length > 0}
+            history={assistantHistory}
+            onClearHistory={assistantHistory.length > 0 ? clearAssistantHistory : undefined}
+          />
+        </div>
+        <div className="flex-1">
+          <div className="max-w-4xl space-y-10">
+            <Tabs defaultValue="details" className="mt-0">
+              <TabsList className="mb-6 bg-muted p-2 rounded-full flex flex-row gap-2">
+                <TabsTrigger value="details" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
+                  <FileText className="h-5 w-5" />
+                  <span className="hidden sm:inline">Booking & Guests</span>
+                </TabsTrigger>
+                {relatedPages.length > 0 && (
+                  <TabsTrigger value="sensitive" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
+                    <Lock className="h-5 w-5" />
+                    <span className="hidden sm:inline">Check-in Info</span>
+                  </TabsTrigger>
+                )}
+              </TabsList>
+              <TabsContent value="details">
+                {data && 'post' in data && typeof data?.post !== 'string' ? (
+                  <div className="space-y-8">
+                    {/* Booking Details Section */}
+                    <div className="flex items-start flex-col md:flex-row gap-5 md:gap-10">
+                      <div className="py-3 md:py-5">
+                        <h1 className="mb-3 text-4xl font-bold">{data?.post.title}</h1>
+                        <div className="flex flex-col gap-2">
+                          <label className="text-lg font-medium">Booking Details:</label>
+                          <div className="text-sm text-muted-foreground">
+                            {data?.selectedPackage && data.selectedPackage.package && typeof data.selectedPackage.package === 'object'
+                              ? `Package: ${data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'}`
+                              : data?.selectedPackage && data.selectedPackage.customName
+                              ? `Package: ${data.selectedPackage.customName}`
+                              : 'Package: No package assigned'}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Rate: {formatAmountToZAR(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
+                            {currentPackageTotal !== null && typeof currentPackageTotal === 'number'
+                              ? ` · Booking total: ${formatAmountToZAR(currentPackageTotal)}`
+                              : ''}
+                          </div>
+                          <label className="text-lg font-medium">Booking Dates:</label>
                           <Calendar
-                            initialFocus
                             mode="range"
-                            defaultMonth={selectedDates?.from}
-                            selected={selectedDates}
-                            onSelect={(range) => {
-                              setSelectedDates(range)
-                              setEstimateError(null) // Clear error when dates change
-                              if (range?.from && range?.to) {
-                                setIsDatePickerOpen(false)
-                              }
+                            selected={{
+                              from: data?.fromDate ? new Date(data.fromDate) : undefined,
+                              to: data?.toDate ? new Date(data.toDate) : undefined,
                             }}
                             numberOfMonths={2}
-                            disabled={(date) => {
-                              const today = new Date()
-                              today.setHours(0, 0, 0, 0)
-                              
-                              // Disable past dates
-                              if (date < today) return true
-                              
-                              // Disable unavailable dates
-                              return unavailableDates.some(unavailableDate => {
-                                const unavailable = new Date(unavailableDate)
-                                unavailable.setHours(0, 0, 0, 0)
-                                const checkDate = new Date(date)
-                                checkDate.setHours(0, 0, 0, 0)
-                                return unavailable.getTime() === checkDate.getTime()
-                              })
-                            }}
+                            className="max-w-md"
                           />
-                          {loadingUnavailableDates && (
-                            <div className="p-2 text-xs text-muted-foreground text-center">
-                              Loading availability...
-                            </div>
-                          )}
-                        </PopoverContent>
-                      </Popover>
-                      
-                      {selectedDates?.from && selectedDates?.to && (
-                        <div className="mt-3 space-y-2">
-                          <div className="text-sm text-muted-foreground">
-                            Requesting estimate for: {format(selectedDates.from, "LLL dd, y")} to {format(selectedDates.to, "LLL dd, y")}
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            {data?.fromDate && data?.toDate
+                              ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
+                              : 'Select a start and end date'}
                           </div>
-                          <Button 
-                            onClick={handleEstimateRequest}
-                            disabled={isSubmittingEstimate}
-                            className="w-full"
-                          >
-                            {isSubmittingEstimate ? 'Creating Estimate...' : 'Create New Estimate'}
-                          </Button>
-                          {estimateError && (
-                            <div className="text-sm text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                              {estimateError}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                
-                <div className="w-full rounded-md overflow-hidden bg-muted p-2 flex items-center gap-3">
-                  {!!data?.post.meta?.image && (
-                    <div className="w-24 h-24 flex-shrink-0 rounded-md overflow-hidden border border-border bg-white">
-                      <Media
-                        resource={data?.post.meta?.image || undefined}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                  <div className="flex flex-col text-white">
-                    <span className="font-medium">Date Booked: {formatDateTime(data?.post.createdAt)}</span>
-                    <span className="font-medium">Guests: {Array.isArray(data?.guests) ? data.guests.length : 0}</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Guests Section */}
-              <div className="border-t pt-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold">Guests</h2>
-                  {data &&
-                    'customer' in data &&
-                    typeof data?.customer !== 'string' &&
-                    data.customer?.id === user.id && (
-                      <InviteUrlDialog
-                        bookingId={data.id}
-                        trigger={
-                          <Button>
-                            <PlusCircleIcon className="size-4 mr-2" />
-                            <span>Invite</span>
-                          </Button>
-                        }
-                      />
-                    )}
-                </div>
-                <div className="mt-2 space-y-3">
-                  <div className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2">
-                    <div className="p-2 border border-border rounded-full">
-                      <UserIcon className="size-6" />
-                    </div>
-                    <div>
-                      <div>{typeof data.customer === 'string' ? 'Customer' : data.customer?.name}</div>
-                      <div className="font-medium text-sm">Customer</div>
-                    </div>
-                  </div>
-                  {data.guests
-                    ?.filter((guest) =>
-                      typeof guest === 'string'
-                        ? !removedGuests.includes(guest)
-                        : !removedGuests.includes(guest.id),
-                    )
-                    ?.map((guest) => {
-                      if (typeof guest === 'string') {
-                        return <div key={guest}>{guest}</div>
-                      }
-                      return (
-                        <div
-                          key={guest.id}
-                          className="shadow-sm p-2 border border-border rounded-lg flex items-center gap-2 justify-between"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="p-2 border border-border rounded-full">
-                              <UserIcon className="size-6" />
-                            </div>
-                            <div>
-                              <div>{guest.name}</div>
-                              <div className="font-medium text-sm">Guest</div>
-                            </div>
-                          </div>
-                          {data &&
-                            'customer' in data &&
-                            typeof data?.customer !== 'string' &&
-                            data.customer?.id === user.id && (
-                              <Button
-                                variant="secondary"
-                                size="icon"
-                                onClick={() => removeGuestHandler(guest.id)}
-                              >
-                                <TrashIcon className="size-4" />
-                                <span className="sr-only">Remove Guest</span>
-                              </Button>
+                          {/* Request New Estimate Button */}
+                          <div className="mt-4">
+                            <Popover
+                              open={isDatePickerOpen}
+                              onOpenChange={(open) => {
+                                setIsDatePickerOpen(open)
+                                if (open) {
+                                  loadUnavailableDates()
+                                }
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {selectedDates?.from ? (
+                                    selectedDates.to ? (
+                                      <>
+                                        {format(selectedDates.from, 'LLL dd, y')} - {format(selectedDates.to, 'LLL dd, y')}
+                                      </>
+                                    ) : (
+                                      format(selectedDates.from, 'LLL dd, y')
+                                    )
+                                  ) : (
+                                    <span>Request new estimate for different dates</span>
+                                  )}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                  initialFocus
+                                  mode="range"
+                                  defaultMonth={selectedDates?.from}
+                                  selected={selectedDates}
+                                  onSelect={(range) => {
+                                    setSelectedDates(range)
+                                    setEstimateError(null) // Clear error when dates change
+                                    if (range?.from && range?.to) {
+                                      setIsDatePickerOpen(false)
+                                    }
+                                  }}
+                                  numberOfMonths={2}
+                                  disabled={(date) => {
+                                    const today = new Date()
+                                    today.setHours(0, 0, 0, 0)
+
+                                    // Disable past dates
+                                    if (date < today) return true
+
+                                    // Disable unavailable dates
+                                    return unavailableDates.some((unavailableDate) => {
+                                      const unavailable = new Date(unavailableDate)
+                                      unavailable.setHours(0, 0, 0, 0)
+                                      const checkDate = new Date(date)
+                                      checkDate.setHours(0, 0, 0, 0)
+                                      return unavailable.getTime() === checkDate.getTime()
+                                    })
+                                  }}
+                                />
+                                {loadingUnavailableDates && (
+                                  <div className="p-2 text-center text-xs text-muted-foreground">Loading availability...</div>
+                                )}
+                              </PopoverContent>
+                            </Popover>
+
+                            {selectedDates?.from && selectedDates?.to && (
+                              <div className="mt-3 space-y-2">
+                                <div className="text-sm text-muted-foreground">
+                                  Requesting estimate for: {format(selectedDates.from, 'LLL dd, y')} to {format(selectedDates.to, 'LLL dd, y')}
+                                </div>
+                                <Button onClick={handleEstimateRequest} disabled={isSubmittingEstimate} className="w-full">
+                                  {isSubmittingEstimate ? 'Creating Estimate...' : 'Create New Estimate'}
+                                </Button>
+                                {estimateError && (
+                                  <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-600">{estimateError}</div>
+                                )}
+                              </div>
                             )}
-                        </div>
-                      )
-                    })}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div>Error loading booking details</div>
-          )}
-        </TabsContent>
-        {relatedPages.length > 0 && (
-          <TabsContent value="sensitive">
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Lock className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-2xl font-bold">Check-in Information</h2>
-              </div>
-              <div className="text-sm text-muted-foreground mb-4">
-                This information is only visible to you and your guests. Please keep it confidential.
-              </div>
-              {loadingPages ? (
-                <p>Loading check-in information...</p>
-              ) : (
-                <div className="space-y-6">
-                  {relatedPages.map((page, index) => (
-                    <div key={`${page.id || 'page'}-${page.packageId || index}`} className="border rounded-lg p-6">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="p-2 bg-primary/10 rounded-full">
-                          <Lock className="h-4 w-4 text-primary" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-lg">{page.title}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            Related to: {page.packageName}
-                          </p>
+                          </div>
                         </div>
                       </div>
-                      {page.layout && (
-                        <SimplePageRenderer page={page} />
-                      )}
+
+                      <div className="flex w-full items-center gap-3 rounded-md bg-muted p-2">
+                        {!!data?.post.meta?.image && (
+                          <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-border bg-white">
+                            <Media resource={data?.post.meta?.image || undefined} className="h-full w-full object-cover" />
+                          </div>
+                        )}
+                        <div className="flex flex-col text-white">
+                          <span className="font-medium">Date Booked: {formatDateTime(data?.post.createdAt)}</span>
+                          <span className="font-medium">Guests: {totalGuests}</span>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+
+                    {/* Guests Section */}
+                    <div className="border-t pt-8">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h2 className="text-2xl font-bold">Guests</h2>
+                        {data &&
+                          'customer' in data &&
+                          typeof data?.customer !== 'string' &&
+                          data.customer?.id === user.id && (
+                            <InviteUrlDialog
+                              bookingId={data.id}
+                              trigger={
+                                <Button>
+                                  <PlusCircleIcon className="mr-2 size-4" />
+                                  <span>Invite</span>
+                                </Button>
+                              }
+                            />
+                          )}
+                      </div>
+                      <div className="mt-2 space-y-3">
+                        <div className="flex items-center gap-2 rounded-lg border border-border p-2 shadow-sm">
+                          <div className="rounded-full border border-border p-2">
+                            <UserIcon className="size-6" />
+                          </div>
+                          <div>
+                            <div>{typeof data.customer === 'string' ? 'Customer' : data.customer?.name}</div>
+                            <div className="text-sm font-medium">Customer</div>
+                          </div>
+                        </div>
+                        {data.guests
+                          ?.filter((guest) =>
+                            typeof guest === 'string'
+                              ? !removedGuests.includes(guest)
+                              : !removedGuests.includes(guest.id),
+                          )
+                          ?.map((guest) => {
+                            if (typeof guest === 'string') {
+                              return <div key={guest}>{guest}</div>
+                            }
+                            return (
+                              <div
+                                key={guest.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-border p-2 shadow-sm"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="rounded-full border border-border p-2">
+                                    <UserIcon className="size-6" />
+                                  </div>
+                                  <div>
+                                    <div>{guest.name}</div>
+                                    <div className="text-sm font-medium">Guest</div>
+                                  </div>
+                                </div>
+                                {data &&
+                                  'customer' in data &&
+                                  typeof data?.customer !== 'string' &&
+                                  data.customer?.id === user.id && (
+                                    <Button
+                                      variant="secondary"
+                                      size="icon"
+                                      onClick={() => removeGuestHandler(guest.id)}
+                                    >
+                                      <TrashIcon className="size-4" />
+                                      <span className="sr-only">Remove Guest</span>
+                                    </Button>
+                                  )}
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>Error loading booking details</div>
+                )}
+              </TabsContent>
+              {relatedPages.length > 0 && (
+                <TabsContent value="sensitive" id="booking-checkin">
+                  <div className="space-y-6">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Lock className="h-5 w-5 text-muted-foreground" />
+                      <h2 className="text-2xl font-bold">Check-in Information</h2>
+                    </div>
+                    <div className="mb-4 text-sm text-muted-foreground">
+                      This information is only visible to you and your guests. Please keep it confidential.
+                    </div>
+                    {loadingPages ? (
+                      <p>Loading check-in information...</p>
+                    ) : (
+                      <div className="space-y-6">
+                        {relatedPages.map((page, index) => (
+                          <div key={`${page.id || 'page'}-${page.packageId || index}`} className="rounded-lg border p-6">
+                            <div className="mb-4 flex items-center gap-2">
+                              <div className="rounded-full bg-primary/10 p-2">
+                                <Lock className="h-4 w-4 text-primary" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold">{page.title}</h3>
+                                <p className="text-sm text-muted-foreground">Related to: {page.packageName}</p>
+                              </div>
+                            </div>
+                            {page.layout && <SimplePageRenderer page={page} />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              )}
+            </Tabs>
+            {/* Addon packages from database */}
+            <div id="booking-addons">
+              <h2 className="mb-4 text-2xl font-bold">Add-ons</h2>
+              {loadingAddons ? (
+                <p>Loading add-ons...</p>
+              ) : addonPackages.length === 0 ? (
+                <p className="text-muted-foreground">No add-ons available for this property.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {addonPackages.map((addon) => {
+                    const isWine = addon.revenueCatId === 'Bottle_wine'
+                    const isCleaning = addon.revenueCatId === 'cleaning'
+                    const isHike = addon.revenueCatId === 'Hike'
+                    const isBathBomb = addon.revenueCatId === 'bathBomb'
+
+                    // Calculate price based on base rate and multiplier
+                    const baseRate = addon.baseRate || 0
+                    const price = baseRate * addon.multiplier
+                    const priceString = `R${price.toFixed(2)}`
+
+                    return (
+                      <div key={addon.id} className="flex flex-col items-center rounded-lg border p-4">
+                        <div className="mb-2 text-lg font-bold">{addon.name}</div>
+                        <div className="mb-2 text-sm text-muted-foreground">{addon.description || addon.originalName}</div>
+                        <div className="mb-4 text-xl font-bold">{priceString}</div>
+                        {addon.features && addon.features.length > 0 && (
+                          <div className="mb-3 text-center text-xs text-muted-foreground">
+                            {addon.features.map((feature: any, index: number) => (
+                              <div key={index}>{feature.label || feature}</div>
+                            ))}
+                          </div>
+                        )}
+                        <Button
+                          className={
+                            isWine
+                              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                              : isCleaning
+                              ? 'bg-yellow-200 text-yellow-900'
+                              : isHike
+                              ? 'bg-green-200 text-green-900'
+                              : isBathBomb
+                              ? 'bg-pink-200 text-pink-900'
+                              : ''
+                          }
+                          onClick={() => handleAddonPurchase(addon)}
+                          disabled={paymentLoading || !isInitialized}
+                        >
+                          {paymentLoading && currentAddonId === addon.id
+                            ? 'Preparing checkout...'
+                            : isWine
+                            ? 'Include this'
+                            : isCleaning
+                            ? 'Add Cleaning'
+                            : isHike
+                            ? 'Book Guided Hike'
+                            : isBathBomb
+                            ? 'Add Bath Bomb'
+                            : `Purchase ${addon.name}`}
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
+              {paymentError && <div className="mt-2 text-red-500">{paymentError}</div>}
+              {paymentSuccess && <div className="mt-2 text-green-600">Add-on purchased successfully!</div>}
             </div>
-          </TabsContent>
-        )}
-      </Tabs>
-      {/* Addon packages from database */}
-      <div className="mt-10 max-w-screen-md mx-auto">
-        <h2 className="text-2xl font-bold mb-4">Add-ons</h2>
-        {loadingAddons ? (
-          <p>Loading add-ons...</p>
-        ) : addonPackages.length === 0 ? (
-          <p className="text-muted-foreground">No add-ons available for this property.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {addonPackages.map((addon) => {
-              const isWine = addon.revenueCatId === 'Bottle_wine';
-              const isCleaning = addon.revenueCatId === 'cleaning';
-              const isHike = addon.revenueCatId === 'Hike';
-              const isBathBomb = addon.revenueCatId === 'bathBomb';
-              
-              // Calculate price based on base rate and multiplier
-              const baseRate = addon.baseRate || 0;
-              const price = baseRate * addon.multiplier;
-              const priceString = `R${price.toFixed(2)}`;
-              
-              return (
-                <div key={addon.id} className="border rounded-lg p-4 flex flex-col items-center">
-                  <div className="font-bold text-lg mb-2">{addon.name}</div>
-                  <div className="mb-2 text-muted-foreground text-sm">{addon.description || addon.originalName}</div>
-                  <div className="mb-4 text-xl font-bold">{priceString}</div>
-                  {addon.features && addon.features.length > 0 && (
-                    <div className="mb-3 text-xs text-muted-foreground text-center">
-                      {addon.features.map((feature: any, index: number) => (
-                        <div key={index}>{feature.label || feature}</div>
-                      ))}
-                    </div>
-                  )}
-                  <Button
-                    className={
-                      isWine ? "bg-primary text-primary-foreground hover:bg-primary/90" : 
-                      isCleaning ? "bg-yellow-200 text-yellow-900" : 
-                      isHike ? "bg-green-200 text-green-900" : 
-                      isBathBomb ? "bg-pink-200 text-pink-900" : ""
-                    }
-                    onClick={() => handleAddonPurchase(addon)}
-                    disabled={paymentLoading || !isInitialized}
-                  >
-                    {paymentLoading && currentAddonId === addon.id
-                      ? 'Preparing checkout...'
-                      : isWine
-                      ? 'Include this'
-                      : isCleaning
-                      ? 'Add Cleaning'
-                      : isHike
-                      ? 'Book Guided Hike'
-                      : isBathBomb
-                      ? 'Add Bath Bomb'
-                      : `Purchase ${addon.name}`}
-                  </Button>
-                </div>
-              )
-            })}
           </div>
-        )}
-        {paymentError && <div className="text-red-500 mt-2">{paymentError}</div>}
-        {paymentSuccess && <div className="text-green-600 mt-2">Add-on purchased successfully!</div>}
+        </div>
       </div>
       
       {/* AI Assistant with booking context */}

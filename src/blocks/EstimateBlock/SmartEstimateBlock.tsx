@@ -267,6 +267,26 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
   const finalTranscriptRef = useRef('')
+  const activeThreadRef = useRef(0)
+
+  const beginNewThread = useCallback(
+    (initialMessages: Message[] = []) => {
+      const nextThreadId = activeThreadRef.current + 1
+      activeThreadRef.current = nextThreadId
+      packagesSuggestedRef.current = false
+      setMessages(initialMessages)
+      return nextThreadId
+    },
+    [setMessages],
+  )
+
+  const appendMessageToThread = useCallback(
+    (threadId: number, message: Message) => {
+      if (activeThreadRef.current !== threadId) return
+      setMessages((prev) => [...prev, message])
+    },
+    [setMessages],
+  )
 
   // Helper function to filter packages based on customer entitlement
   // This ensures that pro-only packages are only shown to pro users
@@ -331,7 +351,11 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }
 
   // Check if selected dates are available
-  const checkDateAvailability = async (fromDate: Date, toDate: Date) => {
+  const checkDateAvailability = async (
+    fromDate: Date,
+    toDate: Date,
+    threadId: number = activeThreadRef.current,
+  ) => {
     if (!fromDate || !toDate) return true
     
     setIsCheckingAvailability(true)
@@ -358,13 +382,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         setAreDatesAvailable(isAvailable)
         
         // Add a message to inform the user about availability
-        if (!isAvailable) {
+        if (!isAvailable && activeThreadRef.current === threadId) {
           const availabilityMessage: Message = {
             role: 'assistant',
-            content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(toDate, 'MMM dd, yyyy')}) are not available. Please select different dates for your stay.`,
-            type: 'text'
+            content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
+              toDate,
+              'MMM dd, yyyy',
+            )}) are not available. Please select different dates for your stay.`,
+            type: 'text',
           }
-          setMessages(prev => [...prev, availabilityMessage])
+          appendMessageToThread(threadId, availabilityMessage)
         }
         
         return isAvailable
@@ -1041,6 +1068,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }, [packages, selectedPackage?.id])
   
   const handleQuickAction = (action: string, data?: any) => {
+    const threadId = beginNewThread()
     let message = ''
     
     switch (action) {
@@ -1052,7 +1080,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             content: `I see you already have dates selected: ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')} (${duration} ${duration === 1 ? 'night' : 'nights'}). You can modify them below or ask me to suggest packages for these dates.`,
             type: 'text'
           }
-          setMessages(prev => [...prev, acknowledgmentMessage])
+          appendMessageToThread(threadId, acknowledgmentMessage)
         }
         
         const dateMessage: Message = {
@@ -1062,7 +1090,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             'Please select your check-in and check-out dates:',
           type: 'date_selection'
         }
-        setMessages(prev => [...prev, dateMessage])
+        appendMessageToThread(threadId, dateMessage)
         return
       case 'suggest_duration':
         message = `For ${postTitle}, I'd recommend considering these durations:\n\n` +
@@ -1073,7 +1101,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         break
       case 'show_packages':
         if (startDate && endDate) {
-          showAvailablePackages()
+          showAvailablePackages(threadId)
           return
         } else {
           message = `I'd love to show you the best packages! To give you personalized recommendations, please select your dates first using the "Select Dates" button above.`
@@ -1088,10 +1116,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             `Let me show you the specific packages available for your dates!`
           
           const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
-          setMessages(prev => [...prev, assistantMessage])
+          appendMessageToThread(threadId, assistantMessage)
           
           // Show packages after the recommendation message
-          setTimeout(() => showAvailablePackages(), 1000)
+          setTimeout(() => showAvailablePackages(threadId), 1000)
           return
         } else {
           message = `I'd love to give you personalized recommendations! To suggest the best packages for your needs, please select your travel dates first using the "Select Dates" button above.`
@@ -1111,7 +1139,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       case 'check_availability':
         if (startDate && endDate) {
           // Check availability and provide feedback
-          checkDateAvailability(startDate, endDate).then((isAvailable) => {
+          checkDateAvailability(startDate, endDate, threadId).then((isAvailable) => {
+            if (activeThreadRef.current !== threadId) return
             const availabilityMessage: Message = {
               role: 'assistant',
               content: isAvailable ? 
@@ -1119,7 +1148,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
                 `❌ Unfortunately, your selected dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are not available. Please select different dates.`,
               type: 'text'
             }
-            setMessages(prev => [...prev, availabilityMessage])
+            appendMessageToThread(threadId, availabilityMessage)
           })
           return
         } else {
@@ -1130,11 +1159,17 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         message = 'I can help you with that! What would you like to know?'
     }
     
-    const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
-    setMessages(prev => [...prev, assistantMessage])
+    if (message) {
+      const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
+      appendMessageToThread(threadId, assistantMessage)
+    }
   }
 
-  const showAvailablePackages = () => {
+  const showAvailablePackages = (threadId: number = activeThreadRef.current) => {
+    
+    if (threadId !== activeThreadRef.current) {
+      return
+    }
     
     // Use existing packages instead of making new API calls
     if (packages.length > 0) {
@@ -1203,7 +1238,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         type: 'package_suggestion',
         data: { packages: suggestedPackages }
       }
-      setMessages(prev => [...prev, packageMessage])
+      appendMessageToThread(threadId, packageMessage)
     } else {
       // Fallback: load packages if none exist
       fetch(`/api/packages/post/${postId}`)
@@ -1272,45 +1307,52 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             type: 'package_suggestion',
             data: { packages: suggestedPackages }
           }
-          setMessages(prev => [...prev, packageMessage])
+          if (activeThreadRef.current !== threadId) return
+          appendMessageToThread(threadId, packageMessage)
         })
         .catch(err => {
           console.error('Error loading packages:', err)
+          if (activeThreadRef.current !== threadId) return
           const errorMessage: Message = {
             role: 'assistant',
             content: 'Sorry, I encountered an error loading packages. Please try again.',
             type: 'text'
           }
-          setMessages(prev => [...prev, errorMessage])
+          appendMessageToThread(threadId, errorMessage)
         })
     }
   }
   
   const handleAIRequest = async (message: string) => {
-    if (!message.trim()) return
-    
-    const userMessage: Message = { role: 'user', content: message }
-    setMessages(prev => [...prev, userMessage])
+    const trimmedMessage = message.trim()
+    if (!trimmedMessage) return
+
+    const userMessage: Message = { role: 'user', content: trimmedMessage }
+    const threadId = beginNewThread([userMessage])
     setInput('')
     setIsLoading(true)
-    
+
+    const speakSafely = (text: string) => {
+      if (activeThreadRef.current === threadId) {
+        speak(text)
+      }
+    }
+
     try {
-      // Check for debug packages request
-      if (message.toLowerCase().includes('debug packages') || 
-          message.toLowerCase().includes('debug') ||
-          message.toLowerCase().includes('show packages')) {
-        
-        // Handle debug packages request
+      if (trimmedMessage.toLowerCase().includes('debug packages') || 
+          trimmedMessage.toLowerCase().includes('debug') ||
+          trimmedMessage.toLowerCase().includes('show packages')) {
         try {
           const response = await fetch(`/api/packages/post/${postId}`)
           if (response.ok) {
             const data = await response.json()
+            if (activeThreadRef.current !== threadId) return
             const packages = data.packages || []
-            
-            // Get user's subscription status for entitlement info
-            const userEntitlement = currentUser?.role === 'admin' ? 'pro' : 
-                                   currentUser?.subscriptionStatus?.plan || 'none'
-            
+
+            const userEntitlement = currentUser?.role === 'admin'
+              ? 'pro'
+              : currentUser?.subscriptionStatus?.plan || 'none'
+
             const debugInfo = `
 **Debug Package Information:**
 - Total packages found: ${packages.length}
@@ -1337,23 +1379,27 @@ ${packages.map((pkg: any, index: number) =>
 - Addon packages are filtered out (booking page only)
             `
             
-            const assistantMessage: Message = { 
-              role: 'assistant', 
-              content: debugInfo
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: debugInfo,
             }
-            setMessages(prev => [...prev, assistantMessage])
-            speak('Here\'s the debug information for packages and entitlements.')
-            setIsLoading(false)
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely("Here's the debug information for packages and entitlements.")
+            if (activeThreadRef.current === threadId) {
+              setIsLoading(false)
+            }
             return
           }
         } catch (error) {
           console.error('Debug packages error:', error)
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while fetching debug information. Please try again.'
+          if (activeThreadRef.current === threadId) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'Sorry, I encountered an error while fetching debug information. Please try again.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            setIsLoading(false)
           }
-          setMessages(prev => [...prev, assistantMessage])
-          setIsLoading(false)
           return
         }
       }
@@ -1361,17 +1407,17 @@ ${packages.map((pkg: any, index: number) =>
       // If user is not logged in, provide basic responses without API call
       if (!isLoggedIn) {
         let response = ''
-        const lowerMessage = message.toLowerCase()
+        const lowerMessage = trimmedMessage.toLowerCase()
         
         if (lowerMessage.includes('package') || lowerMessage.includes('option')) {
           response = `Here are the available packages for ${postTitle}. Please log in for personalized recommendations and to complete your booking.`
-          const assistantMessage: Message = { 
-            role: 'assistant', 
+          const assistantMessage: Message = {
+            role: 'assistant',
             content: response,
-            type: 'text'
+            type: 'text',
           }
-          setMessages(prev => [...prev, assistantMessage])
-          setTimeout(() => showAvailablePackages(), 500)
+          appendMessageToThread(threadId, assistantMessage)
+          setTimeout(() => showAvailablePackages(threadId), 500)
         } else if (lowerMessage.includes('price') || lowerMessage.includes('cost')) {
           response = `Pricing starts at R${baseRate} per night, with different packages offering various multipliers. Log in to see personalized pricing and complete your booking.`
         } else if (lowerMessage.includes('book') || lowerMessage.includes('reserve')) {
@@ -1380,13 +1426,15 @@ ${packages.map((pkg: any, index: number) =>
           response = `I'd love to help you with that! For the full AI assistant experience and personalized recommendations, please log in. I can show you available packages without logging in if you'd like.`
         }
         
-        const assistantMessage: Message = { 
-          role: 'assistant', 
+        const assistantMessage: Message = {
+          role: 'assistant',
           content: response,
-          type: 'text'
+          type: 'text',
         }
-        setMessages(prev => [...prev, assistantMessage])
-        setIsLoading(false)
+        appendMessageToThread(threadId, assistantMessage)
+        if (activeThreadRef.current === threadId) {
+          setIsLoading(false)
+        }
         return
       }
       
@@ -1428,36 +1476,45 @@ Availability Status:
       }
       
       const data = await response.json()
+      if (activeThreadRef.current !== threadId) return
       
       if (!data.message) {
         throw new Error('No response from AI assistant.')
       }
       
-      const assistantMessage: Message = { 
-        role: 'assistant', 
+      const assistantMessage: Message = {
+        role: 'assistant',
         content: data.message,
-        type: 'text'
+        type: 'text',
       }
-      setMessages(prev => [...prev, assistantMessage])
-      speak(data.message)
+      appendMessageToThread(threadId, assistantMessage)
+      speakSafely(data.message)
       
-      // Check if AI suggests showing packages (with null check)
-      if (data.message && typeof data.message === 'string' && 
-          (data.message.toLowerCase().includes('package') || data.message.toLowerCase().includes('option'))) {
-        setTimeout(() => showAvailablePackages(), 1000)
+      if (
+        typeof data.message === 'string' &&
+        (data.message.toLowerCase().includes('package') || data.message.toLowerCase().includes('option'))
+      ) {
+        setTimeout(() => showAvailablePackages(threadId), 1000)
       }
       
     } catch (error) {
       console.error('Error:', error)
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: error instanceof Error ? error.message : 'Sorry, I encountered an error. Please try again or use the quick actions above.',
-        type: 'text'
+      if (activeThreadRef.current === threadId) {
+        const errorMessage: Message = {
+          role: 'assistant',
+          content:
+            error instanceof Error
+              ? error.message
+              : 'Sorry, I encountered an error. Please try again or use the quick actions above.',
+          type: 'text',
+        }
+        appendMessageToThread(threadId, errorMessage)
+        speakSafely(error instanceof Error ? error.message : 'Sorry, I encountered an error.')
       }
-      setMessages(prev => [...prev, errorMessage])
-      speak(error instanceof Error ? error.message : 'Sorry, I encountered an error.')
     } finally {
-      setIsLoading(false)
+      if (activeThreadRef.current === threadId) {
+        setIsLoading(false)
+      }
     }
   }
   
@@ -1489,7 +1546,7 @@ Availability Status:
                     content: `Great choice! You've selected "${pkg.name}". This package includes: ${pkg.features.join(', ')}. Would you like to proceed with booking or do you have any questions?`,
                     type: 'text'
                   }
-                  setMessages(prev => [...prev, confirmMessage])
+                  appendMessageToThread(activeThreadRef.current, confirmMessage)
                 }}
               />
             ))}
@@ -1581,13 +1638,14 @@ Availability Status:
                 size="sm" 
                 variant="default"
                 onClick={() => {
+                  const currentThreadId = activeThreadRef.current
                   const confirmMessage: Message = {
                     role: 'assistant',
                     content: `Perfect! I've confirmed your dates: ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')} (${duration} ${duration === 1 ? 'night' : 'nights'}). Let me show you the best packages for your stay!`,
                     type: 'text'
                   }
-                  setMessages(prev => [...prev, confirmMessage])
-                  setTimeout(() => showAvailablePackages(), 500)
+                  appendMessageToThread(currentThreadId, confirmMessage)
+                  setTimeout(() => showAvailablePackages(currentThreadId), 500)
                 }}
               >
                 Confirm Dates
@@ -1672,7 +1730,7 @@ Availability Status:
               content: `Welcome back! I see you were looking at the "${journeyData.selectedPackage.name}" package. Your selected dates are ${journeyData.startDate ? format(new Date(journeyData.startDate), 'MMM dd') : 'not set'} to ${journeyData.endDate ? format(new Date(journeyData.endDate), 'MMM dd, yyyy') : 'not set'}. Would you like to continue with your booking?`,
               type: 'text'
             }
-            setMessages(prev => [...prev, welcomeBackMessage])
+            appendMessageToThread(activeThreadRef.current, welcomeBackMessage)
           }
           
           return true
@@ -1697,16 +1755,17 @@ Availability Status:
   // Auto-suggest packages after date selection
   const suggestPackagesAfterDateSelection = () => {
     if (startDate && endDate) {
+      const threadId = activeThreadRef.current
       const suggestionMessage: Message = {
         role: 'assistant',
         content: `Great! I see you've selected ${duration} ${duration === 1 ? 'night' : 'nights'} from ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}. Let me find the perfect packages for your stay...`,
         type: 'text'
       }
-      setMessages(prev => [...prev, suggestionMessage])
+      appendMessageToThread(threadId, suggestionMessage)
       
       // Show packages after a brief delay
       setTimeout(() => {
-        showAvailablePackages()
+        showAvailablePackages(threadId)
       }, 1000)
     }
   }
@@ -1721,7 +1780,7 @@ Availability Status:
       setDuration(newDuration)
     }
 
-    checkDateAvailability(startDate, endDate)
+    checkDateAvailability(startDate, endDate, activeThreadRef.current)
 
     if (packagesSuggestedRef.current) {
       return
@@ -1735,7 +1794,11 @@ Availability Status:
 
       if (isFromEstimate && messages.length > 0) {
         packagesSuggestedRef.current = true
+        const threadId = activeThreadRef.current
         setTimeout(() => {
+          if (activeThreadRef.current !== threadId) {
+            return
+          }
           const welcomeBackMessage: Message = {
             role: 'assistant',
             content: `I've loaded your previous booking for ${newDuration} ${
@@ -1746,10 +1809,10 @@ Availability Status:
             )}. Here are the available packages for your stay:`,
             type: 'text',
           }
-          setMessages((prev) => [...prev, welcomeBackMessage])
+          appendMessageToThread(threadId, welcomeBackMessage)
 
           setTimeout(() => {
-            showAvailablePackages()
+            showAvailablePackages(threadId)
           }, 500)
         }, 1000)
         return

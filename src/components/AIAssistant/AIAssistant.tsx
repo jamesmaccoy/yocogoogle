@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -162,6 +162,99 @@ export const AIAssistant = () => {
   const isProcessingRef = useRef(false)
   const finalTranscriptRef = useRef('')
   const rescheduleRedirectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeThreadRef = useRef(0)
+  const historyKeyRef = useRef<string | null>(null)
+
+  const beginNewThread = useCallback(
+    (initialMessages: Message[] = []) => {
+      const nextThreadId = activeThreadRef.current + 1
+      activeThreadRef.current = nextThreadId
+      setPackageSuggestions([])
+      setMessages(initialMessages)
+      if (typeof window !== 'undefined' && historyKeyRef.current && initialMessages.length > 0) {
+        try {
+          const existing: any[] = JSON.parse(
+            window.localStorage.getItem(historyKeyRef.current) ?? '[]',
+          )
+          const appended = initialMessages.map((message) => ({
+            role: message.role,
+            content: message.content,
+            timestamp: Date.now(),
+            threadId: nextThreadId,
+          }))
+          const updated = [...existing, ...appended].slice(-50)
+          window.localStorage.setItem(historyKeyRef.current, JSON.stringify(updated))
+          window.dispatchEvent(
+            new CustomEvent('aiHistoryUpdate', {
+              detail: { key: historyKeyRef.current, history: updated },
+            }),
+          )
+        } catch (error) {
+          console.warn('Failed to persist AI history', error)
+        }
+      }
+      return nextThreadId
+    },
+    [setMessages, setPackageSuggestions],
+  )
+
+  const appendMessageToThread = useCallback(
+    (threadId: number, message: Message) => {
+      if (activeThreadRef.current !== threadId) return
+      setMessages((prev) => [...prev, message])
+      if (typeof window !== 'undefined' && historyKeyRef.current) {
+        try {
+          const existing: any[] = JSON.parse(
+            window.localStorage.getItem(historyKeyRef.current) ?? '[]',
+          )
+          const entry = {
+            role: message.role,
+            content: message.content,
+            timestamp: Date.now(),
+            threadId,
+          }
+          const updated = [...existing, entry].slice(-50)
+          window.localStorage.setItem(historyKeyRef.current, JSON.stringify(updated))
+          window.dispatchEvent(
+            new CustomEvent('aiHistoryUpdate', {
+              detail: { key: historyKeyRef.current, history: updated },
+            }),
+          )
+        } catch (error) {
+          console.warn('Failed to persist AI history', error)
+        }
+      }
+    },
+    [setMessages],
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (
+      currentContext?.context === 'booking-details' &&
+      currentContext?.booking?.id
+    ) {
+      const key = `ai:bookingHistory:${currentContext.booking.id}`
+      historyKeyRef.current = key
+      try {
+        const existing: any[] = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+        window.dispatchEvent(
+          new CustomEvent('aiHistoryUpdate', { detail: { key, history: existing } }),
+        )
+      } catch {
+        // ignore parse errors
+      }
+    } else {
+      historyKeyRef.current = null
+    }
+  }, [currentContext])
+
+  const setPackageSuggestionsForThread = useCallback(
+    (threadId: number, suggestions: PackageSuggestion[]) => {
+      if (activeThreadRef.current !== threadId) return
+      setPackageSuggestions(suggestions)
+    },
+    [setPackageSuggestions],
+  )
 
   useEffect(() => {
     // Listen for custom events to open AI Assistant with context
@@ -345,25 +438,31 @@ export const AIAssistant = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Check authentication before processing
-    if (!isLoggedIn) {
-      const authMessage: Message = { 
-        role: 'assistant', 
-        content: 'Please log in to use the AI Assistant. This feature requires authentication for security.' 
-      }
-      setMessages((prev) => [...prev, authMessage])
-      return
-    }
-    
-    const messageToSend = finalTranscriptRef.current || input
-    if (!messageToSend.trim()) return
+
+    const messageToSend = (finalTranscriptRef.current || input || '').trim()
+    if (!messageToSend) return
 
     const userMessage: Message = { role: 'user', content: messageToSend }
-    setMessages((prev) => [...prev, userMessage])
+    const threadId = beginNewThread([userMessage])
     setInput('')
     finalTranscriptRef.current = ''
+
+    if (!isLoggedIn) {
+      const authMessage: Message = {
+        role: 'assistant',
+        content: 'Please log in to use the AI Assistant. This feature requires authentication for security.',
+      }
+      appendMessageToThread(threadId, authMessage)
+      return
+    }
+
     setIsLoading(true)
+
+    const speakSafely = (text: string) => {
+      if (activeThreadRef.current === threadId) {
+        speak(text)
+      }
+    }
 
     try {
       // Check if this is a package suggestion request (only in package-suggestions context)
@@ -386,47 +485,55 @@ export const AIAssistant = () => {
         
         if (res.ok) {
           const data = await res.json()
+          if (activeThreadRef.current !== threadId) return
+
           const suggestions: PackageSuggestion[] = Array.isArray(data.recommendations) ? data.recommendations : []
-          
+
           if (suggestions.length > 0) {
-            setPackageSuggestions(suggestions)
-            
+            setPackageSuggestionsForThread(threadId, suggestions)
+
             // Create a formatted response
-            const suggestionText = suggestions.map(s => 
-              `**${s.suggestedName}**\n` +
-              `${s.description}\n` +
-              `- Duration: ${s.details.minNights}-${s.details.maxNights} nights\n` +
-              `- Category: ${s.details.category}\n` +
-              `- Multiplier: ${s.details.multiplier}x\n` +
-              `- Entitlement: ${s.details.customerTierRequired}\n` +
-              `- Base Rate: ${s.baseRate ? `R${s.baseRate}` : 'Not set'}\n` +
-              `- Features: ${s.features && s.features.length > 0 ? s.features.join(', ') : (s.details.features || 'Standard features')}`
-            ).join('\n\n')
-            
-            const assistantMessage: Message = { 
-              role: 'assistant', 
-              content: `Here are some package suggestions based on your needs:\n\n${suggestionText}\n\nYou can click "Add Package" on any of these suggestions to create them.` 
+            const suggestionText = suggestions
+              .map(
+                (s) =>
+                  `**${s.suggestedName}**\n` +
+                  `${s.description}\n` +
+                  `- Duration: ${s.details.minNights}-${s.details.maxNights} nights\n` +
+                  `- Category: ${s.details.category}\n` +
+                  `- Multiplier: ${s.details.multiplier}x\n` +
+                  `- Entitlement: ${s.details.customerTierRequired}\n` +
+                  `- Base Rate: ${s.baseRate ? `R${s.baseRate}` : 'Not set'}\n` +
+                  `- Features: ${
+                    s.features && s.features.length > 0 ? s.features.join(', ') : s.details.features || 'Standard features'
+                  }`,
+              )
+              .join('\n\n')
+
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `Here are some package suggestions based on your needs:\n\n${suggestionText}\n\nYou can click "Add Package" on any of these suggestions to create them.`,
             }
-            setMessages((prev) => [...prev, assistantMessage])
-            speak('I found some package suggestions for you. Check the cards below.')
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('I found some package suggestions for you. Check the cards below.')
           } else {
-            const assistantMessage: Message = { 
-              role: 'assistant', 
-              content: `I couldn't find specific package suggestions for "${messageToSend}". Try describing your needs more specifically, such as "I need a luxury weekend package" or "I want to offer hourly rentals for events".` 
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `I couldn't find specific package suggestions for "${messageToSend}". Try describing your needs more specifically, such as "I need a luxury weekend package" or "I want to offer hourly rentals for events".`,
             }
-            setMessages((prev) => [...prev, assistantMessage])
-            speak('I couldn\'t find specific package suggestions. Please try describing your needs more specifically.')
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely("I couldn't find specific package suggestions. Please try describing your needs more specifically.")
           }
         } else {
-          // Try to get error details from response
           const data = await res.json().catch(() => ({}))
+          if (activeThreadRef.current !== threadId) return
+
           const errorDetails = data.error || data.message || 'Unknown error'
           const assistantMessage: Message = {
             role: 'assistant',
-            content: `Sorry, I encountered an error while generating package suggestions: ${errorDetails}. Please check the console for more details.`
+            content: `Sorry, I encountered an error while generating package suggestions: ${errorDetails}. Please check the console for more details.`,
           }
-          setMessages((prev) => [...prev, assistantMessage])
-          speak('Sorry, I encountered an error while generating package suggestions.')
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Sorry, I encountered an error while generating package suggestions.')
           console.error('Package suggestions API error:', data)
         }
       } else if (currentContext?.context === 'package-rename') {
@@ -446,11 +553,12 @@ export const AIAssistant = () => {
         
         if (res.ok) {
           const data = await res.json()
+          if (activeThreadRef.current !== threadId) return
+
           const usage = normalizeTokenUsage(data.usage)
           const baseContent =
-            data.response ||
-            "I've provided some suggestions for renaming your package. You can review and apply them as needed."
-          
+            data.response || "I've provided some suggestions for renaming your package. You can review and apply them as needed."
+
           persistTokenUsage(usage)
 
           const assistantMessage: Message = {
@@ -458,15 +566,16 @@ export const AIAssistant = () => {
             content: appendUsageToContent(baseContent, usage),
           }
 
-          setMessages((prev) => [...prev, assistantMessage])
-          speak("I've provided suggestions for renaming your package.")
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely("I've provided suggestions for renaming your package.")
         } else {
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while generating renaming suggestions. Please try again.' 
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while generating renaming suggestions. Please try again.',
           }
-          setMessages((prev) => [...prev, assistantMessage])
-          speak('Sorry, I encountered an error while generating renaming suggestions.')
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Sorry, I encountered an error while generating renaming suggestions.')
         }
       } else if (currentContext?.context === 'package-update') {
         // Handle package updates including category changes
@@ -489,10 +598,11 @@ export const AIAssistant = () => {
         
         if (res.ok) {
           const data = await res.json()
+          if (activeThreadRef.current !== threadId) return
+
           const usage = normalizeTokenUsage(data.usage)
           const baseContent =
-            data.response ||
-            "I've provided some suggestions for updating your package. You can review and apply them as needed."
+            data.response || "I've provided some suggestions for updating your package. You can review and apply them as needed."
 
           persistTokenUsage(usage)
 
@@ -501,15 +611,16 @@ export const AIAssistant = () => {
             content: appendUsageToContent(baseContent, usage),
           }
 
-          setMessages((prev) => [...prev, assistantMessage])
-          speak("I've provided suggestions for updating your package.")
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely("I've provided suggestions for updating your package.")
         } else {
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while generating update suggestions. Please try again.' 
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while generating update suggestions. Please try again.',
           }
-          setMessages((prev) => [...prev, assistantMessage])
-          speak('Sorry, I encountered an error while generating update suggestions.')
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Sorry, I encountered an error while generating update suggestions.')
         }
       } else if (currentContext?.context === 'booking-reschedule') {
         const rescheduleData = currentContext?.rescheduleData || {}
@@ -522,13 +633,15 @@ export const AIAssistant = () => {
             : 'the updated total')
         const redirectUrl: string | undefined = rescheduleData.redirectUrl
 
+        if (activeThreadRef.current !== threadId) return
+
         const assistantMessage: Message = {
           role: 'assistant',
           content: `Great! I've prepared a fresh estimate for ${postTitle} from ${formattedRange} with the ${packageName}. Your updated total comes to ${formattedTotal}. I'll open the estimate builder so you can review and confirm.`,
         }
 
-        setMessages((prev) => [...prev, assistantMessage])
-        speak(`Your updated stay totals ${formattedTotal}. I'm opening the estimate builder now.`)
+        appendMessageToThread(threadId, assistantMessage)
+        speakSafely(`Your updated stay totals ${formattedTotal}. I'm opening the estimate builder now.`)
 
         if (rescheduleRedirectRef.current) {
           clearTimeout(rescheduleRedirectRef.current)
@@ -536,7 +649,9 @@ export const AIAssistant = () => {
 
         if (redirectUrl) {
           rescheduleRedirectRef.current = setTimeout(() => {
-            router.push(redirectUrl)
+            if (activeThreadRef.current === threadId) {
+              router.push(redirectUrl)
+            }
             rescheduleRedirectRef.current = null
           }, 1500)
         }
@@ -573,6 +688,7 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
         })
 
         const data = await response.json()
+        if (activeThreadRef.current !== threadId) return
         const usage = normalizeTokenUsage(data.usage)
         const baseContent = data.message || data.response || 'No response received'
 
@@ -582,8 +698,8 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
           role: 'assistant',
           content: appendUsageToContent(baseContent, usage),
         }
-        setMessages((prev) => [...prev, assistantMessage])
-        speak(baseContent)
+        appendMessageToThread(threadId, assistantMessage)
+        speakSafely(baseContent)
       } else if (currentContext?.context === 'post-article') {
         // Handle post article queries
         const postContext = currentContext
@@ -610,6 +726,7 @@ ${JSON.stringify(postContext.post?.content || 'No content available')}
         })
 
         const data = await response.json()
+        if (activeThreadRef.current !== threadId) return
         const usage = normalizeTokenUsage(data.usage)
         const baseContent = data.message || data.response || 'No response received'
 
@@ -619,8 +736,8 @@ ${JSON.stringify(postContext.post?.content || 'No content available')}
           role: 'assistant',
           content: appendUsageToContent(baseContent, usage),
         }
-        setMessages((prev) => [...prev, assistantMessage])
-        speak(baseContent)
+        appendMessageToThread(threadId, assistantMessage)
+        speakSafely(baseContent)
       } else if (messageToSend.toLowerCase().includes('debug packages') || 
                  messageToSend.toLowerCase().includes('debug') ||
                  messageToSend.toLowerCase().includes('show packages')) {
@@ -633,8 +750,9 @@ ${JSON.stringify(postContext.post?.content || 'No content available')}
             const response = await fetch(`/api/packages/post/${postId}`)
             if (response.ok) {
               const data = await response.json()
+              if (activeThreadRef.current !== threadId) return
               const packages = data.packages || []
-              
+
               // Get user's subscription status for entitlement info
               const userEntitlement = currentUser?.role === 'admin' ? 'pro' : 
                                      currentUser?.subscriptionStatus?.plan || 'none'
@@ -665,31 +783,33 @@ ${packages.map((pkg: any, index: number) =>
 - Addon packages are filtered out (booking page only)
               `
               
-              const assistantMessage: Message = { 
-                role: 'assistant', 
-                content: debugInfo
+              const assistantMessage: Message = {
+                role: 'assistant',
+                content: debugInfo,
               }
-              setMessages((prev) => [...prev, assistantMessage])
-              speak('Here\'s the debug information for packages and entitlements.')
+              appendMessageToThread(threadId, assistantMessage)
+              speakSafely("Here's the debug information for packages and entitlements.")
             } else {
               throw new Error('Failed to fetch packages')
             }
           } else {
-            const assistantMessage: Message = { 
-              role: 'assistant', 
-              content: 'No post context available for debugging packages. Please navigate to a property page first.'
+            if (activeThreadRef.current !== threadId) return
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'No post context available for debugging packages. Please navigate to a property page first.',
             }
-            setMessages((prev) => [...prev, assistantMessage])
-            speak('No property context available for debugging.')
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('No property context available for debugging.')
           }
         } catch (error) {
           console.error('Debug packages error:', error)
-          const assistantMessage: Message = { 
-            role: 'assistant', 
-            content: 'Sorry, I encountered an error while fetching debug information. Please try again.'
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while fetching debug information. Please try again.',
           }
-          setMessages((prev) => [...prev, assistantMessage])
-          speak('Error fetching debug information.')
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error fetching debug information.')
         }
       } else {
         // Regular chat API call
@@ -700,6 +820,7 @@ ${packages.map((pkg: any, index: number) =>
         })
 
         const data = await response.json()
+        if (activeThreadRef.current !== threadId) return
         const usage = normalizeTokenUsage(data.usage)
         const baseContent = data.message || data.response || 'No response received'
 
@@ -709,16 +830,20 @@ ${packages.map((pkg: any, index: number) =>
           role: 'assistant',
           content: appendUsageToContent(baseContent, usage),
         }
-        setMessages((prev) => [...prev, assistantMessage])
-        speak(baseContent)
+        appendMessageToThread(threadId, assistantMessage)
+        speakSafely(baseContent)
       }
     } catch (error) {
       console.error('Error:', error)
-      const errorMessage = 'Sorry, I encountered an error. Please try again.'
-      setMessages((prev) => [...prev, { role: 'assistant', content: errorMessage }])
-      speak(errorMessage)
+      if (activeThreadRef.current === threadId) {
+        const errorMessage = 'Sorry, I encountered an error. Please try again.'
+        appendMessageToThread(threadId, { role: 'assistant', content: errorMessage })
+        speakSafely(errorMessage)
+      }
     } finally {
-      setIsLoading(false)
+      if (activeThreadRef.current === threadId) {
+        setIsLoading(false)
+      }
     }
   }
 
