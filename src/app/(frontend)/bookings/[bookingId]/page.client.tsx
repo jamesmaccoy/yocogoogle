@@ -308,30 +308,29 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     }
 
     if (!resolvedPackage && resolvedPackageId) {
-      resolvedPackage = availablePackages.find((pkg) => pkg.id === resolvedPackageId) || null
+      resolvedPackage =
+        availablePackages.find(
+          (pkg) =>
+            pkg.id === resolvedPackageId ||
+            pkg.yocoId === resolvedPackageId ||
+            pkg.revenueCatId === resolvedPackageId,
+        ) || null
     }
 
     if (!resolvedPackage && packageTypeCode) {
-      const matcher = (pkg: any) => {
-        const code = packageTypeCode.toLowerCase()
-        return (
-          pkg?.id?.toString().toLowerCase() === code ||
-          pkg?.yocoId?.toString().toLowerCase() === code ||
-          pkg?.revenueCatId?.toString().toLowerCase() === code
-        )
-      }
-      const matchedPackage = availablePackages.find(matcher)
+      const code = packageTypeCode.toLowerCase()
+      const matchedPackage = availablePackages.find((pkg: any) => {
+        const idMatch = pkg?.id?.toString().toLowerCase() === code
+        const yocoMatch = pkg?.yocoId?.toString().toLowerCase() === code
+        const revenueCatMatch = pkg?.revenueCatId?.toString().toLowerCase() === code
+        return idMatch || yocoMatch || revenueCatMatch
+      })
+
       if (matchedPackage) {
         resolvedPackage = matchedPackage
         resolvedPackageId = matchedPackage.id
-      }
-    }
-
-    if (!resolvedPackage) {
-      const fallbackPackage = availablePackages.find((pkg) => pkg.isEnabled)
-      if (fallbackPackage) {
-        resolvedPackage = fallbackPackage
-        resolvedPackageId = fallbackPackage.id
+      } else {
+        resolvedPackageId = resolvedPackageId ?? packageTypeCode
       }
     }
 
@@ -357,15 +356,53 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     const resolvedName =
       selectedPackage?.customName ||
       resolvedPackage?.name ||
-      (packageTypeCode ? packageTypeCode.replace(/[-_]/g, ' ') : 'Standard stay')
+      (packageTypeCode ? packageTypeCode.replace(/[-_]/g, ' ') : undefined)
+
+    const resolvedDescription = resolvedPackage?.description ?? null
+    const resolvedCategory = resolvedPackage?.category ?? null
+    const resolvedMinNights =
+      resolvedPackage?.minNights !== undefined ? Number(resolvedPackage.minNights) : null
+    const resolvedMaxNights =
+      resolvedPackage?.maxNights !== undefined ? Number(resolvedPackage.maxNights) : null
+
+    const resolvedFeatures = Array.isArray(resolvedPackage?.features)
+      ? resolvedPackage.features
+          .map((feature: any) => {
+            if (!feature) return null
+            if (typeof feature === 'string') return feature
+            if (typeof feature === 'object') {
+              if (typeof feature.label === 'string') return feature.label
+              if (typeof feature.feature === 'string') return feature.feature
+            }
+            return null
+          })
+          .filter(Boolean)
+      : []
 
     return {
       id: resolvedPackageId,
       name: resolvedName,
+      description: resolvedDescription,
+      features: resolvedFeatures,
+      category: resolvedCategory,
+      minNights: resolvedMinNights,
+      maxNights: resolvedMaxNights,
       baseRate: resolvedBaseRate,
       multiplier: resolvedMultiplier,
+      customName: selectedPackage?.customName || null,
+      hasResolvedPackage: Boolean(resolvedPackage),
+      packageTypeCode,
     }
-  }, [availablePackages, data?.post, data?.selectedPackage])
+  }, [availablePackages, data?.packageType, data?.post, data?.selectedPackage])
+
+  useEffect(() => {
+    console.log('Booking package snapshot', {
+      bookingId: data?.id,
+      packageType: data?.packageType,
+      resolvedPackageId: packageSnapshot?.id,
+      hasResolvedPackage: packageSnapshot?.hasResolvedPackage,
+    })
+  }, [data?.id, data?.packageType, packageSnapshot])
 
   const bookingDuration = React.useMemo(() => {
     if (!data?.fromDate || !data?.toDate) return null
@@ -381,10 +418,10 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       return Number(data.total)
     }
 
-    if (!bookingDuration) return null
+    if (!bookingDuration || !packageSnapshot) return null
 
     return calculateTotal(packageSnapshot.baseRate, bookingDuration, packageSnapshot.multiplier)
-  }, [bookingDuration, data?.total, packageSnapshot.baseRate, packageSnapshot.multiplier])
+  }, [bookingDuration, data?.total, packageSnapshot])
 
   useEffect(() => {
     const loadPackages = async () => {
@@ -516,7 +553,9 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                 ? data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'
                                 : data?.selectedPackage && data.selectedPackage.customName
                                   ? data.selectedPackage.customName
-                                  : 'No package assigned'}
+                                  : packageSnapshot?.hasResolvedPackage
+                                    ? packageSnapshot?.name || 'Package'
+                                    : 'No package assigned'}
                             </CardDescription>
                           </CardHeader>
                           <CardContent className="pt-6">
@@ -549,6 +588,25 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                   </div>
                                 </div>
                               </div>
+                            ) : packageSnapshot?.hasResolvedPackage ? (
+                              <PackageDisplay
+                                packageData={{
+                                  name: packageSnapshot?.name || 'Package',
+                                  description: packageSnapshot?.description,
+                                  features:
+                                    packageSnapshot?.features && packageSnapshot.features.length > 0
+                                      ? packageSnapshot.features
+                                      : null,
+                                  category: packageSnapshot?.category,
+                                  minNights: packageSnapshot?.minNights,
+                                  maxNights: packageSnapshot?.maxNights,
+                                  baseRate: packageSnapshot?.baseRate,
+                                  multiplier: packageSnapshot?.multiplier,
+                                }}
+                                customName={packageSnapshot?.customName}
+                                total={currentPackageTotal ?? undefined}
+                                variant="booking"
+                              />
                             ) : (
                               <div className="p-6 bg-muted/30 rounded-lg border border-dashed text-center">
                                 <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
