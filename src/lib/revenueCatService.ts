@@ -135,9 +135,9 @@ class RevenueCatService {
           icon: '✨',
         },
         {
-          id: 'three_nights_customer',
-          title: '🌙 Three Night Getaway',
-          description: 'Perfect weekend plus one experience',
+          id: '3nights',
+          title: '🏄‍♂️ Stay 3-Nights',
+          description: 'Special rate for the perfect weekend plus one experience',
           price: 389.99,
           currency: 'USD',
           period: 'day' as const,
@@ -146,7 +146,7 @@ class RevenueCatService {
           features: ['Premium accommodation', 'Concierge service', 'Breakfast included', 'Late checkout'],
           isEnabled: true,
           entitlement: 'pro' as const,
-          icon: '🌙',
+          icon: '🏄‍♂️',
         },
         {
           id: 'weekly_customer',
@@ -405,9 +405,9 @@ class RevenueCatService {
         entitlement: 'pro',
         icon: '💕',
       },
-      'three_nights_customer': {
-        id: 'three_nights_customer',
-        title: '🌙 Three Night Getaway',
+      '3nights': {
+        id: '3nights',
+        title: '🏄‍♂️ Stay 3-Nights',
         description: 'Perfect weekend plus one experience',
         price: 189.99,
         currency: 'USD',
@@ -417,7 +417,7 @@ class RevenueCatService {
         features: ['Wifi', 'Cleaner', 'Security', 'Parking'],
         isEnabled: true,
         entitlement: 'pro',
-        icon: '🌙',
+        icon: '🏄‍♂️',
       },
       'three_nights_guest': {
         id: '3nights',

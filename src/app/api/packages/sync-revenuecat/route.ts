@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
           'per_hour',
           'per_hour_guest',
           'per_hour_luxury',
-          'three_nights_customer',
+          '3nights',
           '3nights',
           'weekly',
           'hosted7nights',

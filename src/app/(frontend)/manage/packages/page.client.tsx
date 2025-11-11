@@ -185,7 +185,7 @@ function useHostPackages(postId: string) {
 const PACKAGE_TEMPLATES = [
   { revenueCatId: 'per_night_customer', defaultName: 'Per Night (Customer)' },
   { revenueCatId: 'weekly_customer', defaultName: 'Weekly (Customer)' },
-  { revenueCatId: 'three_nights_customer', defaultName: '3 Nights (Customer)' },
+  { revenueCatId: '3nights', defaultName: '🏄‍♂️ Stay 3-Nights' },
   { revenueCatId: 'per_night_luxury', defaultName: 'Per Night (Luxury)' },
   // ...add all your templates
 ]; 

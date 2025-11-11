@@ -43,6 +43,21 @@ type MonthlySummary = {
   totalCount: number
 }
 
+type StatementPackage = {
+  id: string
+  name: string
+  originalName?: string | null
+  description?: string | null
+  revenueCatId?: string | null
+  yocoId?: string | null
+}
+
+type PackageIdentity = {
+  key: string
+  displayName: string
+  pkg?: StatementPackage | null
+}
+
 interface AnnualStatementClientProps {
   postId: string | null
   year?: number
@@ -97,6 +112,10 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
   const [beneficiaries, setBeneficiaries] = useState<User[]>([])
   const [beneficiariesLoading, setBeneficiariesLoading] = useState(true)
   const [beneficiariesError, setBeneficiariesError] = useState<string | null>(null)
+
+  const [packages, setPackages] = useState<StatementPackage[]>([])
+  const [packagesLoading, setPackagesLoading] = useState(false)
+  const [packagesError, setPackagesError] = useState<string | null>(null)
 
   const { currentUser } = useUserContext()
   const [shareCopied, setShareCopied] = useState(false)
@@ -158,6 +177,70 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
     }
 
     fetchPostDetails()
+
+    return () => {
+      active = false
+    }
+  }, [postId])
+
+  useEffect(() => {
+    if (!postId) {
+      setPackages([])
+      setPackagesError(null)
+      return
+    }
+
+    let active = true
+
+    const fetchPackages = async () => {
+      setPackagesLoading(true)
+      setPackagesError(null)
+
+      try {
+        const response = await fetch(`/api/packages/post/${postId}`)
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error("Sign in to view package catalogue for this trust deed.")
+          }
+          throw new Error("Failed to load package catalogue.")
+        }
+
+        const data = await response.json()
+        const docs = Array.isArray(data?.packages) ? data.packages : []
+        if (!active) return
+
+        const parsed: StatementPackage[] = docs.map((pkg: any) => {
+          const rawRevenueCatId = typeof pkg?.revenueCatId === "string" ? pkg.revenueCatId : null
+          const normalisedRevenueCatId =
+            rawRevenueCatId && rawRevenueCatId.toLowerCase().includes("three_nights") ? "3nights" : rawRevenueCatId
+          const rawYocoId = typeof pkg?.yocoId === "string" ? pkg.yocoId : null
+          const normalisedYocoId =
+            rawYocoId && rawYocoId.toLowerCase().includes("three_nights") ? "3nights" : rawYocoId
+
+          return {
+            id: typeof pkg?.id === "string" ? pkg.id : String(pkg?.id ?? ""),
+            name: typeof pkg?.name === "string" ? pkg.name : "",
+            originalName: typeof pkg?.originalName === "string" ? pkg.originalName : pkg?.name,
+            description: typeof pkg?.description === "string" ? pkg.description : null,
+            revenueCatId: normalisedRevenueCatId,
+            yocoId: normalisedYocoId ?? normalisedRevenueCatId,
+          }
+        })
+
+        setPackages(parsed)
+      } catch (error) {
+        if (!active) return
+        console.error("Failed to fetch packages for annual statement:", error)
+        setPackages([])
+        setPackagesError(error instanceof Error ? error.message : "Unable to load package catalogue.")
+      } finally {
+        if (active) {
+          setPackagesLoading(false)
+        }
+      }
+    }
+
+    fetchPackages()
 
     return () => {
       active = false
@@ -333,8 +416,13 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
     })
 
     return Array.from(summaryMap.values()).sort((a, b) => {
-      const [aYear, aMonth] = a.key.split("-").map(Number)
-      const [bYear, bMonth] = b.key.split("-").map(Number)
+      const [aYearStr = "0", aMonthStr = "0"] = a.key.split("-")
+      const [bYearStr = "0", bMonthStr = "0"] = b.key.split("-")
+      const aYear = Number(aYearStr) || 0
+      const aMonth = Number(aMonthStr) || 0
+      const bYear = Number(bYearStr) || 0
+      const bMonth = Number(bMonthStr) || 0
+
       if (aYear === bYear) return aMonth - bMonth
       return aYear - bYear
     })
@@ -370,42 +458,6 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
     }
   }, [transactionsForPeriod])
 
-  const mostPopularPackage = useMemo(() => {
-    if (!transactionsForPeriod.length) return null
-
-    const counts = new Map<
-      string,
-      {
-        count: number
-        completedRevenue: number
-      }
-    >()
-
-    transactionsForPeriod.forEach((transaction) => {
-      const key =
-        transaction.packageName ||
-        transaction.plan ||
-        transaction.entitlement ||
-        (transaction.status === "completed" ? "Settled booking" : "General booking")
-
-      const current = counts.get(key) ?? { count: 0, completedRevenue: 0 }
-      current.count += 1
-      if (transaction.status === "completed") {
-        current.completedRevenue += transaction.amount ?? 0
-      }
-      counts.set(key, current)
-    })
-
-    let leader: { name: string; count: number; completedRevenue: number } | null = null
-    counts.forEach((value, key) => {
-      if (!leader || value.count > leader.count) {
-        leader = { name: key, count: value.count, completedRevenue: value.completedRevenue }
-      }
-    })
-
-    return leader
-  }, [transactionsForPeriod])
-
   const shareUrl = typeof window !== "undefined" ? window.location.href : ""
 
   const transactionTimeline = useMemo(() => {
@@ -418,6 +470,76 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
       })
       .slice(0, 12)
   }, [transactionsForPeriod])
+
+  const packageAliasLookup = useMemo(() => {
+    const map = new Map<string, StatementPackage>()
+    packages.forEach((pkg) => {
+      ;[pkg.name, pkg.originalName, pkg.revenueCatId, pkg.yocoId].forEach((value) => {
+        if (typeof value === "string" && value.trim()) {
+          map.set(value.toLowerCase(), pkg)
+        }
+      })
+      if (pkg.revenueCatId && pkg.revenueCatId.toLowerCase().includes("three_nights")) {
+        map.set("3nights", pkg)
+      }
+    })
+    return map
+  }, [packages])
+
+  const derivePackageIdentity = (
+    raw: string | null,
+    status: YocoTransactionRecord["status"],
+  ): PackageIdentity => {
+    if (raw && raw.trim()) {
+      const alias = packageAliasLookup.get(raw.toLowerCase())
+      if (alias) {
+        const displayName = alias.originalName || alias.name || alias.revenueCatId || raw
+        const keyBase = alias.revenueCatId || alias.originalName || alias.name || raw
+        return { key: keyBase.toLowerCase(), displayName, pkg: alias }
+      }
+      return { key: raw.toLowerCase(), displayName: raw, pkg: null }
+    }
+
+    const fallbackLabel = status ? `${status.charAt(0).toUpperCase()}${status.slice(1)} booking` : "Booking"
+    const fallbackKey = status ? `status:${status}` : "status:general"
+    return { key: fallbackKey, displayName: fallbackLabel, pkg: null }
+  }
+
+  const getTransactionIdentity = (transaction: YocoTransactionRecord) => {
+    const raw =
+      (typeof transaction.packageName === "string" && transaction.packageName) ||
+      (typeof transaction.plan === "string" && transaction.plan) ||
+      (typeof transaction.entitlement === "string" && transaction.entitlement) ||
+      null
+    return derivePackageIdentity(raw, transaction.status)
+  }
+
+  const mostPopularPackage = useMemo<{ name: string; count: number; completedRevenue: number } | null>(() => {
+    if (!transactionsForPeriod.length) return null
+
+    const counts = new Map<string, { name: string; count: number; completedRevenue: number }>()
+
+    transactionsForPeriod.forEach((transaction) => {
+      const identity = getTransactionIdentity(transaction)
+
+      const current = counts.get(identity.key) ?? { name: identity.displayName, count: 0, completedRevenue: 0 }
+      current.name = identity.displayName
+      current.count += 1
+      if (transaction.status === "completed") {
+        current.completedRevenue += transaction.amount ?? 0
+      }
+      counts.set(identity.key, current)
+    })
+
+    let leader: { name: string; count: number; completedRevenue: number } | null = null
+    counts.forEach((value) => {
+      if (!leader || value.count > leader.count) {
+        leader = { name: value.name, count: value.count, completedRevenue: value.completedRevenue }
+      }
+    })
+
+    return leader
+  }, [transactionsForPeriod, packageAliasLookup])
 
   useEffect(() => {
     if (!shareCopied) return
@@ -569,27 +691,51 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {transactionTimeline.map((transaction) => (
-              <div key={transaction.id} className="rounded-md border border-border/70 px-3 py-2">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm font-semibold text-foreground">
-                    {formatDate(transaction.createdAt)}
-                  </span>
-                  <Badge variant={transaction.status === "completed" ? "default" : "outline"}>
-                    {transaction.status.toUpperCase()}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {transaction.packageName || transaction.plan || transaction.entitlement || "Booking"} •{" "}
-                  {formatAmountToZAR(transaction.amount ?? 0)}
-                </p>
-                {transaction.completedAt ? (
-                  <p className="text-xs text-muted-foreground">
-                    Settled on {formatDate(transaction.completedAt)}
-                  </p>
-                ) : null}
+            {packagesLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading package catalogue…
               </div>
-            ))}
+            ) : null}
+            {packagesError ? (
+              <p className="text-xs text-destructive">Package catalogue unavailable: {packagesError}</p>
+            ) : null}
+            {transactionTimeline.map((transaction) => {
+              const identity = getTransactionIdentity(transaction)
+              const revenueCatProduct =
+                identity.pkg?.revenueCatId || identity.pkg?.yocoId ? (identity.pkg?.revenueCatId ?? identity.pkg?.yocoId) : null
+
+              return (
+                <div key={transaction.id} className="rounded-md border border-border/70 px-3 py-2">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-foreground">
+                      {formatDate(transaction.createdAt)}
+                    </span>
+                    <Badge variant={transaction.status === "completed" ? "default" : "outline"}>
+                      {transaction.status.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {identity.displayName} {identity.pkg?.id ? `(${identity.pkg.id})` : ""} • {formatAmountToZAR(transaction.amount ?? 0)}
+                  </p>
+                  {identity.pkg?.id ? (
+                    <p className="text-xs text-muted-foreground">
+                      Package ID: {identity.pkg.id}
+                    </p>
+                  ) : null}
+                  {revenueCatProduct ? (
+                    <p className="text-xs text-muted-foreground">
+                      RevenueCat product: {revenueCatProduct}
+                    </p>
+                  ) : null}
+                  {transaction.completedAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Settled on {formatDate(transaction.completedAt)}
+                    </p>
+                  ) : null}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       ) : null}
@@ -647,7 +793,9 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
           <CardContent>
             {mostPopularPackage ? (
               <>
-                <p className="text-2xl font-bold text-foreground">{mostPopularPackage.name}</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {mostPopularPackage?.name ?? "Top package"}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {mostPopularPackage.count} booking{mostPopularPackage.count === 1 ? "" : "s"} •{" "}
                   {formatAmountToZAR(mostPopularPackage.completedRevenue)} settled

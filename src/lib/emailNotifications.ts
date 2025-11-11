@@ -35,7 +35,7 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     
     // Send email using the configured Resend SMTP transporter
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM_ADDRESS || 'noreply@betaplek.com',
+      from: process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
       to: data.hostEmail,
       subject: `New Estimate Request for ${data.propertyTitle}`,
       html: generateEstimateRequestEmailHTML(data),
@@ -74,7 +74,7 @@ export async function sendBookingConfirmationEmail(
   })
 
   await transporter.sendMail({
-    from: process.env.EMAIL_FROM_ADDRESS || 'noreply@betaplek.com',
+    from: process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
     to: data.recipientEmail,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,

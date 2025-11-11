@@ -88,6 +88,9 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
       setPackages(
         packages.map((pkg: any) => {
           const settings = settingsMap.get(pkg.id);
+          const rawRevenueCatId = typeof pkg.revenueCatId === 'string' ? pkg.revenueCatId : undefined;
+          const normalisedRevenueCatId =
+            rawRevenueCatId && rawRevenueCatId.toLowerCase().includes('three_nights') ? '3nights' : rawRevenueCatId;
           return {
             id: pkg.id,
             name: pkg.name,
@@ -96,7 +99,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
             customName: settings?.customName || pkg.name,
             minNights: pkg.minNights,
             maxNights: pkg.maxNights,
-            revenueCatId: pkg.revenueCatId,
+            revenueCatId: normalisedRevenueCatId,
             baseRate: pkg.baseRate,
             category: pkg.category,
             multiplier: pkg.multiplier || 1,

@@ -33,8 +33,8 @@ export const allPackages: SuggestedPackage[] = [
     isPrimary: true,
   },
   {
-    id: 'three_nights_customer',
-    title: '3 Night Package',
+    id: '3nights',
+    title: '🏄‍♂️ Stay 3-Nights',
     description: 'Special rate for 3+ nights - Member pricing',
     minNights: 2,
     maxNights: 3,
