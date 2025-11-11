@@ -268,6 +268,30 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const isProcessingRef = useRef(false)
   const finalTranscriptRef = useRef('')
   const activeThreadRef = useRef(0)
+  const historyKeyRef = useRef<string | null>(null)
+
+  const persistHistoryEntries = useCallback((threadId: number, entries: Message[]) => {
+    if (typeof window === 'undefined' || !historyKeyRef.current || entries.length === 0) return
+
+    try {
+      const existing: any[] = JSON.parse(window.localStorage.getItem(historyKeyRef.current) ?? '[]')
+      const additions = entries.map((entry) => ({
+        role: entry.role,
+        content: entry.content,
+        timestamp: Date.now(),
+        threadId,
+      }))
+      const updated = [...existing, ...additions].slice(-50)
+      window.localStorage.setItem(historyKeyRef.current, JSON.stringify(updated))
+      window.dispatchEvent(
+        new CustomEvent('aiHistoryUpdate', {
+          detail: { key: historyKeyRef.current, history: updated },
+        }),
+      )
+    } catch (error) {
+      console.warn('Failed to persist smart estimate history', error)
+    }
+  }, [])
 
   const beginNewThread = useCallback(
     (initialMessages: Message[] = []) => {
@@ -275,17 +299,19 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       activeThreadRef.current = nextThreadId
       packagesSuggestedRef.current = false
       setMessages(initialMessages)
+      persistHistoryEntries(nextThreadId, initialMessages)
       return nextThreadId
     },
-    [setMessages],
+    [persistHistoryEntries],
   )
 
   const appendMessageToThread = useCallback(
     (threadId: number, message: Message) => {
       if (activeThreadRef.current !== threadId) return
       setMessages((prev) => [...prev, message])
+      persistHistoryEntries(threadId, [message])
     },
-    [setMessages],
+    [persistHistoryEntries],
   )
 
   // Helper function to filter packages based on customer entitlement
@@ -705,6 +731,11 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         duration,
         customer: currentUser?.id,
         packageType: selectedPackage.yocoId || selectedPackage.id,
+        selectedPackage: {
+          package: selectedPackage.id,
+          customName: selectedPackage.name,
+          enabled: true,
+        },
       }
       
       const estimateResponse = await fetch('/api/estimates', {
@@ -872,7 +903,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             packageType: selectedPackage.yocoId || selectedPackage.id,
             baseRate: total,
             paymentValidated: true, // Mark that payment was successfully processed (fallback case)
-            yocoPaymentId: new Date().toISOString() // Use current timestamp as fallback validation
+            yocoPaymentId: new Date().toISOString(), // Use current timestamp as fallback validation
+            selectedPackage: {
+              package: selectedPackage.id,
+              customName: selectedPackage.name,
+              enabled: true,
+            },
           }),
         })
         
@@ -903,15 +939,27 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
 
   // Create booking record in the database
   const createBookingRecord = async () => {
-    if (!startDate || !endDate) {
-      throw new Error('Start and end dates are required')
+    if (!startDate || !endDate || !selectedPackage) {
+      throw new Error('Start and end dates and a selected package are required')
     }
 
+    const fallbackTotal = selectedPackage.baseRate || calculateTotal(baseRate, duration, selectedPackage.multiplier)
     const bookingData = {
       postId,
       fromDate: startDate.toISOString(),
       toDate: endDate.toISOString(),
-      paymentStatus: 'paid', // This will be set after successful payment validation
+      paymentStatus: 'paid',
+      customer: currentUser?.id,
+      title: postTitle,
+      total: selectedPackageTotal ?? fallbackTotal,
+      packageType: selectedPackage?.yocoId || selectedPackage?.id,
+      selectedPackage: selectedPackage
+        ? {
+            package: selectedPackage.id,
+            customName: selectedPackage.name,
+            enabled: true,
+          }
+        : undefined,
     }
 
     const bookingResponse = await fetch('/api/bookings', {
@@ -963,7 +1011,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           guests: [],
           title: `Estimate for ${postId}`,
           packageType: selectedPackage?.yocoId || selectedPackage?.id || 'standard',
-          total
+          total,
+          selectedPackage: selectedPackage
+            ? {
+                package: selectedPackage.id,
+                customName: selectedPackage.name,
+                enabled: true,
+              }
+            : undefined,
         })
       })
       if (!resp.ok) {
@@ -1532,9 +1587,9 @@ Availability Status:
             <p className="text-sm">{message.content || 'Here are the available packages:'}</p>
           </div>
           <div className="grid gap-2">
-            {suggestedPackages.map((pkg: Package) => (
+            {suggestedPackages.map((pkg: Package, pkgIndex: number) => (
               <PackageCard
-                key={pkg.id}
+                key={`${pkg.id}-${pkgIndex}`}
                 package={pkg}
                 duration={duration}
                 baseRate={baseRate}
@@ -1822,6 +1877,30 @@ Availability Status:
     packagesSuggestedRef.current = true
     suggestPackagesAfterDateSelection()
   }, [startDate, endDate, latestEstimate, duration, messages.length])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const key = `ai:estimateHistory:${postId}_${currentUser?.id || 'guest'}`
+    historyKeyRef.current = key
+
+    try {
+      const existing: any[] = JSON.parse(window.localStorage.getItem(key) ?? '[]')
+      window.dispatchEvent(
+        new CustomEvent('aiHistoryUpdate', {
+          detail: { key, history: existing },
+        }),
+      )
+    } catch {
+      // ignore parse errors
+    }
+
+    return () => {
+      if (historyKeyRef.current === key) {
+        historyKeyRef.current = null
+      }
+    }
+  }, [postId, currentUser?.id])
   
   return (
     <Card className={cn("w-full max-w-2xl mx-auto", className)}>

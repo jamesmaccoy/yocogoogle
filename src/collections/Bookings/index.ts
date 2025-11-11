@@ -100,6 +100,7 @@ export const Booking: CollectionConfig = {
           await req.payload.update({
             collection: 'bookings',
             id: _bookingId,
+            overrideAccess: true,
             data: {
               token,
             },
@@ -197,6 +198,7 @@ export const Booking: CollectionConfig = {
         await req.payload.update({
           collection: 'bookings',
           id: _bookingId,
+          overrideAccess: true,
           data: {
             token,
           },

@@ -1,9 +1,17 @@
 'use client'
 
-import { Media } from '@/components/Media'
-import { Booking, User } from '@/payload-types'
+import type { Booking, User } from '@/payload-types'
 import { formatDateTime } from '@/utilities/formatDateTime'
-import { PlusCircleIcon, TrashIcon, UserIcon, FileText, Lock, Package, Calendar as CalendarIcon } from 'lucide-react'
+import {
+  PlusCircleIcon,
+  TrashIcon,
+  UserIcon,
+  FileText,
+  Lock,
+  Package,
+  Calendar as CalendarIcon,
+  Sparkles,
+} from 'lucide-react'
 import React, { useCallback, useEffect, useState } from 'react'
 import InviteUrlDialog from './_components/invite-url-dialog'
 import SimplePageRenderer from './_components/SimplePageRenderer'
@@ -11,15 +19,14 @@ import { Button } from '@/components/ui/button'
 import { useYoco } from '@/providers/Yoco'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Calendar } from '@/components/ui/calendar'
-import { DateRange } from 'react-day-picker'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
-import { enZA } from 'date-fns/locale'
 import { useRouter } from 'next/navigation'
 import { calculateTotal } from '@/lib/calculateTotal'
-import { formatAmountToZAR } from '@/lib/currency'
+import { PackageDisplay } from '@/components/PackageDisplay'
+import { BookingInfoCard } from '@/components/BookingInfoCard'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import BookingSidebar from './_components/BookingSidebar'
 
 type Props = {
@@ -27,71 +34,53 @@ type Props = {
   user: User
 }
 
-
-
 interface AddonPackage {
-  id: string;
-  name: string;
-  originalName: string;
-  description?: string;
-  multiplier: number;
-  category: string;
-  minNights: number;
-  maxNights: number;
-  revenueCatId: string;
-  baseRate?: number;
-  isEnabled: boolean;
-  features: any[];
-  relatedPage?: any; // Related page data
-  source: string;
-  hasCustomName: boolean;
+  id: string
+  name: string
+  originalName: string
+  description?: string
+  multiplier: number
+  category: string
+  minNights: number
+  maxNights: number
+  revenueCatId: string
+  baseRate?: number
+  isEnabled: boolean
+  features: any[]
+  relatedPage?: any
+  source: string
+  hasCustomName: boolean
 }
 
 // Helper to format and convert price (kept for potential future use)
 function formatPriceWithUSD(product: any) {
-  const price = product.price;
-  const priceString = product.priceString;
-  const currency = product.currencyCode || 'ZAR';
-  // Fallback: if price is undefined, show N/A
-  if (typeof price !== 'number') return 'N/A';
-  // If already USD, just show
-  if (currency === 'USD') return `$${price.toFixed(2)}`;
-  // Convert ZAR to USD (example rate: 1 USD = 18 ZAR)
-  const usd = price / 18;
-  return `${priceString || `R${price.toFixed(2)}`} / $${usd.toFixed(2)}`;
+  const price = product.price
+  const priceString = product.priceString
+  const currency = product.currencyCode || 'ZAR'
+  if (typeof price !== 'number') return 'N/A'
+  if (currency === 'USD') return `$${price.toFixed(2)}`
+  const usd = price / 18
+  return `${priceString || `R${price.toFixed(2)}`} / $${usd.toFixed(2)}`
 }
 
 export default function BookingDetailsClientPage({ data, user }: Props) {
   const [removedGuests, setRemovedGuests] = React.useState<string[]>([])
   const router = useRouter()
 
-  // Addon packages state
   const [addonPackages, setAddonPackages] = useState<AddonPackage[]>([])
   const [loadingAddons, setLoadingAddons] = useState(true)
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
+  const { isInitialized, createPaymentLinkFromDatabase } = useYoco()
   const [currentAddonId, setCurrentAddonId] = useState<string | null>(null)
-  const { isInitialized, createPaymentLinkFromDatabase } = useYoco();
 
-  // Related pages state
   const [relatedPages, setRelatedPages] = useState<any[]>([])
   const [loadingPages, setLoadingPages] = useState(true)
-  
-  // Date picker states for new estimate requests
-  const [selectedDates, setSelectedDates] = useState<DateRange | undefined>()
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
-  const [isSubmittingEstimate, setIsSubmittingEstimate] = useState(false)
-  
-  // Available packages state
+
   const [availablePackages, setAvailablePackages] = useState<any[]>([])
-  const [loadingPackages, setLoadingPackages] = useState(true)
-  
-  // Unavailable dates state
-  const [unavailableDates, setUnavailableDates] = useState<Date[]>([])
-  const [loadingUnavailableDates, setLoadingUnavailableDates] = useState(false)
-  
-  // Error state for estimate creation
+
+  const [isSubmittingEstimate, setIsSubmittingEstimate] = useState(false)
   const [estimateError, setEstimateError] = useState<string | null>(null)
   const [assistantHistory, setAssistantHistory] = useState<
     {
@@ -101,9 +90,207 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       threadId: number
     }[]
   >([])
+  const historyKey = React.useMemo(() => (data?.id ? `ai:bookingHistory:${data.id}` : null), [data?.id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !historyKey) return
+
+    try {
+      const stored: any[] = JSON.parse(window.localStorage.getItem(historyKey) ?? '[]')
+      if (Array.isArray(stored)) {
+        setAssistantHistory(stored)
+      } else {
+        setAssistantHistory([])
+      }
+    } catch {
+      setAssistantHistory([])
+    }
+
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail
+      if (detail?.key === historyKey && Array.isArray(detail?.history)) {
+        setAssistantHistory(detail.history)
+      }
+    }
+
+    window.addEventListener('aiHistoryUpdate', handler as EventListener)
+    return () => {
+      window.removeEventListener('aiHistoryUpdate', handler as EventListener)
+    }
+  }, [historyKey])
+
+  const clearAssistantHistory = useCallback(() => {
+    if (typeof window === 'undefined' || !historyKey) return
+    window.localStorage.removeItem(historyKey)
+    const empty: any[] = []
+    setAssistantHistory(empty)
+    window.dispatchEvent(new CustomEvent('aiHistoryUpdate', { detail: { key: historyKey, history: empty } }))
+  }, [historyKey])
+
+  useEffect(() => {
+    if (!loadingAddons) {
+      setLoadingPages(false)
+    }
+  }, [loadingAddons])
+
+  const removeGuestHandler = async (guestId: string) => {
+    const res = await fetch(`/api/bookings/${data.id}/guests/${guestId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!res.ok) {
+      console.error('Error removing guest:', res.statusText)
+      return
+    }
+
+    setRemovedGuests((prev) => [...prev, guestId])
+  }
+
+  const getBookingContext = React.useCallback(() => {
+    const booking = data
+    const post = typeof booking?.post === 'string' ? null : booking?.post
+
+    return {
+      context: 'booking-details',
+      booking: {
+        id: booking?.id,
+        title: booking?.title,
+        fromDate: booking?.fromDate,
+        toDate: booking?.toDate,
+        paymentStatus: booking?.paymentStatus,
+        createdAt: booking?.createdAt,
+      },
+      property: post
+        ? {
+            id: post.id,
+            title: post.title,
+            description: post.meta?.description || '',
+            content: post.content,
+            baseRate: post.baseRate,
+            relatedPosts: post.relatedPosts || [],
+          }
+        : null,
+      guests: {
+        customer:
+          typeof booking?.customer === 'string'
+            ? null
+            : {
+                id: booking?.customer?.id,
+                name: booking?.customer?.name,
+                email: booking?.customer?.email,
+              },
+        guests:
+          booking?.guests
+            ?.filter((guest) => typeof guest !== 'string')
+            .map((guest) => ({
+              id: guest.id,
+              name: guest.name,
+              email: guest.email,
+            })) || [],
+      },
+      addons: addonPackages.map((addon) => ({
+        id: addon.id,
+        name: addon.name,
+        description: addon.description,
+        price: (addon.baseRate || 0) * addon.multiplier,
+        features: addon.features,
+      })),
+      checkinInfo: relatedPages.map((page) => ({
+        id: page.id,
+        title: page.title,
+        packageName: page.packageName,
+        content: page.layout,
+      })),
+    }
+  }, [addonPackages, data, relatedPages])
+
+  const bookingContext = React.useMemo(() => getBookingContext(), [getBookingContext])
+  const bookingContextJson = React.useMemo(() => JSON.stringify(bookingContext ?? {}), [bookingContext])
+
+  const handleAskAssistant = useCallback(() => {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent('openAIAssistant', {
+        detail: bookingContext,
+      }),
+    )
+  }, [bookingContext])
+
+  const handleScrollToAddons = useCallback(() => {
+    const target = document.getElementById('booking-addons')
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [])
+
+  const handleAddonPurchase = useCallback(
+    async (addon: AddonPackage) => {
+      if (!createPaymentLinkFromDatabase) {
+        setPaymentError('Payments are not available right now. Please try again later.')
+        return
+      }
+
+      const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+      if (!postId) {
+        setPaymentError('Missing property information for this add-on.')
+        return
+      }
+
+      const baseRate = Number(addon.baseRate ?? 0)
+      const multiplier = Number(addon.multiplier ?? 1)
+      const total = Number((baseRate * multiplier).toFixed(2))
+
+      if (!total || total <= 0) {
+        setPaymentError('This add-on is not available for online purchase yet.')
+        return
+      }
+
+      setPaymentLoading(true)
+      setPaymentSuccess(false)
+      setPaymentError(null)
+      setCurrentAddonId(addon.id)
+
+      try {
+        const paymentLink = await createPaymentLinkFromDatabase(
+          {
+            id: addon.id,
+            name: addon.name,
+            description: addon.description,
+            baseRate: addon.baseRate,
+            revenueCatId: addon.revenueCatId,
+          },
+          user?.name || user?.email || 'Guest',
+          total,
+          {
+            postId,
+            intent: 'product',
+          },
+        )
+
+        if (!paymentLink?.url) {
+          throw new Error('Failed to create payment link')
+        }
+
+        setPaymentSuccess(true)
+        window.location.href = paymentLink.url
+      } catch (error) {
+        console.error('Failed to purchase add-on:', error)
+        setPaymentError(error instanceof Error ? error.message : 'Failed to create payment link. Please try again.')
+      } finally {
+        setPaymentLoading(false)
+        setCurrentAddonId(null)
+      }
+    },
+    [createPaymentLinkFromDatabase, data?.post, user?.email, user?.name],
+  )
 
   const packageSnapshot = React.useMemo(() => {
     const selectedPackage = data?.selectedPackage
+    const packageTypeCode = data?.packageType?.toString().trim() || null
 
     let resolvedPackage: any =
       selectedPackage && typeof selectedPackage.package === 'object'
@@ -122,6 +309,22 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
 
     if (!resolvedPackage && resolvedPackageId) {
       resolvedPackage = availablePackages.find((pkg) => pkg.id === resolvedPackageId) || null
+    }
+
+    if (!resolvedPackage && packageTypeCode) {
+      const matcher = (pkg: any) => {
+        const code = packageTypeCode.toLowerCase()
+        return (
+          pkg?.id?.toString().toLowerCase() === code ||
+          pkg?.yocoId?.toString().toLowerCase() === code ||
+          pkg?.revenueCatId?.toString().toLowerCase() === code
+        )
+      }
+      const matchedPackage = availablePackages.find(matcher)
+      if (matchedPackage) {
+        resolvedPackage = matchedPackage
+        resolvedPackageId = matchedPackage.id
+      }
     }
 
     if (!resolvedPackage) {
@@ -148,11 +351,13 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
       selectedPackageMultiplier !== undefined && !isNaN(Number(selectedPackageMultiplier))
         ? Number(selectedPackageMultiplier)
         : resolvedPackage && (resolvedPackage as any).multiplier !== undefined && !isNaN(Number((resolvedPackage as any).multiplier))
-        ? Number((resolvedPackage as any).multiplier)
-        : 1
+          ? Number((resolvedPackage as any).multiplier)
+          : 1
 
     const resolvedName =
-      selectedPackage?.customName || resolvedPackage?.name || 'Standard stay'
+      selectedPackage?.customName ||
+      resolvedPackage?.name ||
+      (packageTypeCode ? packageTypeCode.replace(/[-_]/g, ' ') : 'Standard stay')
 
     return {
       id: resolvedPackageId,
@@ -184,72 +389,59 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   useEffect(() => {
     const loadPackages = async () => {
       setLoadingAddons(true)
+      setPaymentError(null)
       try {
-        // Get the post ID from the booking data
         const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
         if (!postId) {
           throw new Error('No post ID found')
         }
-        
-        // Fetch both addon packages and all packages to check for related pages
+
         const [addonsResponse, allPackagesResponse] = await Promise.all([
           fetch(`/api/packages/addons/${postId}`),
-          fetch(`/api/packages/post/${postId}`)
+          fetch(`/api/packages/post/${postId}`),
         ])
-        
+
         if (!addonsResponse.ok || !allPackagesResponse.ok) {
           throw new Error('Failed to fetch packages')
         }
-        
+
         const [addonsData, allPackagesData] = await Promise.all([
           addonsResponse.json(),
-          allPackagesResponse.json()
+          allPackagesResponse.json(),
         ])
-        
-        setAddonPackages(addonsData.addons || [])
-        
-        // Also collect related pages from all packages (not just addons)
-        const allPackages = allPackagesData.packages || []
-        const packagesWithPages = allPackages.filter((pkg: any) => pkg.relatedPage)
-        
+
+        const resolvedAddons = Array.isArray(addonsData)
+          ? addonsData
+          : Array.isArray(addonsData?.addons)
+            ? addonsData.addons
+            : []
+        setAddonPackages(resolvedAddons)
+
+        const resolvedPackages = Array.isArray(allPackagesData)
+          ? allPackagesData
+          : Array.isArray(allPackagesData?.packages)
+            ? allPackagesData.packages
+            : []
+        const packagesWithPages = resolvedPackages.filter((pkg: any) => pkg.relatedPage)
+
         if (packagesWithPages.length > 0) {
-          // Fetch full page data for each related page
           const pagePromises = packagesWithPages.map(async (pkg: any) => {
             try {
               const pageResponse = await fetch(`/api/pages/${pkg.relatedPage.id}?depth=2&draft=false&locale=undefined`)
-              if (pageResponse.ok) {
-                const fullPageData = await pageResponse.json()
-                return {
-                  ...fullPageData,
-                  packageName: pkg.name,
-                  packageId: pkg.id
-                }
-              } else {
-                // Fallback to basic data if full fetch fails
-                return {
-                  ...pkg.relatedPage,
-                  packageName: pkg.name,
-                  packageId: pkg.id
-                }
+              if (!pageResponse.ok) {
+                throw new Error(`Failed to fetch page: ${pageResponse.statusText}`)
               }
-            } catch (error) {
-              console.error(`Error fetching page ${pkg.relatedPage.id}:`, error)
-              // Fallback to basic data
-              return {
-                ...pkg.relatedPage,
-                packageName: pkg.name,
-                packageId: pkg.id
-              }
+              return pageResponse.json()
+            } catch (err) {
+              console.error(`Error fetching page ${pkg.relatedPage.id}:`, err)
+              return null
             }
           })
-          
           const pages = await Promise.all(pagePromises)
           setRelatedPages(pages)
         }
-        
-        // Set all packages as available packages for display
-        setAvailablePackages(allPackagesData.packages || [])
-        setLoadingPackages(false)
+
+        setAvailablePackages(resolvedPackages)
       } catch (err) {
         console.error('Error loading packages:', err)
         setPaymentError('Failed to load packages')
@@ -257,715 +449,462 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
         setLoadingAddons(false)
       }
     }
-    
+
     loadPackages()
   }, [data?.post])
 
-  // Set loading pages to false when packages are loaded
-  useEffect(() => {
-    if (!loadingAddons) {
-      setLoadingPages(false)
-    }
-  }, [loadingAddons])
-
-  const removeGuestHandler = async (guestId: string) => {
-    const res = await fetch(`/api/bookings/${data.id}/guests/${guestId}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!res.ok) {
-      console.error('Error removing guest:', res.statusText)
-      return
-    }
-
-    setRemovedGuests((prev) => [...prev, guestId])
-  }
-
-  const loadUnavailableDates = useCallback(async () => {
-    const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
-    if (!postId) return
-    
-    setLoadingUnavailableDates(true)
-    try {
-      const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
-      if (response.ok) {
-        const responseData = await response.json()
-        const dates = responseData.unavailableDates.map((dateStr: string) => new Date(dateStr))
-        setUnavailableDates(dates)
-      }
-    } catch (error) {
-      console.error('Error loading unavailable dates:', error)
-    } finally {
-      setLoadingUnavailableDates(false)
-    }
-  }, [data?.post])
-
-  const handleEstimateRequest = async () => {
-    if (!selectedDates?.from || !selectedDates?.to) return
-
-    setIsSubmittingEstimate(true)
-    setEstimateError(null)
-
-    try {
-      const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
-      if (!postId) {
-        throw new Error('No post ID found')
-      }
-
-      const availabilityParams = new URLSearchParams({
-        postId: postId,
-        startDate: selectedDates.from.toISOString(),
-        endDate: selectedDates.to.toISOString(),
-      })
-
-      if (data?.id) {
-        availabilityParams.set('bookingId', data.id)
-      }
-
-      if (packageSnapshot.id) {
-        availabilityParams.set('packageId', packageSnapshot.id)
-      }
-
-      const availabilityResponse = await fetch(
-        `/api/bookings/check-availability?${availabilityParams.toString()}`,
-      )
-
-      if (!availabilityResponse.ok) {
-        throw new Error('Failed to check availability')
-      }
-
-      const availabilityData = await availabilityResponse.json()
-
-      if (!availabilityData.isAvailable) {
-        setEstimateError('The selected dates are not available. Please choose different dates.')
-        setIsSubmittingEstimate(false)
-        return
-      }
-
-      const fromDateObj = new Date(selectedDates.from)
-      const toDateObj = new Date(selectedDates.to)
-      const duration = Math.max(
-        1,
-        Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
-      )
-
-      const packageBaseRate = packageSnapshot.baseRate
-      const packageMultiplier = packageSnapshot.multiplier
-      const packageId = packageSnapshot.id
-      const packageName = packageSnapshot.name
-
-      const estimateTotal = calculateTotal(packageBaseRate, duration, packageMultiplier)
-
-      const formattedDateRange = `${format(fromDateObj, 'LLL dd, y')} - ${format(toDateObj, 'LLL dd, y')}`
-      const formattedTotal = formatAmountToZAR(estimateTotal)
-
-      const redirectParams = new URLSearchParams({
-        postId,
-        startDate: fromDateObj.toISOString(),
-        endDate: toDateObj.toISOString(),
-        duration: duration.toString(),
-        baseRate: packageBaseRate.toString(),
-        multiplier: packageMultiplier.toString(),
-        total: estimateTotal.toString(),
-      })
-
-      if (packageId) {
-        redirectParams.set('packageId', packageId)
-      }
-
-      const redirectUrl = `/estimate?${redirectParams.toString()}`
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('openAIAssistant', {
-            detail: {
-              context: 'booking-reschedule',
-              postId,
-              message: `Please help me reschedule to ${formattedDateRange}.`,
-              rescheduleData: {
-                postTitle: typeof data?.post === 'object' ? data.post.title : 'your stay',
-                packageName,
-                fromDate: fromDateObj.toISOString(),
-                toDate: toDateObj.toISOString(),
-                duration,
-                baseRate: packageBaseRate,
-                multiplier: packageMultiplier,
-                total: estimateTotal,
-                formattedTotal,
-                formattedDateRange,
-                redirectUrl,
-              },
-            },
-          }),
-        )
-      }
-
-      router.prefetch(redirectUrl)
-      setSelectedDates(undefined)
-    } catch (error) {
-      console.error('Error preparing estimate redirect:', error)
-      setEstimateError('Failed to prepare estimate. Please try again.')
-    } finally {
-      setIsSubmittingEstimate(false)
-    }
-  }
-
-  const handleAddonPurchase = async (addon: AddonPackage) => {
-    if (!createPaymentLinkFromDatabase) {
-      setPaymentError('Payments are not available right now. Please try again later.')
-      return
-    }
-
-    const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
-
-    if (!postId) {
-      setPaymentError('Missing property information for this add-on.')
-      return
-    }
-
-    const baseRate = Number(addon.baseRate ?? 0)
-    const multiplier = Number(addon.multiplier ?? 1)
-    const total = Number((baseRate * multiplier).toFixed(2))
-
-    if (!total || total <= 0) {
-      setPaymentError('This add-on is not available for online purchase yet.')
-      return
-    }
-
-    setPaymentLoading(true)
-    setCurrentAddonId(addon.id)
-    setPaymentError(null)
-    setPaymentSuccess(false)
-
-    try {
-      const metadata = {
-        postId,
-        duration: bookingDuration ?? undefined,
-        startDate: data?.fromDate ? new Date(data.fromDate).toISOString() : undefined,
-        endDate: data?.toDate ? new Date(data.toDate).toISOString() : undefined,
-        intent: 'product' as const,
-      }
-
-      const paymentLink = await createPaymentLinkFromDatabase(
-        {
-          id: addon.id,
-          name: addon.name,
-          description: addon.description,
-          baseRate: addon.baseRate,
-          revenueCatId: addon.revenueCatId,
-        },
-        user?.name || user?.email || 'Guest',
-        total,
-        metadata,
-      )
-
-      if (!paymentLink) {
-        throw new Error('Failed to create payment link for this add-on.')
-      }
-
-      setPaymentSuccess(true)
-      window.location.href = paymentLink.url
-    } catch (err) {
-      console.error('Failed to purchase add-on:', err)
-      setPaymentError(err instanceof Error ? err.message : 'Failed to create payment link. Please try again.')
-    } finally {
-      setPaymentLoading(false)
-      setCurrentAddonId(null)
-    }
-  }
-
-  // Create booking context for AI Assistant
-  const getBookingContext = useCallback(() => {
-    const booking = data
-    const post = typeof booking?.post === 'string' ? null : booking?.post
-    
-    return {
-      context: 'booking-details',
-      booking: {
-        id: booking?.id,
-        title: booking?.title,
-        fromDate: booking?.fromDate,
-        toDate: booking?.toDate,
-        paymentStatus: booking?.paymentStatus,
-        createdAt: booking?.createdAt
-      },
-      property: post ? {
-        id: post.id,
-        title: post.title,
-        description: post.meta?.description || '',
-        content: post.content,
-        baseRate: post.baseRate,
-        relatedPosts: post.relatedPosts || []
-      } : null,
-      guests: {
-        customer: typeof booking?.customer === 'string' ? null : {
-          id: booking?.customer?.id,
-          name: booking?.customer?.name,
-          email: booking?.customer?.email
-        },
-        guests: booking?.guests?.filter(guest => typeof guest !== 'string').map(guest => ({
-          id: guest.id,
-          name: guest.name,
-          email: guest.email
-        })) || []
-      },
-      addons: addonPackages.map(addon => ({
-        id: addon.id,
-        name: addon.name,
-        description: addon.description,
-        price: (addon.baseRate || 0) * addon.multiplier,
-        features: addon.features
-      })),
-      checkinInfo: relatedPages.map(page => ({
-        id: page.id,
-        title: page.title,
-        packageName: page.packageName,
-        content: page.layout
-      }))
-    }
-  }, [addonPackages, data, relatedPages])
-
-  const handleAskAssistant = useCallback(() => {
-    if (typeof window === 'undefined') return
-
-    window.dispatchEvent(
-      new CustomEvent('openAIAssistant', {
-        detail: getBookingContext(),
-      }),
-    )
-  }, [getBookingContext])
-
-  const handleStartEstimateFlow = useCallback(() => {
-    loadUnavailableDates()
-    setEstimateError(null)
-    setIsDatePickerOpen(true)
-  }, [loadUnavailableDates])
-
-  const handleScrollToAddons = useCallback(() => {
-    const target = document.getElementById('booking-addons')
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [])
-
-  const totalGuests = React.useMemo(() => {
-    const guestCount = Array.isArray(data?.guests)
-      ? data.guests.filter((guest) => {
-          if (typeof guest === 'string') {
-            return !removedGuests.includes(guest)
-          }
-          return !removedGuests.includes(guest.id)
-        }).length
-      : 0
-
-    const hasCustomer = Boolean(data?.customer)
-    return guestCount + (hasCustomer ? 1 : 0)
-  }, [data?.customer, data?.guests, removedGuests])
-
-  const historyKey = React.useMemo(
-    () => (data?.id ? `ai:bookingHistory:${data.id}` : null),
-    [data?.id],
-  )
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !historyKey) return
-
-    try {
-      const stored: any[] = JSON.parse(window.localStorage.getItem(historyKey) ?? '[]')
-      setAssistantHistory(stored)
-    } catch {
-      setAssistantHistory([])
-    }
-
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent)?.detail
-      if (detail?.key === historyKey && Array.isArray(detail?.history)) {
-        setAssistantHistory(detail.history)
-      }
-    }
-
-    window.addEventListener('aiHistoryUpdate', handler as EventListener)
-    return () => {
-      window.removeEventListener('aiHistoryUpdate', handler as EventListener)
-    }
-  }, [historyKey])
-
-  const clearAssistantHistory = useCallback(() => {
-    if (typeof window === 'undefined' || !historyKey) return
-    window.localStorage.removeItem(historyKey)
-    const empty: any[] = []
-    setAssistantHistory(empty)
-    window.dispatchEvent(
-      new CustomEvent('aiHistoryUpdate', { detail: { key: historyKey, history: empty } }),
-    )
-  }, [historyKey])
-
   return (
-    <div className="container my-10">
-      <div className="flex flex-col gap-10 lg:flex-row">
-        <div className="lg:w-[280px] lg:flex-shrink-0">
-          <BookingSidebar
-            booking={data}
-            user={user}
-            packageSnapshot={packageSnapshot}
-            bookingDuration={bookingDuration}
-            currentPackageTotal={currentPackageTotal}
-            totalGuests={totalGuests}
-            onAskAssistant={handleAskAssistant}
-            onStartEstimate={handleStartEstimateFlow}
-            onScrollToAddons={handleScrollToAddons}
-            isSubmittingEstimate={isSubmittingEstimate}
-            hasCheckInInfo={relatedPages.length > 0}
-            history={assistantHistory}
-            onClearHistory={assistantHistory.length > 0 ? clearAssistantHistory : undefined}
-          />
-        </div>
-        <div className="flex-1">
-          <div className="max-w-4xl space-y-10">
-            <Tabs defaultValue="details" className="mt-0">
-              <TabsList className="mb-6 bg-muted p-2 rounded-full flex flex-row gap-2">
-                <TabsTrigger value="details" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-                  <FileText className="h-5 w-5" />
-                  <span className="hidden sm:inline">Booking & Guests</span>
+    <div className="min-h-screen bg-gradient-to-b from-muted/30 to-background">
+      <div className="container max-w-6xl mx-auto px-4 py-8 md:py-12">
+        <div className="flex flex-col gap-8 lg:flex-row">
+          <aside className="order-2 lg:order-1 lg:w-[280px] lg:flex-shrink-0">
+            <BookingSidebar
+              history={assistantHistory}
+              onClearHistory={assistantHistory.length > 0 ? clearAssistantHistory : undefined}
+            />
+          </aside>
+          <div className="order-1 flex-1 space-y-8 lg:order-2">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-1 bg-primary rounded-full" />
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                  {data && 'post' in data && typeof data?.post !== 'string' ? data?.post.title : 'Booking Details'}
+                </h1>
+              </div>
+              <p className="text-muted-foreground text-lg">
+                {data?.fromDate && data?.toDate
+                  ? `${format(new Date(data.fromDate), 'MMM dd, yyyy')} - ${format(new Date(data.toDate), 'MMM dd, yyyy')}`
+                  : 'View and manage your booking'}
+              </p>
+            </div>
+
+            <Tabs defaultValue="details" className="space-y-8">
+              <TabsList className="inline-flex h-12 items-center justify-center rounded-xl bg-muted p-1.5 text-muted-foreground shadow-sm">
+                <TabsTrigger
+                  value="details"
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Details</span>
                 </TabsTrigger>
                 {relatedPages.length > 0 && (
-                  <TabsTrigger value="sensitive" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-                    <Lock className="h-5 w-5" />
-                    <span className="hidden sm:inline">Check-in Info</span>
+                  <TabsTrigger
+                    value="sensitive"
+                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow gap-2"
+                  >
+                    <Lock className="h-4 w-4" />
+                    <span>Check-in Info</span>
                   </TabsTrigger>
                 )}
               </TabsList>
-              <TabsContent value="details">
+
+              <TabsContent value="details" className="space-y-8">
                 {data && 'post' in data && typeof data?.post !== 'string' ? (
-                  <div className="space-y-8">
-                    {/* Booking Details Section */}
-                    <div className="flex items-start flex-col md:flex-row gap-5 md:gap-10">
-                      <div className="py-3 md:py-5">
-                        <h1 className="mb-3 text-4xl font-bold">{data?.post.title}</h1>
-                        <div className="flex flex-col gap-2">
-                          <label className="text-lg font-medium">Booking Details:</label>
-                          <div className="text-sm text-muted-foreground">
-                            {data?.selectedPackage && data.selectedPackage.package && typeof data.selectedPackage.package === 'object'
-                              ? `Package: ${data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'}`
-                              : data?.selectedPackage && data.selectedPackage.customName
-                              ? `Package: ${data.selectedPackage.customName}`
-                              : 'Package: No package assigned'}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Rate: {formatAmountToZAR(packageSnapshot.baseRate)} · Multiplier: {packageSnapshot.multiplier.toFixed(2)}x
-                            {currentPackageTotal !== null && typeof currentPackageTotal === 'number'
-                              ? ` · Booking total: ${formatAmountToZAR(currentPackageTotal)}`
-                              : ''}
-                          </div>
-                          <label className="text-lg font-medium">Booking Dates:</label>
-                          <Calendar
-                            locale={enZA}
-                            mode="range"
-                            selected={{
-                              from: data?.fromDate ? new Date(data.fromDate) : undefined,
-                              to: data?.toDate ? new Date(data.toDate) : undefined,
-                            }}
-                            numberOfMonths={2}
-                            className="max-w-md"
-                          />
-                          <div className="mt-1 text-sm text-muted-foreground">
-                            {data?.fromDate && data?.toDate
-                              ? `From ${formatDateTime(data.fromDate)} to ${formatDateTime(data.toDate)}`
-                              : 'Select a start and end date'}
-                          </div>
-
-                          {/* Request New Estimate Button */}
-                          <div className="mt-4">
-                            <Popover
-                              open={isDatePickerOpen}
-                              onOpenChange={(open) => {
-                                setIsDatePickerOpen(open)
-                                if (open) {
-                                  loadUnavailableDates()
-                                }
-                              }}
-                            >
-                              <PopoverTrigger asChild>
-                                <Button variant="outline" className="w-full justify-start text-left font-normal">
-                                  <CalendarIcon className="mr-2 h-4 w-4" />
-                                  {selectedDates?.from ? (
-                                    selectedDates.to ? (
-                                      <>
-                                        {format(selectedDates.from, 'LLL dd, y')} - {format(selectedDates.to, 'LLL dd, y')}
-                                      </>
-                                    ) : (
-                                      format(selectedDates.from, 'LLL dd, y')
-                                    )
-                                  ) : (
-                                    <span>Request new estimate for different dates</span>
-                                  )}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            locale={enZA}
-                                  initialFocus
-                                  mode="range"
-                                  defaultMonth={selectedDates?.from}
-                                  selected={selectedDates}
-                                  onSelect={(range) => {
-                                    setSelectedDates(range)
-                                    setEstimateError(null) // Clear error when dates change
-                                    if (range?.from && range?.to) {
-                                      setIsDatePickerOpen(false)
-                                    }
-                                  }}
-                                  numberOfMonths={2}
-                                  disabled={(date) => {
-                                    const today = new Date()
-                                    today.setHours(0, 0, 0, 0)
-
-                                    // Disable past dates
-                                    if (date < today) return true
-
-                                    // Disable unavailable dates
-                                    return unavailableDates.some((unavailableDate) => {
-                                      const unavailable = new Date(unavailableDate)
-                                      unavailable.setHours(0, 0, 0, 0)
-                                      const checkDate = new Date(date)
-                                      checkDate.setHours(0, 0, 0, 0)
-                                      return unavailable.getTime() === checkDate.getTime()
-                                    })
-                                  }}
-                                />
-                                {loadingUnavailableDates && (
-                                  <div className="p-2 text-center text-xs text-muted-foreground">Loading availability...</div>
-                                )}
-                              </PopoverContent>
-                            </Popover>
-
-                            {selectedDates?.from && selectedDates?.to && (
-                              <div className="mt-3 space-y-2">
-                                <div className="text-sm text-muted-foreground">
-                                  Requesting estimate for: {format(selectedDates.from, 'LLL dd, y')} to {format(selectedDates.to, 'LLL dd, y')}
+                  <>
+                    <div className="grid md:grid-cols-3 gap-6">
+                      <div className="md:col-span-2 space-y-6">
+                        <Card className="overflow-hidden border-2">
+                          <CardHeader className="bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              <Package className="h-5 w-5 text-primary" />
+                              <CardTitle>Your Package</CardTitle>
+                            </div>
+                            <CardDescription>
+                              {data?.selectedPackage &&
+                              data.selectedPackage.package &&
+                              typeof data.selectedPackage.package === 'object'
+                                ? data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'
+                                : data?.selectedPackage && data.selectedPackage.customName
+                                  ? data.selectedPackage.customName
+                                  : 'No package assigned'}
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="pt-6">
+                            {data?.selectedPackage &&
+                            data.selectedPackage.package &&
+                            typeof data.selectedPackage.package === 'object' ? (
+                              <PackageDisplay
+                                packageData={{
+                                  name: data.selectedPackage.package.name || 'Package',
+                                  description: data.selectedPackage.package.description || null,
+                                  features:
+                                    data.selectedPackage.package.features?.map((f: any) => f.feature || f) || null,
+                                  category: data.selectedPackage.package.category || null,
+                                  minNights: data.selectedPackage.package.minNights || null,
+                                  maxNights: data.selectedPackage.package.maxNights || null,
+                                  baseRate: data.selectedPackage.package.baseRate || null,
+                                  multiplier: data.selectedPackage.package.multiplier || null,
+                                }}
+                                customName={data.selectedPackage.customName || null}
+                                total={data.total}
+                                variant="booking"
+                              />
+                            ) : data?.selectedPackage && data.selectedPackage.customName ? (
+                              <div className="p-4 bg-muted/50 rounded-lg border">
+                                <div className="flex items-center gap-2">
+                                  <Package className="h-5 w-5 text-primary" />
+                                  <div>
+                                    <div className="font-medium">{data.selectedPackage.customName}</div>
+                                    <div className="text-sm text-muted-foreground">Custom package</div>
+                                  </div>
                                 </div>
-                                <Button onClick={handleEstimateRequest} disabled={isSubmittingEstimate} className="w-full">
-                                  {isSubmittingEstimate ? 'Creating Estimate...' : 'Create New Estimate'}
-                                </Button>
-                                {estimateError && (
-                                  <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-600">{estimateError}</div>
-                                )}
+                              </div>
+                            ) : (
+                              <div className="p-6 bg-muted/30 rounded-lg border border-dashed text-center">
+                                <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
+                                <p className="text-sm text-muted-foreground">No package assigned to this booking</p>
                               </div>
                             )}
-                          </div>
-                        </div>
-                      </div>
+                          </CardContent>
+                        </Card>
 
-                      <div className="flex w-full items-center gap-3 rounded-md bg-muted p-2">
-                        {!!data?.post.meta?.image && (
-                          <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border border-border bg-white">
-                            <Media resource={data?.post.meta?.image || undefined} className="h-full w-full object-cover" />
-                          </div>
-                        )}
-                        <div className="flex flex-col text-white">
-                          <span className="font-medium">Date Booked: {formatDateTime(data?.post.createdAt)}</span>
-                          <span className="font-medium">Guests: {totalGuests}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Guests Section */}
-                    <div className="border-t pt-8">
-                      <div className="mb-4 flex items-center justify-between">
-                        <h2 className="text-2xl font-bold">Guests</h2>
-                        {data &&
-                          'customer' in data &&
-                          typeof data?.customer !== 'string' &&
-                          data.customer?.id === user.id && (
-                            <InviteUrlDialog
-                              bookingId={data.id}
-                              trigger={
-                                <Button>
-                                  <PlusCircleIcon className="mr-2 size-4" />
-                                  <span>Invite</span>
-                                </Button>
-                              }
+                        <Card>
+                          <CardHeader>
+                            <div className="flex items-center gap-2">
+                              <CalendarIcon className="h-5 w-5 text-primary" />
+                              <CardTitle>Booking Dates</CardTitle>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <Calendar
+                              mode="range"
+                              selected={{
+                                from: data?.fromDate ? new Date(data.fromDate) : undefined,
+                                to: data?.toDate ? new Date(data.toDate) : undefined,
+                              }}
+                              numberOfMonths={2}
+                              className="rounded-md border"
+                              disabled={() => true}
                             />
-                          )}
-                      </div>
-                      <div className="mt-2 space-y-3">
-                        <div className="flex items-center gap-2 rounded-lg border border-border p-2 shadow-sm">
-                          <div className="rounded-full border border-border p-2">
-                            <UserIcon className="size-6" />
-                          </div>
-                          <div>
-                            <div>{typeof data.customer === 'string' ? 'Customer' : data.customer?.name}</div>
-                            <div className="text-sm font-medium">Customer</div>
-                          </div>
-                        </div>
-                        {data.guests
-                          ?.filter((guest) =>
-                            typeof guest === 'string'
-                              ? !removedGuests.includes(guest)
-                              : !removedGuests.includes(guest.id),
-                          )
-                          ?.map((guest) => {
-                            if (typeof guest === 'string') {
-                              return <div key={guest}>{guest}</div>
-                            }
-                            return (
-                              <div
-                                key={guest.id}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-border p-2 shadow-sm"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <div className="rounded-full border border-border p-2">
-                                    <UserIcon className="size-6" />
-                                  </div>
-                                  <div>
-                                    <div>{guest.name}</div>
-                                    <div className="text-sm font-medium">Guest</div>
-                                  </div>
+                            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                              <p className="text-sm font-medium">
+                                {data?.fromDate && data?.toDate
+                                  ? `${formatDateTime(data.fromDate)} → ${formatDateTime(data.toDate)}`
+                                  : 'Select dates'}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <UserIcon className="h-5 w-5 text-primary" />
+                                <CardTitle>Guests</CardTitle>
+                              </div>
+                              {data &&
+                                'customer' in data &&
+                                typeof data?.customer !== 'string' &&
+                                data.customer?.id === user.id && (
+                                  <InviteUrlDialog
+                                    bookingId={data.id}
+                                    trigger={
+                                      <Button size="sm" variant="outline">
+                                        <PlusCircleIcon className="size-4 mr-2" />
+                                        <span>Invite</span>
+                                      </Button>
+                                    }
+                                  />
+                                )}
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border-2 border-primary/20">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                <UserIcon className="h-5 w-5" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium">
+                                  {typeof data.customer === 'string' ? 'Customer' : data.customer?.name}
                                 </div>
-                                {data &&
-                                  'customer' in data &&
-                                  typeof data?.customer !== 'string' &&
-                                  data.customer?.id === user.id && (
-                                    <Button
-                                      variant="secondary"
-                                      size="icon"
-                                      onClick={() => removeGuestHandler(guest.id)}
-                                    >
-                                      <TrashIcon className="size-4" />
-                                      <span className="sr-only">Remove Guest</span>
-                                    </Button>
-                                  )}
-                              </div>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div>Error loading booking details</div>
-                )}
-              </TabsContent>
-              {relatedPages.length > 0 && (
-                <TabsContent value="sensitive" id="booking-checkin">
-                  <div className="space-y-6">
-                    <div className="mb-4 flex items-center gap-2">
-                      <Lock className="h-5 w-5 text-muted-foreground" />
-                      <h2 className="text-2xl font-bold">Check-in Information</h2>
-                    </div>
-                    <div className="mb-4 text-sm text-muted-foreground">
-                      This information is only visible to you and your guests. Please keep it confidential.
-                    </div>
-                    {loadingPages ? (
-                      <p>Loading check-in information...</p>
-                    ) : (
-                      <div className="space-y-6">
-                        {relatedPages.map((page, index) => (
-                          <div key={`${page.id || 'page'}-${page.packageId || index}`} className="rounded-lg border p-6">
-                            <div className="mb-4 flex items-center gap-2">
-                              <div className="rounded-full bg-primary/10 p-2">
-                                <Lock className="h-4 w-4 text-primary" />
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-semibold">{page.title}</h3>
-                                <p className="text-sm text-muted-foreground">Related to: {page.packageName}</p>
+                                <Badge variant="secondary" className="text-xs">
+                                  Host
+                                </Badge>
                               </div>
                             </div>
-                            {page.layout && <SimplePageRenderer page={page} />}
-                          </div>
-                        ))}
+
+                            {data.guests
+                              ?.filter((guest) =>
+                                typeof guest === 'string'
+                                  ? !removedGuests.includes(guest)
+                                  : !removedGuests.includes(guest.id),
+                              )
+                              ?.map((guest) => {
+                                if (typeof guest === 'string') {
+                                  return <div key={guest}>{guest}</div>
+                                }
+                                return (
+                                  <div
+                                    key={guest.id}
+                                    className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border hover:border-primary/50 transition-colors"
+                                  >
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted border">
+                                      <UserIcon className="h-5 w-5 text-muted-foreground" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="font-medium">{guest.name}</div>
+                                      <Badge variant="outline" className="text-xs">
+                                        Guest
+                                      </Badge>
+                                    </div>
+                                    {data &&
+                                      'customer' in data &&
+                                      typeof data?.customer !== 'string' &&
+                                      data.customer?.id === user.id && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => removeGuestHandler(guest.id)}
+                                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        >
+                                          <TrashIcon className="size-4" />
+                                          <span className="sr-only">Remove Guest</span>
+                                        </Button>
+                                      )}
+                                  </div>
+                                )
+                              })}
+                          </CardContent>
+                        </Card>
                       </div>
+
+                      <div className="md:col-span-1">
+                        <div className="sticky top-6">
+                          <BookingInfoCard
+                            postImage={data?.post.meta?.image}
+                            guests={data?.guests || []}
+                            createdAt={data?.post.createdAt}
+                            variant="booking"
+                            postUrl={typeof data?.post === 'object' ? `/posts/${data.post.slug}` : undefined}
+                            onEstimateRequest={async (dates) => {
+                              setIsSubmittingEstimate(true)
+                              setEstimateError(null)
+
+                              try {
+                                const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+                                if (!postId) {
+                                  throw new Error('No post ID found')
+                                }
+
+                                const availabilityResponse = await fetch(
+                                  `/api/bookings/check-availability?postId=${postId}&startDate=${dates.from.toISOString()}&endDate=${dates.to.toISOString()}`,
+                                )
+
+                                if (!availabilityResponse.ok) {
+                                  throw new Error('Failed to check availability')
+                                }
+
+                                const availabilityData = await availabilityResponse.json()
+
+                                if (!availabilityData.isAvailable) {
+                                  throw new Error('The selected dates are not available. Please choose different dates.')
+                                }
+
+                                const fromDateObj = new Date(dates.from)
+                                const toDateObj = new Date(dates.to)
+                                const duration = Math.max(
+                                  1,
+                                  Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
+                                )
+
+                                const baseRate = typeof data?.post === 'object' ? data.post.baseRate || 150 : 150
+
+                                const packagesResponse = await fetch(`/api/packages/post/${postId}`)
+                                const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
+                                const availablePackagesForEstimate = packagesData.packages || []
+                                const firstPackage = availablePackagesForEstimate.find((pkg: any) => pkg.isEnabled)
+
+                                if (!firstPackage) {
+                                  throw new Error('No packages available for this property')
+                                }
+
+                                const resp = await fetch('/api/estimates', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    postId,
+                                    fromDate: dates.from.toISOString(),
+                                    toDate: dates.to.toISOString(),
+                                    guests: [],
+                                    title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
+                                    packageType: firstPackage.id,
+                                    total: calculateTotal(baseRate, duration, 1),
+                                  }),
+                                })
+
+                                if (!resp.ok) {
+                                  const err = await resp.json().catch(() => ({}))
+                                  throw new Error(err?.error || 'Failed to create estimate')
+                                }
+
+                                const created = await resp.json()
+                                router.push(`/estimate/${created.id}`)
+                              } catch (error) {
+                                console.error('Error creating estimate:', error)
+                                setEstimateError(
+                                  error instanceof Error ? error.message : 'Failed to create estimate. Please try again.',
+                                )
+                              } finally {
+                                setIsSubmittingEstimate(false)
+                              }
+                            }}
+                            isSubmittingEstimate={isSubmittingEstimate}
+                            estimateError={estimateError}
+                            postId={typeof data?.post === 'string' ? data.post : data?.post?.id}
+                            postTitle={typeof data?.post === 'object' ? data.post.title : 'Property'}
+                            baseRate={typeof data?.post === 'object' ? data.post.baseRate || 150 : 150}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-5 w-5 text-primary" />
+                          <CardTitle className="text-base">Quick Actions</CardTitle>
+                        </div>
+                        <CardDescription>Shortcut tools for this booking</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-2">
+                        <Button onClick={handleAskAssistant} variant="secondary" className="justify-start gap-2">
+                          <Sparkles className="h-4 w-4" />
+                          Ask AI about this booking
+                        </Button>
+                        <Button onClick={handleScrollToAddons} variant="outline" className="justify-start gap-2">
+                          <Package className="h-4 w-4" />
+                          Browse add-ons
+                        </Button>
+                      </CardContent>
+                    </Card>
+
+                    {!loadingAddons && addonPackages.length > 0 && (
+                      <Card className="mt-8" id="booking-addons">
+                        <CardHeader>
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-primary" />
+                            <CardTitle>Enhance Your Stay</CardTitle>
+                          </div>
+                          <CardDescription>
+                            Add special experiences and amenities to make your stay unforgettable
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {addonPackages.map((addon) => {
+                              const baseRate = addon.baseRate || 0
+                              const price = baseRate * addon.multiplier
+                              const priceString = `R${price.toFixed(2)}`
+
+                              return (
+                                <Card key={addon.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                                  <CardHeader className="pb-3">
+                                    <CardTitle className="text-lg">{addon.name}</CardTitle>
+                                    <CardDescription className="text-sm">
+                                      {addon.description || addon.originalName}
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent className="space-y-4">
+                                    <div className="text-2xl font-bold text-primary">{priceString}</div>
+                                    {addon.features && addon.features.length > 0 && (
+                                      <ul className="space-y-1.5 text-sm text-muted-foreground">
+                                        {addon.features.slice(0, 3).map((feature: any, index: number) => (
+                                          <li key={index} className="flex items-start gap-2">
+                                            <span className="text-primary mt-1">•</span>
+                                            <span>{feature.label || feature}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    <Button
+                                      className="w-full"
+                                      onClick={() => handleAddonPurchase(addon)}
+                                      disabled={(paymentLoading && currentAddonId === addon.id) || !isInitialized}
+                                    >
+                                      {paymentLoading && currentAddonId === addon.id
+                                        ? 'Preparing checkout...'
+                                        : 'Add to Booking'}
+                                    </Button>
+                                  </CardContent>
+                                </Card>
+                              )
+                            })}
+                          </div>
+                          {paymentError && (
+                            <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+                              {paymentError}
+                            </div>
+                          )}
+                          {paymentSuccess && (
+                            <div className="mt-4 p-3 bg-green-500/10 text-green-600 rounded-lg text-sm">
+                              Add-on purchased successfully!
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <p className="text-muted-foreground">Error loading booking details</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              {relatedPages.length > 0 && (
+                <TabsContent value="sensitive">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-5 w-5 text-primary" />
+                        <CardTitle>Check-in Information</CardTitle>
+                      </div>
+                      <CardDescription>Confidential information for you and your guests only</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {loadingPages ? (
+                        <p className="text-muted-foreground">Loading check-in information...</p>
+                      ) : (
+                        relatedPages.map((page, index) => (
+                          <Card key={page.id || index} className="border-2">
+                            <CardHeader className="bg-muted/30">
+                              <div className="flex items-center gap-2">
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                  <Lock className="h-4 w-4 text-primary" />
+                                </div>
+                                <div>
+                                  <CardTitle className="text-base">{page.title}</CardTitle>
+                                  <CardDescription className="text-xs">{page.packageName}</CardDescription>
+                                </div>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="pt-6">{page.layout && <SimplePageRenderer page={page} />}</CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
                 </TabsContent>
               )}
             </Tabs>
-            {/* Addon packages from database */}
-            <div id="booking-addons">
-              <h2 className="mb-4 text-2xl font-bold">Add-ons</h2>
-              {loadingAddons ? (
-                <p>Loading add-ons...</p>
-              ) : addonPackages.length === 0 ? (
-                <p className="text-muted-foreground">No add-ons available for this property.</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  {addonPackages.map((addon) => {
-                    const isWine = addon.revenueCatId === 'Bottle_wine'
-                    const isCleaning = addon.revenueCatId === 'cleaning'
-                    const isHike = addon.revenueCatId === 'Hike'
-                    const isBathBomb = addon.revenueCatId === 'bathBomb'
-
-                    // Calculate price based on base rate and multiplier
-                    const baseRate = addon.baseRate || 0
-                    const price = baseRate * addon.multiplier
-                    const priceString = `R${price.toFixed(2)}`
-
-                    return (
-                      <div key={addon.id} className="flex flex-col items-center rounded-lg border p-4">
-                        <div className="mb-2 text-lg font-bold">{addon.name}</div>
-                        <div className="mb-2 text-sm text-muted-foreground">{addon.description || addon.originalName}</div>
-                        <div className="mb-4 text-xl font-bold">{priceString}</div>
-                        {addon.features && addon.features.length > 0 && (
-                          <div className="mb-3 text-center text-xs text-muted-foreground">
-                            {addon.features.map((feature: any, index: number) => (
-                              <div key={index}>{feature.label || feature}</div>
-                            ))}
-                          </div>
-                        )}
-                        <Button
-                          className={
-                            isWine
-                              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                              : isCleaning
-                              ? 'bg-yellow-200 text-yellow-900'
-                              : isHike
-                              ? 'bg-green-200 text-green-900'
-                              : isBathBomb
-                              ? 'bg-pink-200 text-pink-900'
-                              : ''
-                          }
-                          onClick={() => handleAddonPurchase(addon)}
-                          disabled={paymentLoading || !isInitialized}
-                        >
-                          {paymentLoading && currentAddonId === addon.id
-                            ? 'Preparing checkout...'
-                            : isWine
-                            ? 'Include this'
-                            : isCleaning
-                            ? 'Add Cleaning'
-                            : isHike
-                            ? 'Book Guided Hike'
-                            : isBathBomb
-                            ? 'Add Bath Bomb'
-                            : `Purchase ${addon.name}`}
-                        </Button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {paymentError && <div className="mt-2 text-red-500">{paymentError}</div>}
-              {paymentSuccess && <div className="mt-2 text-green-600">Add-on purchased successfully!</div>}
-            </div>
           </div>
         </div>
       </div>
-      
-      {/* AI Assistant with booking context */}
+
       <AIAssistant />
-      
+
       {/* Set context for AI Assistant */}
       <script
         dangerouslySetInnerHTML={{
           __html: `
             window.addEventListener('load', function() {
-              const context = ${JSON.stringify(getBookingContext())};
+              const context = ${bookingContextJson};
               window.bookingContext = context;
             });
-          `
+          `,
         }}
       />
     </div>

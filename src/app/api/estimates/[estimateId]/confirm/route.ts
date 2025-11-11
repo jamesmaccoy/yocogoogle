@@ -24,16 +24,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ est
       return NextResponse.json({ error: 'Payment validation required' }, { status: 400 })
     }
 
-    // Update the estimate with confirmation data
+    const updateData: Record<string, unknown> = {
+      paymentStatus: 'paid',
+      packageType: body.packageType,
+      total: body.baseRate,
+      confirmedAt: new Date().toISOString(),
+    }
+
+    if (body.selectedPackage) {
+      updateData.selectedPackage = body.selectedPackage
+    }
+
     const updatedEstimate = await payload.update({
       collection: 'estimates',
       id: estimateId,
-      data: {
-        paymentStatus: 'paid',
-        packageType: body.packageType,
-        total: body.baseRate,
-        confirmedAt: new Date().toISOString(),
-      },
+      data: updateData,
     })
 
     return NextResponse.json(updatedEstimate)
