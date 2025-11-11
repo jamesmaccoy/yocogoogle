@@ -91,7 +91,7 @@ export async function POST(req: Request) {
       fromDate: new Date(estimate.fromDate).toLocaleDateString(),
       toDate: new Date(estimate.toDate).toLocaleDateString(),
       status: estimate.paymentStatus,
-      packageName: estimate.packageType || '',
+      packageName: (estimate as any).packageLabel || estimate.packageType || '',
       link: `${process.env.NEXT_PUBLIC_URL}/estimate/${estimate.id}`,
     }))
 

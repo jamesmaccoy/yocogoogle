@@ -15,9 +15,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { postId, fromDate, toDate, guests, title, packageType, total } = body
 
-    console.log('Looking for package:', { postId, packageType })
-    console.log('Package type (original):', packageType)
-    console.log('Package type (lowercase):', packageType.toLowerCase())
+    const rawPackageType =
+      typeof packageType === 'string' && packageType.trim().length > 0 ? packageType.trim() : null
+
+    if (!rawPackageType) {
+      return NextResponse.json({ error: 'packageType is required' }, { status: 400 })
+    }
+
+    console.log('Looking for package:', { postId, packageType: rawPackageType })
+    console.log('Package type (original):', rawPackageType)
+    console.log('Package type (lowercase):', rawPackageType.toLowerCase())
     let pkg: any = null
     let multiplier = 1
     let customName: string | null = null // Store custom name from package settings
@@ -97,15 +104,15 @@ export async function POST(request: NextRequest) {
       ].filter(pkg => pkg.isEnabled) // Only include enabled packages
 
       console.log('Available packages:', allPackages.map(p => ({ id: p.id, name: p.name, source: p.source, revenueCatId: p.revenueCatId })))
-      console.log('Looking for packageType:', packageType)
+      console.log('Looking for packageType:', rawPackageType)
 
       // Find the package by ID or revenueCatId (works for both database and RevenueCat packages)
       // Use case-insensitive comparison for package lookup
-      pkg = allPackages.find((p: any) => 
-        p.id.toLowerCase() === packageType.toLowerCase() || 
-        p.id === packageType ||
-        (p.revenueCatId && p.revenueCatId.toLowerCase() === packageType.toLowerCase()) ||
-        (p.revenueCatId && p.revenueCatId === packageType)
+      pkg = allPackages.find((p: any) =>
+        p.id?.toString().toLowerCase() === rawPackageType.toLowerCase() ||
+        p.id === rawPackageType ||
+        (p.revenueCatId && p.revenueCatId.toString().toLowerCase() === rawPackageType.toLowerCase()) ||
+        (p.revenueCatId && p.revenueCatId === rawPackageType)
       )
       
       if (pkg) {
@@ -114,8 +121,8 @@ export async function POST(request: NextRequest) {
           name: pkg.name,
           source: pkg.source,
           revenueCatId: pkg.revenueCatId,
-          packageType,
-          matchedBy: pkg.id === packageType ? 'id' : pkg.revenueCatId === packageType ? 'revenueCatId' : 'case-insensitive'
+          packageType: rawPackageType,
+          matchedBy: pkg.id === rawPackageType ? 'id' : pkg.revenueCatId === rawPackageType ? 'revenueCatId' : 'case-insensitive'
         })
         multiplier = pkg.multiplier || 1
         baseRate = pkg.baseRate || 150
@@ -141,7 +148,7 @@ export async function POST(request: NextRequest) {
       try {
         const packageResult = await payload.findByID({
           collection: 'packages',
-          id: packageType,
+          id: rawPackageType,
         })
         
         if (packageResult && packageResult.post === postId) {
@@ -179,7 +186,7 @@ export async function POST(request: NextRequest) {
         collection: 'packages',
         where: {
           post: { equals: postId },
-          name: { equals: packageType },
+          name: { equals: rawPackageType },
           isEnabled: { equals: true }
         },
         limit: 1,
@@ -215,9 +222,9 @@ export async function POST(request: NextRequest) {
     if (!pkg) {
       try {
         const yocoProducts = await yocoService.getProducts()
-        const yocoProduct = yocoProducts.find(product => 
-          product.id.toLowerCase() === packageType.toLowerCase() || 
-          product.id === packageType
+        const yocoProduct = yocoProducts.find(product =>
+          product.id.toLowerCase() === rawPackageType.toLowerCase() ||
+          product.id === rawPackageType
         )
         
         if (yocoProduct) {
@@ -258,10 +265,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!pkg) {
-      console.error('Package not found:', { packageType, postId })
+      console.error('Package not found:', { packageType: rawPackageType, postId })
       return NextResponse.json({ 
         error: 'Package not found', 
-        details: `Package ${packageType} not found in database or RevenueCat products for post ${postId}` 
+        details: `Package ${rawPackageType} not found in database or RevenueCat products for post ${postId}` 
       }, { status: 400 })
     }
 
@@ -272,6 +279,11 @@ export async function POST(request: NextRequest) {
 
     // Use custom name if available, otherwise fall back to package name
     const displayName = customName || pkg.name || pkg.id
+    const canonicalPackageType =
+      pkg.source === 'database'
+        ? pkg.id
+        : pkg.revenueCatId || pkg.id
+    const packageLabel = displayName
 
     // Check for existing estimate
     const existing = await payload.find({
@@ -294,7 +306,7 @@ export async function POST(request: NextRequest) {
         fromDate,
         toDate,
         customer: user.id,
-        packageType: displayName, // Use custom name if available
+        packageType: canonicalPackageType,
       }
 
       // Only add selectedPackage if it's a database package (has valid ObjectId)
@@ -325,7 +337,7 @@ export async function POST(request: NextRequest) {
         guests,
         total: calculatedTotal,
         customer: user.id,
-        packageType: displayName, // Use custom name if available
+        packageType: canonicalPackageType,
       }
 
       // Only add selectedPackage if it's a database package (has valid ObjectId)
@@ -347,7 +359,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json(estimate, { status: existing.docs.length ? 200 : 201 })
+    const responseEstimate = {
+      ...estimate,
+      packageLabel,
+    }
+
+    return NextResponse.json(responseEstimate, { status: existing.docs.length ? 200 : 201 })
   } catch (err) {
     console.error('Estimate creation error:', err)
     return NextResponse.json({ error: (err instanceof Error ? err.message : 'Unknown error') }, { status: 500 })
