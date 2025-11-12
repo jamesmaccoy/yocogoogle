@@ -129,11 +129,18 @@ export async function PATCH(
       delete body.data
     }
     
-    console.log('PATCH request for package:', { id, body, user: user?.id ? '[REDACTED]' : 'admin' })
+    // Check if this is a Payload admin request
+    // Payload admin uses /admin/api/collections/packages/[id] which is handled by Payload internally
+    // This route (/api/packages/[id]) is for frontend custom updates
+    const isAdminRequest = request.url.includes('/admin/api/') || request.headers.get('referer')?.includes('/admin')
+    
+    console.log('PATCH request for package:', { id, body, user: user?.id ? '[REDACTED]' : 'admin', isAdminRequest, url: request.url })
     console.log('Request body keys:', Object.keys(body))
     console.log('Request body values:', Object.entries(body).map(([key, value]) => `${key}: ${typeof value} = ${JSON.stringify(value)}`))
     console.log('Environment:', process.env.NODE_ENV)
-    console.log('Request headers:', Object.fromEntries(request.headers.entries()))
+    
+    // If this is actually a Payload admin request, it should go through Payload's built-in handler
+    // But if it somehow reaches here, be very permissive
     
     // Validate the package exists first
     let existingPackage
@@ -302,17 +309,29 @@ export async function PATCH(
       console.log('Setting maxConcurrentBookings to:', cleanData.maxConcurrentBookings)
     }
 
+    // For admin requests or if we have fields that weren't processed, be more permissive
+    // Include all valid package fields from body that weren't already processed
+    const validPackageFields = ['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate', 'maxConcurrentBookings', 'slug', 'slugLock']
+    for (const key of Object.keys(body)) {
+      if (validPackageFields.includes(key) && body[key] !== undefined && !cleanData.hasOwnProperty(key)) {
+        cleanData[key] = body[key]
+        console.log(`Including unprocessed field ${key} from body`)
+      }
+    }
+    
     console.log('Clean data for update:', cleanData)
     console.log('Number of fields to update:', Object.keys(cleanData).length)
     console.log('Fields that were processed:', Object.keys(cleanData))
-    console.log('Expected fields:', ['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate', 'maxConcurrentBookings'])
     console.log('Received fields:', Object.keys(body))
-    console.log('Missing field validation for:', Object.keys(body).filter(key => !['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate', 'maxConcurrentBookings'].includes(key)))
     
     if (Object.keys(cleanData).length === 0) {
       console.warn('No valid fields to update')
       console.warn('Request body was:', JSON.stringify(body))
-      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+      console.warn('This might be a Payload admin request that should use /admin/api/collections/packages/[id]')
+      // Don't fail for admin requests - let Payload handle it
+      if (!isAdminRequest) {
+        return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+      }
     }
     
     } catch (validationError) {

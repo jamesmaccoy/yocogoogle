@@ -2,13 +2,6 @@
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useUserContext } from '@/context/UserContext'
 import { validateRedirect } from '@/utils/validateRedirect'
 import Link from 'next/link'
@@ -95,18 +88,6 @@ export default function RegisterPage() {
             autoComplete="new-password"
             {...form.register('password')}
           />
-          <Select
-            onValueChange={(value) => form.setValue('role', value)}
-            defaultValue={form.getValues('role')}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select user account type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="customer">Customer</SelectItem>
-              <SelectItem value="guest">Guest</SelectItem>
-            </SelectContent>
-          </Select>
 
           <Button className="w-full" type="submit">
             Register
