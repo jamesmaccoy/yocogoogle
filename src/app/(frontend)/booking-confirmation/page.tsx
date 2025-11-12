@@ -204,14 +204,98 @@ export default async function BookingConfirmationPage({
             } else {
               // Get the post to get its title for the booking title
               let postTitle = 'Booking'
+              let postData: any = null
               try {
-                const post = await payload.findByID({
+                postData = await payload.findByID({
                   collection: 'posts',
                   id: bookingPostId,
+                  depth: 1,
                 })
-                postTitle = post?.title || 'Booking'
+                postTitle = postData?.title || 'Booking'
               } catch (error) {
                 console.warn('Could not fetch post title, using default:', error)
+              }
+
+              // Get package information from estimate
+              const estimatePackageType = estimate.packageType || null
+              const estimateSelectedPackage = estimate.selectedPackage || null
+
+              // Resolve package information and custom name
+              let resolvedSelectedPackage = estimateSelectedPackage
+              let resolvedPackageType = estimatePackageType
+
+              if (estimatePackageType && postData) {
+                try {
+                  // Get database packages for this post
+                  const dbPackages = await payload.find({
+                    collection: 'packages',
+                    where: {
+                      post: { equals: bookingPostId },
+                      isEnabled: { equals: true }
+                    },
+                    depth: 1,
+                  })
+
+                  // Find the package that matches the packageType (by id, revenueCatId, or yocoId)
+                  const code = estimatePackageType.toLowerCase()
+                  const matchedDbPackage = dbPackages.docs.find((pkg: any) => {
+                    const pkgId = pkg.id?.toString().toLowerCase()
+                    const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
+                    const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
+                    return pkgId === code || revenueCatId === code || yocoId === code
+                  })
+
+                  if (matchedDbPackage) {
+                    // Use the matched database package's ID
+                    resolvedPackageType = matchedDbPackage.id
+                    
+                    // Get custom name from packageSettings
+                    let customName: string | null = null
+                    if (postData.packageSettings && Array.isArray(postData.packageSettings)) {
+                      const packageSetting = postData.packageSettings.find((setting: any) => {
+                        const settingPackageId = typeof setting.package === 'object' ? setting.package.id : setting.package
+                        return settingPackageId === matchedDbPackage.id
+                      })
+                      customName = packageSetting?.customName || null
+                    }
+
+                    // Build resolved selectedPackage with database package relationship
+                    resolvedSelectedPackage = {
+                      package: matchedDbPackage.id,
+                      customName: customName || null,
+                      enabled: true,
+                    }
+                  } else {
+                    // Package not found in database - might be a Yoco product
+                    // Check packageSettings for custom name by matching the packageType directly
+                    if (postData.packageSettings && Array.isArray(postData.packageSettings)) {
+                      const packageSetting = postData.packageSettings.find((setting: any) => {
+                        const settingPackageId = typeof setting.package === 'object' ? setting.package.id : setting.package
+                        const settingRevenueCatId = typeof setting.package === 'object' ? setting.package.revenueCatId : null
+                        const settingYocoId = typeof setting.package === 'object' ? (setting.package.yocoId || setting.package.revenueCatId) : null
+                        return (
+                          settingPackageId?.toString().toLowerCase() === code ||
+                          settingRevenueCatId?.toString().toLowerCase() === code ||
+                          settingYocoId?.toString().toLowerCase() === code
+                        )
+                      })
+                      
+                      if (packageSetting?.customName) {
+                        // We have a custom name but no database package - store minimal selectedPackage
+                        resolvedSelectedPackage = {
+                          enabled: true,
+                          customName: packageSetting.customName,
+                        }
+                      }
+                    }
+                  }
+                } catch (error) {
+                  console.warn('Could not resolve package information:', error)
+                  // Fall back to estimate's selectedPackage if available
+                  if (!resolvedSelectedPackage && estimateSelectedPackage) {
+                    resolvedSelectedPackage = estimateSelectedPackage
+                  }
+                }
               }
 
               // Normalize dates to midnight UTC to ensure consistent date-only storage
@@ -232,21 +316,37 @@ export default async function BookingConfirmationPage({
                 fromDate: normalizedFromDate.toISOString(),
                 toDate: normalizedToDate.toISOString(),
                 total: bookingTotal,
-                customer: user.id
+                customer: user.id,
+                packageType: resolvedPackageType || estimatePackageType,
+                selectedPackage: resolvedSelectedPackage,
               })
 
               try {
+                const bookingData: any = {
+                  title: postTitle,
+                  post: bookingPostId, // Use 'post' not 'postId' for the relationship
+                  fromDate: normalizedFromDate.toISOString(),
+                  toDate: normalizedToDate.toISOString(),
+                  total: bookingTotal, // Required field
+                  paymentStatus: 'paid',
+                  customer: user.id,
+                }
+
+                // Include packageType if available (use resolved packageType which is the canonical ID)
+                if (resolvedPackageType) {
+                  bookingData.packageType = resolvedPackageType
+                } else if (estimatePackageType) {
+                  bookingData.packageType = estimatePackageType
+                }
+
+                // Include selectedPackage if available
+                if (resolvedSelectedPackage) {
+                  bookingData.selectedPackage = resolvedSelectedPackage
+                }
+
                 const booking = await payload.create({
                   collection: 'bookings',
-                  data: {
-                    title: postTitle,
-                    post: bookingPostId, // Use 'post' not 'postId' for the relationship
-                    fromDate: normalizedFromDate.toISOString(),
-                    toDate: normalizedToDate.toISOString(),
-                    total: bookingTotal, // Required field
-                    paymentStatus: 'paid',
-                    customer: user.id,
-                  },
+                  data: bookingData,
                 })
                 console.log('✅ Booking created successfully:', booking.id)
               } catch (bookingError) {

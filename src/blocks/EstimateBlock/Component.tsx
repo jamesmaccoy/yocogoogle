@@ -28,7 +28,7 @@ interface Package {
   baseRate?: number
   isEnabled: boolean
   features: string[]
-  source: 'database' | 'revenuecat'
+  source: 'database' | 'yoco'
   hasCustomName?: boolean // Indicates if this package has a custom name set by host
 }
 
@@ -142,11 +142,11 @@ export const EstimateBlock: React.FC<EstimateBlockProps> = ({
       )
       
       if (suitablePackages.length > 0) {
-        // Prefer RevenueCat packages, then database packages
-        const revenueCatPackage = suitablePackages.find(pkg => pkg.source === 'revenuecat')
+        // Prefer Yoco packages, then database packages
+        const yocoPackage = suitablePackages.find(pkg => pkg.source === 'yoco')
         const databasePackage = suitablePackages.find(pkg => pkg.source === 'database')
         
-        const selectedPkg = revenueCatPackage || databasePackage || suitablePackages[0]
+        const selectedPkg = yocoPackage || databasePackage || suitablePackages[0]
         setSelectedPackage(selectedPkg || null)
       } else {
         setSelectedPackage(null)
@@ -291,9 +291,9 @@ export const EstimateBlock: React.FC<EstimateBlockProps> = ({
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <h4 className="font-medium text-sm">{pkg.name}</h4>
-                      {pkg.source === 'revenuecat' && (
+                      {pkg.source === 'yoco' && (
                         <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          RevenueCat
+                          Yoco
                         </span>
                       )}
                     </div>

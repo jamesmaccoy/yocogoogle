@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       return packageSetting?.enabled !== false // Default to true if not explicitly set to false
     }
 
-    // First, get all available packages for this post (including RevenueCat)
+    // First, get all available packages for this post (including Yoco products)
     try {
       // Get database packages
       const dbPackages = await payload.find({
@@ -68,61 +68,80 @@ export async function POST(request: NextRequest) {
         depth: 1,
       })
 
-      // Get RevenueCat products
+      // Get Yoco products
       const yocoProducts = await yocoService.getProducts()
       
-      // Combine database packages with RevenueCat products
+      // Combine database packages with Yoco products
       const allPackages = [
-        ...dbPackages.docs.map(pkg => ({
-          id: pkg.id,
-          name: pkg.name,
-          description: pkg.description,
-          multiplier: pkg.multiplier,
-          category: pkg.category,
-          minNights: pkg.minNights,
-          maxNights: pkg.maxNights,
-          revenueCatId: pkg.revenueCatId,
-          baseRate: pkg.baseRate,
-          isEnabled: pkg.isEnabled && isPackageEnabledForPost(pkg.id),
-          features: pkg.features?.map((f: any) => f.feature) || [],
-          source: 'database'
-        })),
+        ...dbPackages.docs.map(pkg => {
+          // Map revenueCatId to yocoId for backward compatibility
+          const yocoId = (pkg as any).yocoId || pkg.revenueCatId
+          return {
+            id: pkg.id,
+            name: pkg.name,
+            description: pkg.description,
+            multiplier: pkg.multiplier,
+            category: pkg.category,
+            minNights: pkg.minNights,
+            maxNights: pkg.maxNights,
+            revenueCatId: pkg.revenueCatId, // Keep for backward compatibility
+            yocoId: yocoId, // Primary identifier for Yoco integration
+            baseRate: pkg.baseRate,
+            isEnabled: pkg.isEnabled && isPackageEnabledForPost(pkg.id),
+            features: pkg.features?.map((f: any) => f.feature) || [],
+            source: 'database'
+          }
+        }),
         ...yocoProducts.map(product => ({
           id: product.id,
           name: product.title,
           description: product.description,
-          multiplier: 1, // Default multiplier for RevenueCat products
+          multiplier: 1, // Default multiplier for Yoco products
           category: product.category,
           minNights: product.period === 'hour' ? 1 : product.periodCount,
           maxNights: product.period === 'hour' ? 1 : product.periodCount,
-          revenueCatId: product.id,
+          revenueCatId: product.id, // Keep for backward compatibility
+          yocoId: product.id, // Yoco products use their own ID as yocoId
           baseRate: product.price,
           isEnabled: product.isEnabled && isPackageEnabledForPost(product.id),
           features: product.features,
-          source: 'revenuecat'
+          source: 'yoco'
         }))
       ].filter(pkg => pkg.isEnabled) // Only include enabled packages
 
-      console.log('Available packages:', allPackages.map(p => ({ id: p.id, name: p.name, source: p.source, revenueCatId: p.revenueCatId })))
+      console.log('Available packages:', allPackages.map(p => ({ id: p.id, name: p.name, source: p.source, yocoId: (p as any).yocoId, revenueCatId: p.revenueCatId })))
       console.log('Looking for packageType:', rawPackageType)
 
-      // Find the package by ID or revenueCatId (works for both database and RevenueCat packages)
+      // Find the package by ID, yocoId, or revenueCatId (works for both database and Yoco packages)
       // Use case-insensitive comparison for package lookup
-      pkg = allPackages.find((p: any) =>
-        p.id?.toString().toLowerCase() === rawPackageType.toLowerCase() ||
-        p.id === rawPackageType ||
-        (p.revenueCatId && p.revenueCatId.toString().toLowerCase() === rawPackageType.toLowerCase()) ||
-        (p.revenueCatId && p.revenueCatId === rawPackageType)
-      )
+      // Priority: id > yocoId > revenueCatId
+      pkg = allPackages.find((p: any) => {
+        const code = rawPackageType.toLowerCase()
+        return (
+          p.id?.toString().toLowerCase() === code ||
+          p.id === rawPackageType ||
+          (p.yocoId && p.yocoId.toString().toLowerCase() === code) ||
+          (p.yocoId && p.yocoId === rawPackageType) ||
+          (p.revenueCatId && p.revenueCatId.toString().toLowerCase() === code) ||
+          (p.revenueCatId && p.revenueCatId === rawPackageType)
+        )
+      })
       
       if (pkg) {
+        const matchedBy = 
+          pkg.id === rawPackageType ? 'id' :
+          (pkg as any).yocoId === rawPackageType ? 'yocoId' :
+          pkg.revenueCatId === rawPackageType ? 'revenueCatId' :
+          'case-insensitive'
+        
         console.log('Found package:', {
           id: pkg.id,
           name: pkg.name,
           source: pkg.source,
+          yocoId: (pkg as any).yocoId,
           revenueCatId: pkg.revenueCatId,
           packageType: rawPackageType,
-          matchedBy: pkg.id === rawPackageType ? 'id' : pkg.revenueCatId === rawPackageType ? 'revenueCatId' : 'case-insensitive'
+          matchedBy
         })
         multiplier = pkg.multiplier || 1
         baseRate = pkg.baseRate || 150
@@ -218,12 +237,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If still not found, check RevenueCat products directly
+    // If still not found, check Yoco products directly
     if (!pkg) {
       try {
         const yocoProducts = await yocoService.getProducts()
-        const yocoProduct = yocoProducts.find(product =>
-          product.id.toLowerCase() === rawPackageType.toLowerCase() ||
+        const yocoProduct = yocoProducts.find(product => 
+          product.id.toLowerCase() === rawPackageType.toLowerCase() || 
           product.id === rawPackageType
         )
         
@@ -237,7 +256,8 @@ export async function POST(request: NextRequest) {
             category: yocoProduct.category,
             minNights: yocoProduct.period === 'hour' ? 1 : yocoProduct.periodCount,
             maxNights: yocoProduct.period === 'hour' ? 1 : yocoProduct.periodCount,
-            revenueCatId: yocoProduct.id,
+            revenueCatId: yocoProduct.id, // Keep for backward compatibility
+            yocoId: yocoProduct.id, // Primary identifier
             isEnabled: yocoProduct.isEnabled && isPackageEnabledForPost(yocoProduct.id),
             features: yocoProduct.features,
             source: 'yoco'
@@ -245,7 +265,7 @@ export async function POST(request: NextRequest) {
           multiplier = pkg.multiplier
           baseRate = pkg.baseRate
           
-          // Check for custom name in packageSettings for RevenueCat products too
+          // Check for custom name in packageSettings for Yoco products too
           if (postData?.packageSettings && Array.isArray(postData.packageSettings)) {
             const packageSetting = postData.packageSettings.find((setting: any) => {
               const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package
@@ -253,14 +273,14 @@ export async function POST(request: NextRequest) {
             })
             if (packageSetting?.customName) {
               customName = packageSetting.customName
-              console.log('Found custom name for RevenueCat package:', customName)
+              console.log('Found custom name for Yoco package:', customName)
             }
           }
           
-          console.log('Found RevenueCat product:', customName || pkg.name)
+          console.log('Found Yoco product:', customName || pkg.name)
         }
       } catch (error) {
-        console.error('Error fetching RevenueCat products:', error)
+        console.error('Error fetching Yoco products:', error)
       }
     }
 
@@ -268,7 +288,7 @@ export async function POST(request: NextRequest) {
       console.error('Package not found:', { packageType: rawPackageType, postId })
       return NextResponse.json({ 
         error: 'Package not found', 
-        details: `Package ${rawPackageType} not found in database or RevenueCat products for post ${postId}` 
+        details: `Package ${rawPackageType} not found in database or Yoco products for post ${postId}` 
       }, { status: 400 })
     }
 
@@ -278,12 +298,11 @@ export async function POST(request: NextRequest) {
     const calculatedTotal = total !== undefined ? Number(total) : baseRate * duration * multiplier
 
     // Use custom name if available, otherwise fall back to package name
+    // For packageType, use yocoId if available, otherwise fall back to revenueCatId or id
+    const packageTypeId = (pkg as any).yocoId || pkg.revenueCatId || pkg.id
     const displayName = customName || pkg.name || pkg.id
-    const canonicalPackageType =
-      pkg.source === 'database'
-        ? pkg.id
-        : pkg.revenueCatId || pkg.id
-    const packageLabel = displayName
+    // Use yocoId as canonical identifier, fallback to revenueCatId for backward compatibility, then id
+    const canonicalPackageType = (pkg as any).yocoId || pkg.revenueCatId || pkg.id
 
     // Check for existing estimate
     const existing = await payload.find({
@@ -318,7 +337,7 @@ export async function POST(request: NextRequest) {
           enabled: true
         }
       } else {
-        console.log('Skipping selectedPackage relationship for RevenueCat package:', pkg.id, 'source:', pkg.source)
+        console.log('Skipping selectedPackage relationship for Yoco package:', pkg.id, 'source:', pkg.source)
       }
 
       estimate = await payload.update({
@@ -349,7 +368,7 @@ export async function POST(request: NextRequest) {
           enabled: true
         }
       } else {
-        console.log('Skipping selectedPackage relationship for RevenueCat package:', pkg.id, 'source:', pkg.source)
+        console.log('Skipping selectedPackage relationship for Yoco package:', pkg.id, 'source:', pkg.source)
       }
 
       estimate = await payload.create({
