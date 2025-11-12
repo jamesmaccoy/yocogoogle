@@ -54,20 +54,25 @@ export function DivineLightEffect() {
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-      {/* Divine light from top */}
-      <div className="absolute top-0 left-0 right-0 flex items-start justify-center pt-8">
-        <div className="relative w-96 h-96">
-          {/* Main light source */}
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-200 via-yellow-100 to-white opacity-80 blur-3xl animate-pulse" />
+    <div className="fixed top-0 left-0 right-0 pointer-events-none z-50 overflow-hidden" style={{ height: '40vh' }}>
+      {/* Divine light from top - wider */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2">
+        <div className="relative" style={{ width: '600px', height: '40vh' }}>
+          {/* Main light source - wider */}
+          <div 
+            className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-br from-yellow-200 via-yellow-100 to-white opacity-80 blur-3xl animate-pulse" 
+            style={{ width: '600px', height: '40vh' }} 
+          />
           
-          {/* Shimmering rays - emanating downward */}
-          {[...Array(12)].map((_, i) => (
+          {/* Shimmering rays - emanating downward, wider spread */}
+          {[...Array(16)].map((_, i) => (
             <div
               key={i}
-              className="absolute inset-0"
+              className="absolute top-0 left-1/2 -translate-x-1/2"
               style={{
-                transform: `rotate(${i * 30}deg)`,
+                width: '600px',
+                height: '40vh',
+                transform: `rotate(${i * 22.5}deg)`,
                 transformOrigin: 'center top',
               }}
             >
@@ -75,31 +80,32 @@ export function DivineLightEffect() {
                 className="absolute top-0 left-1/2 w-1 h-full bg-gradient-to-b from-yellow-300 via-transparent to-transparent opacity-60 -translate-x-1/2"
                 style={{
                   animation: `divine-shimmer 3s ease-in-out infinite`,
-                  animationDelay: `${i * 0.1}s`,
+                  animationDelay: `${i * 0.08}s`,
                 }}
               />
             </div>
           ))}
 
-          {/* Rotating light rings */}
+          {/* Rotating light rings - wider */}
           <div 
-            className="absolute inset-0 rounded-full border-2 border-yellow-300/40 animate-spin" 
-            style={{ animationDuration: '8s' }} 
+            className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full border-2 border-yellow-300/40 animate-spin" 
+            style={{ width: '600px', height: '40vh', animationDuration: '8s' }} 
           />
           <div 
-            className="absolute inset-4 rounded-full border border-yellow-200/30 animate-spin" 
-            style={{ animationDuration: '12s', animationDirection: 'reverse' }} 
+            className="absolute top-0 left-1/2 -translate-x-1/2 rounded-full border border-yellow-200/30 animate-spin" 
+            style={{ width: '550px', height: '40vh', animationDuration: '12s', animationDirection: 'reverse' }} 
           />
         </div>
       </div>
 
-      {/* Floating light particles */}
+      {/* Floating light particles - spread wider */}
       {[...Array(20)].map((_, i) => {
         const delay = Math.random() * 2
         const duration = 3 + Math.random() * 2
-        const size = 4 + Math.random() * 8
-        const left = Math.random() * 100
-        const top = Math.random() * 100
+        const size = 3 + Math.random() * 8
+        // Spread particles across wider area (center 60% of width)
+        const left = 20 + Math.random() * 60
+        const top = Math.random() * 40
         
         return (
           <div
@@ -117,9 +123,9 @@ export function DivineLightEffect() {
         )
       })}
 
-      {/* Overlay gradient */}
+      {/* Overlay gradient - focused at top */}
       <div 
-        className="absolute inset-0 bg-gradient-to-b from-transparent via-yellow-50/20 to-transparent"
+        className="absolute inset-0 bg-gradient-to-b from-yellow-50/30 via-yellow-50/10 to-transparent"
         style={{
           animation: 'divine-fade 4s ease-out forwards',
         }}
