@@ -259,6 +259,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   // Ref to store original packages for re-filtering
   const originalPackagesRef = useRef<Package[]>([])
   
+  // Ref to track last checked dates to prevent duplicate availability checks
+  const lastCheckedDatesRef = useRef<{ start: string; end: string } | null>(null)
+  
+  // Ref to track if availability check is in progress
+  const availabilityCheckInProgressRef = useRef(false)
+  
+  // Ref to track previous availability state to detect changes
+  const previousAvailabilityRef = useRef<boolean | null>(null)
+  
   const subscriptionStatus = useSubscription()
   const [customerEntitlement, setCustomerEntitlement] = useState<CustomerEntitlement>('none')
   
@@ -381,9 +390,23 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     fromDate: Date,
     toDate: Date,
     threadId: number = activeThreadRef.current,
+    addMessage: boolean = false, // Only add message when explicitly requested
   ) => {
     if (!fromDate || !toDate) return true
     
+    // Prevent duplicate checks for the same date combination
+    if (lastCheckedDatesRef.current?.start === fromDate.toISOString() && 
+        lastCheckedDatesRef.current?.end === toDate.toISOString() &&
+        !addMessage) {
+      return areDatesAvailable
+    }
+    
+    // Prevent concurrent checks
+    if (availabilityCheckInProgressRef.current) {
+      return areDatesAvailable
+    }
+    
+    availabilityCheckInProgressRef.current = true
     setIsCheckingAvailability(true)
     setAvailabilityError(null)
     
@@ -405,10 +428,34 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         const data = await response.json()
         const isAvailable = data.isAvailable
         
-        setAreDatesAvailable(isAvailable)
+        // Track previous availability to detect changes
+        const previousAvailable = previousAvailabilityRef.current
         
-        // Add a message to inform the user about availability
-        if (!isAvailable && activeThreadRef.current === threadId) {
+        // Update state
+        setAreDatesAvailable(isAvailable)
+        previousAvailabilityRef.current = isAvailable
+        
+        // Store the checked dates
+        lastCheckedDatesRef.current = {
+          start: fromDate.toISOString(),
+          end: toDate.toISOString(),
+        }
+        
+        // Add a message to inform the user about availability only if:
+        // 1. Explicitly requested (addMessage = true) AND dates are unavailable
+        // 2. Availability changed from available to unavailable (and not explicitly requested)
+        if (addMessage && !isAvailable && activeThreadRef.current === threadId) {
+          const availabilityMessage: Message = {
+            role: 'assistant',
+            content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
+              toDate,
+              'MMM dd, yyyy',
+            )}) are not available. Please select different dates for your stay.`,
+            type: 'text',
+          }
+          appendMessageToThread(threadId, availabilityMessage)
+        } else if (previousAvailable === true && !isAvailable && !addMessage && activeThreadRef.current === threadId) {
+          // Availability changed from available to unavailable (only if not explicitly requested)
           const availabilityMessage: Message = {
             role: 'assistant',
             content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
@@ -432,6 +479,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       return false
     } finally {
       setIsCheckingAvailability(false)
+      availabilityCheckInProgressRef.current = false
     }
   }
 
@@ -699,9 +747,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       return
     }
     
-    // Double-check availability before proceeding with booking
+    // Double-check availability before proceeding with booking (with addMessage = false to avoid duplicate messages)
     if (startDate && endDate) {
-      const isAvailable = await checkDateAvailability(startDate, endDate)
+      const isAvailable = await checkDateAvailability(startDate, endDate, activeThreadRef.current, false)
       if (!isAvailable) {
         setBookingError('The selected dates are no longer available. Please choose different dates.')
         return
@@ -1193,8 +1241,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         break
       case 'check_availability':
         if (startDate && endDate) {
-          // Check availability and provide feedback
-          checkDateAvailability(startDate, endDate, threadId).then((isAvailable) => {
+          // Check availability and provide feedback (with addMessage = true to show result)
+          checkDateAvailability(startDate, endDate, threadId, true).then((isAvailable) => {
             if (activeThreadRef.current !== threadId) return
             const availabilityMessage: Message = {
               role: 'assistant',
@@ -1835,7 +1883,12 @@ Availability Status:
       setDuration(newDuration)
     }
 
-    checkDateAvailability(startDate, endDate, activeThreadRef.current)
+    // Check availability without adding messages automatically (to prevent infinite loops)
+    // Only check if dates have actually changed
+    const lastChecked = lastCheckedDatesRef.current
+    if (!lastChecked || lastChecked.start !== startDate.toISOString() || lastChecked.end !== endDate.toISOString()) {
+      checkDateAvailability(startDate, endDate, activeThreadRef.current, false)
+    }
 
     if (packagesSuggestedRef.current) {
       return
@@ -1876,7 +1929,7 @@ Availability Status:
 
     packagesSuggestedRef.current = true
     suggestPackagesAfterDateSelection()
-  }, [startDate, endDate, latestEstimate, duration, messages.length])
+  }, [startDate, endDate, latestEstimate, duration]) // Removed messages.length to prevent infinite loop
 
   useEffect(() => {
     if (typeof window === 'undefined') return
