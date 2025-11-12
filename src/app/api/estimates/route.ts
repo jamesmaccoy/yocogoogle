@@ -13,18 +13,41 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { postId, fromDate, toDate, guests, title, packageType, total } = body
+    const { postId, fromDate, toDate, guests, title, packageType, total, estimateId } = body
 
     const rawPackageType =
       typeof packageType === 'string' && packageType.trim().length > 0 ? packageType.trim() : null
 
-    if (!rawPackageType) {
+    // If estimateId is provided, fetch the existing estimate to preserve package information
+    let existingEstimate: any = null
+    if (estimateId) {
+      try {
+        existingEstimate = await payload.findByID({
+          collection: 'estimates',
+          id: estimateId,
+          depth: 1,
+        })
+        // Verify it belongs to the current user
+        const estimateCustomerId = typeof existingEstimate.customer === 'string' ? existingEstimate.customer : existingEstimate.customer?.id
+        if (estimateCustomerId !== user.id) {
+          existingEstimate = null // Don't use if it doesn't belong to user
+        }
+      } catch (error) {
+        console.warn('Could not fetch existing estimate:', error)
+        existingEstimate = null
+      }
+    }
+
+    // Use existing package info if available and no new packageType provided
+    const effectivePackageType = rawPackageType || existingEstimate?.packageType || null
+
+    if (!effectivePackageType) {
       return NextResponse.json({ error: 'packageType is required' }, { status: 400 })
     }
 
-    console.log('Looking for package:', { postId, packageType: rawPackageType })
-    console.log('Package type (original):', rawPackageType)
-    console.log('Package type (lowercase):', rawPackageType.toLowerCase())
+    console.log('Looking for package:', { postId, packageType: effectivePackageType, estimateId, hasExistingEstimate: !!existingEstimate })
+    console.log('Package type (original):', effectivePackageType)
+    console.log('Package type (lowercase):', effectivePackageType.toLowerCase())
     let pkg: any = null
     let multiplier = 1
     let customName: string | null = null // Store custom name from package settings
@@ -110,20 +133,20 @@ export async function POST(request: NextRequest) {
       ].filter(pkg => pkg.isEnabled) // Only include enabled packages
 
       console.log('Available packages:', allPackages.map(p => ({ id: p.id, name: p.name, source: p.source, yocoId: (p as any).yocoId, revenueCatId: p.revenueCatId })))
-      console.log('Looking for packageType:', rawPackageType)
+      console.log('Looking for packageType:', effectivePackageType)
 
       // Find the package by ID, yocoId, or revenueCatId (works for both database and Yoco packages)
       // Use case-insensitive comparison for package lookup
       // Priority: id > yocoId > revenueCatId
       pkg = allPackages.find((p: any) => {
-        const code = rawPackageType.toLowerCase()
+        const code = effectivePackageType.toLowerCase()
         return (
           p.id?.toString().toLowerCase() === code ||
-          p.id === rawPackageType ||
+          p.id === effectivePackageType ||
           (p.yocoId && p.yocoId.toString().toLowerCase() === code) ||
-          (p.yocoId && p.yocoId === rawPackageType) ||
+          (p.yocoId && p.yocoId === effectivePackageType) ||
           (p.revenueCatId && p.revenueCatId.toString().toLowerCase() === code) ||
-          (p.revenueCatId && p.revenueCatId === rawPackageType)
+          (p.revenueCatId && p.revenueCatId === effectivePackageType)
         )
       })
       
@@ -140,7 +163,7 @@ export async function POST(request: NextRequest) {
           source: pkg.source,
           yocoId: (pkg as any).yocoId,
           revenueCatId: pkg.revenueCatId,
-          packageType: rawPackageType,
+          packageType: effectivePackageType,
           matchedBy
         })
         multiplier = pkg.multiplier || 1
@@ -167,7 +190,7 @@ export async function POST(request: NextRequest) {
       try {
         const packageResult = await payload.findByID({
           collection: 'packages',
-          id: rawPackageType,
+          id: effectivePackageType,
         })
         
         if (packageResult && packageResult.post === postId) {
@@ -205,7 +228,7 @@ export async function POST(request: NextRequest) {
         collection: 'packages',
         where: {
           post: { equals: postId },
-          name: { equals: rawPackageType },
+          name: { equals: effectivePackageType },
           isEnabled: { equals: true }
         },
         limit: 1,
@@ -242,8 +265,8 @@ export async function POST(request: NextRequest) {
       try {
         const yocoProducts = await yocoService.getProducts()
         const yocoProduct = yocoProducts.find(product => 
-          product.id.toLowerCase() === rawPackageType.toLowerCase() || 
-          product.id === rawPackageType
+          product.id.toLowerCase() === effectivePackageType.toLowerCase() || 
+          product.id === effectivePackageType
         )
         
         if (yocoProduct) {
@@ -284,11 +307,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // If package not found but we have existing estimate with package info, preserve it
+    if (!pkg && existingEstimate) {
+      console.log('Package not found, but preserving existing package info from estimate')
+      // Use existing package information
+      if (existingEstimate.selectedPackage && typeof existingEstimate.selectedPackage.package === 'object') {
+        pkg = {
+          id: existingEstimate.selectedPackage.package.id,
+          name: existingEstimate.selectedPackage.customName || existingEstimate.selectedPackage.package.name,
+          description: existingEstimate.selectedPackage.package.description,
+          multiplier: existingEstimate.selectedPackage.package.multiplier || 1,
+          baseRate: existingEstimate.selectedPackage.package.baseRate,
+          source: 'database'
+        }
+        customName = existingEstimate.selectedPackage.customName || null
+      } else if (existingEstimate.packageType) {
+        // Fallback: use packageType as identifier
+        pkg = {
+          id: existingEstimate.packageType,
+          name: existingEstimate.packageType,
+          multiplier: 1,
+          baseRate: postData?.baseRate || 150,
+          source: 'unknown'
+        }
+      }
+    }
+
     if (!pkg) {
-      console.error('Package not found:', { packageType: rawPackageType, postId })
+      console.error('Package not found:', { packageType: effectivePackageType, postId, estimateId })
       return NextResponse.json({ 
         error: 'Package not found', 
-        details: `Package ${rawPackageType} not found in database or Yoco products for post ${postId}` 
+        details: `Package ${effectivePackageType} not found in database or Yoco products for post ${postId}` 
       }, { status: 400 })
     }
 
@@ -304,45 +353,93 @@ export async function POST(request: NextRequest) {
     // Use yocoId as canonical identifier, fallback to revenueCatId for backward compatibility, then id
     const canonicalPackageType = (pkg as any).yocoId || pkg.revenueCatId || pkg.id
 
-    // Check for existing estimate
-    const existing = await payload.find({
-      collection: 'estimates',
-      where: {
-        post: { equals: postId },
-        customer: { equals: user.id },
-        fromDate: { equals: fromDate },
-        toDate: { equals: toDate },
-      },
-      limit: 1,
-    })
+    // Check for existing estimate - prioritize estimateId if provided, otherwise match by customer/post
+    let estimateToUpdate: any = null
+    
+    if (estimateId && existingEstimate) {
+      // Use the existing estimate found by ID
+      estimateToUpdate = existingEstimate
+    } else {
+      // First try to find by dates (for exact matches)
+      const existingByDates = await payload.find({
+        collection: 'estimates',
+        where: {
+          post: { equals: postId },
+          customer: { equals: user.id },
+          fromDate: { equals: fromDate },
+          toDate: { equals: toDate },
+        },
+        limit: 1,
+      })
+      if (existingByDates.docs.length && existingByDates.docs[0]) {
+        estimateToUpdate = existingByDates.docs[0]
+      } else {
+        // If not found by dates, try to find by customer/post (for date updates)
+        // Get the most recent estimate for this customer/post
+        const existingByPost = await payload.find({
+          collection: 'estimates',
+          where: {
+            post: { equals: postId },
+            customer: { equals: user.id },
+            paymentStatus: { not_equals: 'paid' }, // Only update unpaid estimates
+          },
+          sort: '-createdAt',
+          limit: 1,
+        })
+        if (existingByPost.docs.length && existingByPost.docs[0]) {
+          estimateToUpdate = existingByPost.docs[0]
+          console.log('Found existing estimate by customer/post for date update:', estimateToUpdate.id)
+        }
+      }
+    }
 
     let estimate: any
-    if (existing.docs.length && existing.docs[0]) {
-      // Update
+    if (estimateToUpdate) {
+      // Update existing estimate
       const updateData: any = {
         total: calculatedTotal,
-        guests,
+        guests: guests !== undefined ? guests : estimateToUpdate.guests,
         fromDate,
         toDate,
         customer: user.id,
         packageType: canonicalPackageType,
       }
 
-      // Only add selectedPackage if it's a database package (has valid ObjectId)
+      // Preserve or update selectedPackage
       if (pkg.source === 'database') {
-        console.log('Adding selectedPackage relationship for database package:', pkg.id)
+        console.log('Adding/updating selectedPackage relationship for database package:', pkg.id)
         updateData.selectedPackage = {
           package: pkg.id,
           customName: displayName,
           enabled: true
         }
+      } else if (pkg.source === 'yoco') {
+        // For Yoco packages, preserve existing selectedPackage if it exists, or create minimal one
+        if (estimateToUpdate.selectedPackage) {
+          // Keep existing selectedPackage but update customName if we have one
+          updateData.selectedPackage = {
+            ...estimateToUpdate.selectedPackage,
+            customName: displayName || estimateToUpdate.selectedPackage.customName,
+          }
+        } else {
+          // Create minimal selectedPackage for Yoco product
+          updateData.selectedPackage = {
+            enabled: true,
+            customName: displayName,
+          }
+        }
+        console.log('Preserving/updating selectedPackage for Yoco package:', pkg.id)
       } else {
-        console.log('Skipping selectedPackage relationship for Yoco package:', pkg.id, 'source:', pkg.source)
+        // Unknown source - preserve existing if available
+        if (estimateToUpdate.selectedPackage) {
+          updateData.selectedPackage = estimateToUpdate.selectedPackage
+        }
+        console.log('Preserving existing selectedPackage for unknown source package')
       }
 
       estimate = await payload.update({
         collection: 'estimates',
-        id: existing.docs[0].id,
+        id: estimateToUpdate.id,
         data: updateData,
         user: user
       })

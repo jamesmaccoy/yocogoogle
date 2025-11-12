@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Bot, Send, X, Mic, MicOff, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserContext } from '@/context/UserContext'
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Loader } from '@/components/ai-elements/loader'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -79,15 +80,7 @@ interface TokenUsageDetails {
   timestamp: number
 }
 
-const LoadingDots = () => {
-  return (
-    <div className="flex space-x-1 items-center">
-      <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
-      <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
-      <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-    </div>
-  )
-}
+// LoadingDots replaced with AI Elements Loader component
 
 export const AIAssistant = () => {
   const { currentUser } = useUserContext()
@@ -156,7 +149,6 @@ export const AIAssistant = () => {
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
@@ -847,11 +839,7 @@ ${packages.map((pkg: any, index: number) =>
     }
   }
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
+  // Auto-scroll is now handled by Conversation component
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
@@ -891,71 +879,74 @@ ${packages.map((pkg: any, index: number) =>
             )}
           </div>
           
-          <ScrollArea ref={scrollRef} className="h-[300px] p-4">
-            {/* Quick Actions */}
-            {isLoggedIn && messages.length === 0 && (
-              <div className="mb-4 p-3 bg-muted/50 rounded-lg">
-                <p className="text-xs text-muted-foreground mb-2">Quick Actions:</p>
-                <div className="flex flex-wrap gap-1">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="text-xs h-6 px-2"
-                    onClick={() => {
-                      setInput('debug packages')
-                      handleSubmit(new Event('submit') as any)
-                    }}
-                  >
-                    Debug Packages
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="text-xs h-6 px-2"
-                    onClick={() => {
-                      setInput('show me available packages')
-                      handleSubmit(new Event('submit') as any)
-                    }}
-                  >
-                    Show Packages
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="text-xs h-6 px-2"
-                    onClick={() => {
-                      setInput('help me understand my entitlements')
-                      handleSubmit(new Event('submit') as any)
-                    }}
-                  >
-                    My Entitlements
-                  </Button>
+          <Conversation className="h-[300px]">
+            <ConversationContent className="p-4">
+              {/* Quick Actions */}
+              {isLoggedIn && messages.length === 0 && (
+                <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-2">Quick Actions:</p>
+                  <div className="flex flex-wrap gap-1">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="text-xs h-6 px-2"
+                      onClick={() => {
+                        setInput('debug packages')
+                        handleSubmit(new Event('submit') as any)
+                      }}
+                    >
+                      Debug Packages
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="text-xs h-6 px-2"
+                      onClick={() => {
+                        setInput('show me available packages')
+                        handleSubmit(new Event('submit') as any)
+                      }}
+                    >
+                      Show Packages
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="text-xs h-6 px-2"
+                      onClick={() => {
+                        setInput('help me understand my entitlements')
+                        handleSubmit(new Event('submit') as any)
+                      }}
+                    >
+                      My Entitlements
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            )}
-            
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={cn(
-                  'mb-4 p-3 rounded-lg break-words max-w-[85%]',
-                  message.role === 'user'
-                    ? 'bg-primary text-primary-foreground ml-auto'
-                    : 'bg-muted',
-                )}
-              >
-                <p
-                  className="text-sm"
-                  dangerouslySetInnerHTML={{ __html: (message.content || '').replace(/\n/g, '<br />') }}
-                />
-              </div>
-            ))}
-            {isLoading && (
-              <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2">
-                <LoadingDots />
-              </div>
-            )}
-          </ScrollArea>
+              )}
+              
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    'mb-4 p-3 rounded-lg break-words max-w-[85%]',
+                    message.role === 'user'
+                      ? 'bg-primary text-primary-foreground ml-auto'
+                      : 'bg-muted',
+                  )}
+                >
+                  <p
+                    className="text-sm"
+                    dangerouslySetInnerHTML={{ __html: (message.content || '').replace(/\n/g, '<br />') }}
+                  />
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">
+                  <Loader size={16} />
+                </div>
+              )}
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
           
           {/* Package Suggestions Display */}
           {packageSuggestions.length > 0 && (

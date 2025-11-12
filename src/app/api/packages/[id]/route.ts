@@ -108,7 +108,7 @@ export async function PATCH(
       }
     }
     
-    // Handle Payload admin interface format - data might be in _payload field
+    // Handle Payload admin interface format - data might be in _payload field or nested in data
     if (body._payload && typeof body._payload === 'string') {
       try {
         const payloadData = JSON.parse(body._payload)
@@ -120,6 +120,13 @@ export async function PATCH(
       } catch (err) {
         console.warn('Could not parse _payload field:', err)
       }
+    }
+    
+    // Handle nested data field (common in Payload admin requests)
+    if (body.data && typeof body.data === 'object' && !Array.isArray(body.data)) {
+      console.log('Found nested data field, merging with body')
+      body = { ...body, ...body.data }
+      delete body.data
     }
     
     console.log('PATCH request for package:', { id, body, user: user?.id ? '[REDACTED]' : 'admin' })
@@ -282,12 +289,25 @@ export async function PATCH(
       console.log('Setting features to:', cleanData.features)
     }
     
+    // Handle maxConcurrentBookings field
+    if (body.maxConcurrentBookings !== undefined) {
+      const maxConcurrentBookings = Number(body.maxConcurrentBookings)
+      if (isNaN(maxConcurrentBookings) || maxConcurrentBookings < 1) {
+        return NextResponse.json(
+          { error: 'Max concurrent bookings must be at least 1' },
+          { status: 400 }
+        )
+      }
+      cleanData.maxConcurrentBookings = maxConcurrentBookings
+      console.log('Setting maxConcurrentBookings to:', cleanData.maxConcurrentBookings)
+    }
+
     console.log('Clean data for update:', cleanData)
     console.log('Number of fields to update:', Object.keys(cleanData).length)
     console.log('Fields that were processed:', Object.keys(cleanData))
-    console.log('Expected fields:', ['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate'])
+    console.log('Expected fields:', ['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate', 'maxConcurrentBookings'])
     console.log('Received fields:', Object.keys(body))
-    console.log('Missing field validation for:', Object.keys(body).filter(key => !['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate'].includes(key)))
+    console.log('Missing field validation for:', Object.keys(body).filter(key => !['post', 'name', 'description', 'multiplier', 'features', 'category', 'entitlement', 'minNights', 'maxNights', 'revenueCatId', 'yocoId', 'relatedPage', 'isEnabled', 'baseRate', 'maxConcurrentBookings'].includes(key)))
     
     if (Object.keys(cleanData).length === 0) {
       console.warn('No valid fields to update')
@@ -308,6 +328,7 @@ export async function PATCH(
       collection: 'packages',
       id,
       data: cleanData,
+      depth: 0, // Don't populate relationships on update to avoid issues
     }
     
     if (user) {
@@ -317,24 +338,46 @@ export async function PATCH(
     console.log('Calling payload.update with options:', {
       collection: updateOptions.collection,
       id: updateOptions.id,
+      dataKeys: Object.keys(updateOptions.data),
       data: updateOptions.data,
       hasUser: !!updateOptions.user
     })
     
-    const packageDoc = await payload.update(updateOptions)
-    
-    console.log('Package updated successfully with ID:', id)
-    console.log('Update operation completed at:', new Date().toISOString())
-    
-    // Verify the update by refetching the document
-    const verifyDoc = await payload.findByID({
-      collection: 'packages',
-      id,
-    })
-    
-    console.log('Verification fetch shows package exists with name:', verifyDoc.name)
-    
-    return NextResponse.json(packageDoc)
+    try {
+      const packageDoc = await payload.update(updateOptions)
+      
+      console.log('Package updated successfully with ID:', id)
+      console.log('Update operation completed at:', new Date().toISOString())
+      console.log('Updated package name:', packageDoc.name)
+      console.log('Updated package fields:', Object.keys(packageDoc).filter(key => cleanData.hasOwnProperty(key)))
+      
+      // Verify the update by refetching the document with full depth
+      const verifyDoc = await payload.findByID({
+        collection: 'packages',
+        id,
+        depth: 2,
+      })
+      
+      console.log('Verification fetch shows package exists with name:', verifyDoc.name)
+      console.log('Verification - updated fields match:', 
+        Object.keys(cleanData).every(key => {
+          const updated = JSON.stringify(verifyDoc[key])
+          const expected = JSON.stringify(cleanData[key])
+          const matches = updated === expected
+          if (!matches) {
+            console.warn(`Field ${key} mismatch: expected ${expected}, got ${updated}`)
+          }
+          return matches
+        })
+      )
+      
+      return NextResponse.json(verifyDoc)
+    } catch (updateError) {
+      console.error('Error during payload.update:', updateError)
+      console.error('Update error details:', updateError instanceof Error ? updateError.message : 'Unknown error')
+      console.error('Update error stack:', updateError instanceof Error ? updateError.stack : 'No stack trace')
+      throw updateError // Re-throw to be caught by outer catch
+    }
   } catch (error) {
     console.error('Error updating package:', error)
     return NextResponse.json(

@@ -5,9 +5,10 @@ import { cn } from '@/utilities/cn'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Loader } from '@/components/ai-elements/loader'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -271,7 +272,6 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const subscriptionStatus = useSubscription()
   const [customerEntitlement, setCustomerEntitlement] = useState<CustomerEntitlement>('none')
   
-  const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
@@ -784,6 +784,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           customName: selectedPackage.name,
           enabled: true,
         },
+        // Include estimateId if we have a latest estimate for this post to preserve package info
+        estimateId: latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId) 
+          ? latestEstimate.id 
+          : undefined,
       }
       
       const estimateResponse = await fetch('/api/estimates', {
@@ -1067,6 +1071,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
                 enabled: true,
               }
             : undefined,
+          // Include estimateId if we have a latest estimate for this post to preserve package info
+          estimateId: latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId) 
+            ? latestEstimate.id 
+            : undefined,
         })
       })
       if (!resp.ok) {
@@ -1148,12 +1156,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }, [postId, customerEntitlement])
   
-  // Auto-scroll messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
+  // Auto-scroll is now handled by Conversation component
 
   useEffect(() => {
     if (packages.length === 0) {
@@ -1996,23 +1999,22 @@ Availability Status:
       </CardHeader>
       
       <CardContent className="p-0">
-        <ScrollArea ref={scrollRef} className="h-[400px] p-4">
-          <QuickActions onAction={handleQuickAction} />
-          
-          <div className="space-y-4">
-            {messages.map(renderMessage)}
+        <Conversation className="h-[400px]">
+          <ConversationContent className="p-4">
+            <QuickActions onAction={handleQuickAction} />
             
-            {isLoading && (
-              <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
-                  <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
+            <div className="space-y-4">
+              {messages.map(renderMessage)}
+              
+              {isLoading && (
+                <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">
+                  <Loader size={16} />
                 </div>
-              </div>
-            )}
-          </div>
-        </ScrollArea>
+              )}
+            </div>
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
         
         <div className="border-t p-4">
           {!isLoggedIn && (

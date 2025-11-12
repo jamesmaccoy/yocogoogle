@@ -55,19 +55,20 @@ export function DivineLightEffect() {
 
   return (
     <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-      {/* Central divine light */}
-      <div className="absolute inset-0 flex items-center justify-center">
+      {/* Divine light from top */}
+      <div className="absolute top-0 left-0 right-0 flex items-start justify-center pt-8">
         <div className="relative w-96 h-96">
           {/* Main light source */}
           <div className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-200 via-yellow-100 to-white opacity-80 blur-3xl animate-pulse" />
           
-          {/* Shimmering rays */}
+          {/* Shimmering rays - emanating downward */}
           {[...Array(12)].map((_, i) => (
             <div
               key={i}
               className="absolute inset-0"
               style={{
                 transform: `rotate(${i * 30}deg)`,
+                transformOrigin: 'center top',
               }}
             >
               <div 
