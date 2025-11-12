@@ -380,7 +380,7 @@ export async function POST(request: NextRequest) {
 
     const responseEstimate = {
       ...estimate,
-      packageLabel,
+      packageLabel: displayName, // Include display name (custom name or package name) for frontend
     }
 
     return NextResponse.json(responseEstimate, { status: existing.docs.length ? 200 : 201 })
