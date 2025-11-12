@@ -33,12 +33,20 @@ export default function RegisterPage() {
   const searchParams = useSearchParams()
 
   const next = searchParams.get('next')
+  
+  // If registering from a guest invite URL, automatically set role to 'guest'
+  const isGuestInvite = Boolean(next?.includes('/guest/invite'))
+  
+  // Set default role based on whether this is a guest invite
+  React.useEffect(() => {
+    form.setValue('role', isGuestInvite ? 'guest' : 'customer')
+  }, [isGuestInvite, form])
 
   const { handleAuthChange } = useUserContext()
 
   const handleRegister = async (values: FormValues) => {
     try {
-      const res = await fetch(`/api/users`, {
+      const res = await fetch(`/api/users/register`, {
         method: 'POST',
         credentials: 'include',
         body: JSON.stringify(values),
@@ -48,7 +56,8 @@ export default function RegisterPage() {
       })
 
       if (!res.ok) {
-        throw new Error('Invalid email or password')
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Registration failed')
       }
 
       const validatedNext = validateRedirect(next)
