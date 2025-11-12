@@ -6,6 +6,8 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { format } from 'date-fns'
+import { DivineLightEffect } from '@/components/DivineLightEffect'
+import { Package } from 'lucide-react'
 
 export default async function BookingConfirmationPage({
   searchParams,
@@ -437,7 +439,7 @@ export default async function BookingConfirmationPage({
     )
   }
 
-  // Get the most recent booking for this user
+  // Get the most recent booking for this user with package information
   const bookings = await payload.find({
     collection: 'bookings',
     where: {
@@ -445,9 +447,72 @@ export default async function BookingConfirmationPage({
     },
     sort: '-createdAt',
     limit: 1,
+    depth: 2, // Include package relationship
   })
 
   const booking = bookings.docs[0]
+
+  // Resolve package information
+  let packageName: string | null = null
+  let packageDescription: string | null = null
+  
+  if (booking) {
+    // Try to get package name from selectedPackage
+    if (booking.selectedPackage) {
+      if (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package) {
+        packageName = booking.selectedPackage.customName || booking.selectedPackage.package.name || null
+        packageDescription = booking.selectedPackage.package.description || null
+      } else if (booking.selectedPackage.customName) {
+        packageName = booking.selectedPackage.customName
+      }
+    }
+
+    // If no package name found, try to resolve from packageType
+    if (!packageName && booking.packageType && booking.post) {
+      try {
+        const postId = typeof booking.post === 'string' ? booking.post : booking.post.id
+        const postData = await payload.findByID({
+          collection: 'posts',
+          id: postId,
+          depth: 1,
+        })
+
+        // Get database packages
+        const dbPackages = await payload.find({
+          collection: 'packages',
+          where: {
+            post: { equals: postId },
+            isEnabled: { equals: true }
+          },
+          depth: 1,
+        })
+
+        const code = booking.packageType.toLowerCase()
+        const matchedPackage = dbPackages.docs.find((pkg: any) => {
+          const pkgId = pkg.id?.toString().toLowerCase()
+          const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
+          const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
+          return pkgId === code || revenueCatId === code || yocoId === code
+        })
+
+        if (matchedPackage) {
+          // Check for custom name in packageSettings
+          if (postData?.packageSettings && Array.isArray(postData.packageSettings)) {
+            const packageSetting = postData.packageSettings.find((setting: any) => {
+              const settingPackageId = typeof setting.package === 'object' ? setting.package.id : setting.package
+              return settingPackageId === matchedPackage.id
+            })
+            packageName = packageSetting?.customName || matchedPackage.name
+          } else {
+            packageName = matchedPackage.name
+          }
+          packageDescription = matchedPackage.description || null
+        }
+      } catch (error) {
+        console.warn('Could not resolve package information:', error)
+      }
+    }
+  }
   
   // Calculate dates and duration
   let fromDate = new Date()
@@ -471,9 +536,13 @@ export default async function BookingConfirmationPage({
       ? Number(bookingTotal) * Number(bookingDuration) 
       : "N/A"
   
+  const showSuccess = success && !isSubscriptionIntent
+
   return (
-    <div className="container py-10">
-      <div className="max-w-2xl mx-auto">
+    <div className="container py-10 relative">
+      {showSuccess && <DivineLightEffect />}
+      
+      <div className="max-w-2xl mx-auto relative z-10">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold tracking-tighter mb-4">Booking Confirmed!</h1>
           <p className="text-muted-foreground">Thank you for your booking. We&apos;re excited to host you!</p>
@@ -494,6 +563,21 @@ export default async function BookingConfirmationPage({
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Property</span>
                 <span className="font-medium">{booking.title}</span>
+              </div>
+            )}
+
+            {packageName && (
+              <div className="flex justify-between items-start border-t pt-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Package</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-medium">{packageName}</span>
+                  {packageDescription && (
+                    <p className="text-sm text-muted-foreground mt-1">{packageDescription}</p>
+                  )}
+                </div>
               </div>
             )}
             
