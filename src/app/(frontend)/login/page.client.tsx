@@ -4,14 +4,27 @@ import React from 'react'
 import EmailPasswordForm from './_components/EmailPasswordForm'
 import EmailAuthForm from './_components/EmailAuthForm'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { CheckCircle2Icon } from 'lucide-react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 export default function LoginPage() {
   const [mode, setMode] = React.useState<'password' | 'email'>('password')
+  const searchParams = useSearchParams()
+  const registered = searchParams.get('registered') === 'true'
 
   return (
     <div className="container my-20">
       <div className="border max-w-[450px] mx-auto p-10 rounded-md bg-card">
+        {registered && (
+          <Alert className="mb-6 border-green-500 bg-green-50 dark:bg-green-950/20">
+            <CheckCircle2Icon className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <AlertDescription className="text-green-800 dark:text-green-200">
+              Registration successful! Please log in with your email and password.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="space-y-2 text-center mb-6">
           <h1 className="font-bold text-3xl">Login</h1>
           <p className="text-muted-foreground text-lg">Login as a customer</p>

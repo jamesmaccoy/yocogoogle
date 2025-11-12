@@ -54,15 +54,15 @@ export default function RegisterPage() {
       const validatedNext = validateRedirect(next)
 
       if (validatedNext) {
-        router.push(`/login?next=${validatedNext}`)
+        router.push(`/login?next=${validatedNext}&registered=true`)
         return
       }
 
       handleAuthChange()
-      router.push('/login')
+      router.push('/login?registered=true')
     } catch (err) {
       console.error(err)
-      setError(err.message)
+      setError(err instanceof Error ? err.message : 'An error occurred during registration')
     }
   }
 
