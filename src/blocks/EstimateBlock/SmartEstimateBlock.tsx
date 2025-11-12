@@ -269,6 +269,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   // Ref to track previous availability state to detect changes
   const previousAvailabilityRef = useRef<boolean | null>(null)
   
+  // Ref to preserve startDate during iOS Safari date picker interactions
+  const preservedStartDateRef = useRef<Date | null>(null)
+  
   const subscriptionStatus = useSubscription()
   const [customerEntitlement, setCustomerEntitlement] = useState<CustomerEntitlement>('none')
   
@@ -1679,11 +1682,53 @@ Availability Status:
                 type="date"
                 value={startDate ? format(startDate, 'yyyy-MM-dd') : ''}
                 onChange={(e) => {
-                  const date = new Date(e.target.value)
+                  const value = e.target.value
+                  // Only process if we have a valid date value (iOS Safari can send empty string during selection)
+                  if (!value || value.trim() === '') {
+                    // If value is empty but we have a preserved startDate, restore it
+                    if (preservedStartDateRef.current) {
+                      setStartDate(preservedStartDateRef.current)
+                    }
+                    return
+                  }
+                  
+                  // Parse date more safely - handle iOS Safari date format
+                  const date = new Date(value + 'T00:00:00') // Add time to avoid timezone issues
+                  
+                  // Validate the date is actually valid
+                  if (isNaN(date.getTime())) {
+                    // If date is invalid but we have a preserved startDate, restore it
+                    if (preservedStartDateRef.current) {
+                      setStartDate(preservedStartDateRef.current)
+                    }
+                    return
+                  }
+                  
+                  // Update preserved date
+                  preservedStartDateRef.current = date
                   setStartDate(date)
                   packagesSuggestedRef.current = false
+                  
+                  // Only adjust endDate if it's before the new startDate
                   if (endDate && date > endDate) {
                     setEndDate(new Date(date.getTime() + duration * 24 * 60 * 60 * 1000))
+                  }
+                }}
+                onBlur={(e) => {
+                  // On blur, ensure we have a valid date (iOS Safari sometimes doesn't fire onChange properly)
+                  const value = e.target.value
+                  if (value && value.trim() !== '') {
+                    const date = new Date(value + 'T00:00:00')
+                    if (!isNaN(date.getTime())) {
+                      preservedStartDateRef.current = date
+                      setStartDate(date)
+                    } else if (preservedStartDateRef.current) {
+                      // If value is invalid, restore preserved date
+                      setStartDate(preservedStartDateRef.current)
+                    }
+                  } else if (preservedStartDateRef.current) {
+                    // If value is empty on blur, restore preserved date
+                    setStartDate(preservedStartDateRef.current)
                   }
                 }}
                 className="text-xs"
@@ -1696,11 +1741,64 @@ Availability Status:
                 type="date"
                 value={endDate ? format(endDate, 'yyyy-MM-dd') : ''}
                 onChange={(e) => {
-                  const date = new Date(e.target.value)
+                  const value = e.target.value
+                  // Only process if we have a valid date value (iOS Safari can send empty string during selection)
+                  if (!value || value.trim() === '') {
+                    return
+                  }
+                  
+                  // Parse date more safely - handle iOS Safari date format
+                  const date = new Date(value + 'T00:00:00') // Add time to avoid timezone issues
+                  
+                  // Validate the date is actually valid
+                  if (isNaN(date.getTime())) {
+                    return
+                  }
+                  
                   setEndDate(date)
                   packagesSuggestedRef.current = false
-                  if (startDate && date < startDate) {
-                    setStartDate(new Date(date.getTime() - duration * 24 * 60 * 60 * 1000))
+                  
+                  // CRITICAL FIX: Preserve startDate when selecting endDate on iOS Safari
+                  // iOS Safari can trigger onChange events that might affect startDate
+                  // Only adjust startDate if endDate is actually before startDate (user error case)
+                  if (startDate && preservedStartDateRef.current) {
+                    const startDateOnly = new Date(startDate)
+                    startDateOnly.setHours(0, 0, 0, 0)
+                    const endDateOnly = new Date(date)
+                    endDateOnly.setHours(0, 0, 0, 0)
+                    
+                    // Only adjust if end date is actually before start date (not equal)
+                    if (endDateOnly < startDateOnly) {
+                      // Calculate new start date based on duration, but don't go before today
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      const newStartDate = new Date(endDateOnly.getTime() - duration * 24 * 60 * 60 * 1000)
+                      // Only update if the calculated date is valid and not before today
+                      if (newStartDate >= today) {
+                        setStartDate(newStartDate)
+                        preservedStartDateRef.current = newStartDate
+                      }
+                    } else {
+                      // If endDate is valid and >= startDate, ensure startDate is preserved
+                      // This prevents iOS Safari from resetting startDate to today
+                      if (preservedStartDateRef.current && startDate.getTime() !== preservedStartDateRef.current.getTime()) {
+                        setStartDate(preservedStartDateRef.current)
+                      }
+                    }
+                  }
+                }}
+                onBlur={(e) => {
+                  // On blur, ensure we have a valid date (iOS Safari sometimes doesn't fire onChange properly)
+                  const value = e.target.value
+                  if (value && value.trim() !== '') {
+                    const date = new Date(value + 'T00:00:00')
+                    if (!isNaN(date.getTime())) {
+                      setEndDate(date)
+                    }
+                  }
+                  // Ensure startDate is preserved even after endDate blur
+                  if (preservedStartDateRef.current && (!startDate || startDate.getTime() !== preservedStartDateRef.current.getTime())) {
+                    setStartDate(preservedStartDateRef.current)
                   }
                 }}
                 className="text-xs"
