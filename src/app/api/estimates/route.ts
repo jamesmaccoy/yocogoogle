@@ -480,7 +480,7 @@ export async function POST(request: NextRequest) {
       packageLabel: displayName, // Include display name (custom name or package name) for frontend
     }
 
-    return NextResponse.json(responseEstimate, { status: existing.docs.length ? 200 : 201 })
+    return NextResponse.json(responseEstimate, { status: estimateToUpdate ? 200 : 201 })
   } catch (err) {
     console.error('Estimate creation error:', err)
     return NextResponse.json({ error: (err instanceof Error ? err.message : 'Unknown error') }, { status: 500 })
