@@ -941,14 +941,22 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           throw new Error('Payment link creation failed. Please try again.')
         }
       } else {
-        // Fallback: simulate payment success and confirm estimate first
-        console.log('❌ Package not found in Yoco products, using fallback payment flow')
-        console.log('❌ This means the payment modal will be bypassed!')
-        console.log('❌ Available products:', offerings.map(pkg => pkg.id))
-        console.log('❌ Looking for:', selectedPackage.yocoId)
-        console.log('❌ Mapped to:', selectedPackage.yocoId ? getYocoPackageId(selectedPackage.yocoId) : 'undefined')
+        // Fallback: Package not found in Yoco products
+        console.error('❌ Package not found in Yoco products!')
+        console.error('❌ Available products:', offerings.map(pkg => pkg.id))
+        console.error('❌ Looking for:', selectedPackage.yocoId)
+        console.error('❌ Mapped to:', selectedPackage.yocoId ? getYocoPackageId(selectedPackage.yocoId) : 'undefined')
         
-        // Confirm the estimate with payment validation (for fallback case)
+        // In production, reject bookings without valid Yoco products
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(`Package "${selectedPackage.name}" (${selectedPackage.yocoId}) not found in Yoco. Please contact support.`)
+        }
+        
+        // Development fallback: simulate payment success (DISABLED IN PRODUCTION)
+        console.warn('⚠️ DEVELOPMENT MODE: Using fallback payment flow (payment bypassed)')
+        console.warn('⚠️ This should NOT happen in production!')
+        
+        // Confirm the estimate with payment validation (for fallback case - DEV ONLY)
         const confirmResponse = await fetch(`/api/estimates/${estimate.id}/confirm`, {
           method: 'POST',
           headers: {
@@ -958,7 +966,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             packageType: selectedPackage.yocoId || selectedPackage.id,
             baseRate: total,
             paymentValidated: true, // Mark that payment was successfully processed (fallback case)
-            yocoPaymentId: new Date().toISOString(), // Use current timestamp as fallback validation
+            yocoPaymentId: `mock-${Date.now()}`, // Use mock ID for development
             selectedPackage: {
               package: selectedPackage.id,
               customName: selectedPackage.name,
@@ -980,8 +988,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         // Clear booking journey after successful booking
         clearBookingJourney()
         
-        // Redirect to booking confirmation
-        router.push(`/booking-confirmation?total=${total}&duration=${duration}`)
+        // Redirect to booking confirmation with mock transaction ID
+        router.push(`/booking-confirmation?total=${total}&duration=${duration}&transactionId=mock-${Date.now()}&success=true&estimateId=${estimate.id}`)
       }
       
     } catch (error) {

@@ -86,16 +86,17 @@ export default async function BookingConfirmationPage({
           }
 
           if (transaction.intent === 'subscription') {
-            const plan =
-              transaction.plan ||
-              (transaction.entitlement === 'pro' ? 'pro' : transaction.entitlement || 'standard')
+            // Map transaction plan/entitlement to valid user plan types (pro, free, basic, enterprise)
+            const transactionPlan = transaction.plan || (transaction.entitlement === 'pro' ? 'pro' : 'free')
+            const userPlan = transactionPlan === 'pro' ? 'pro' : 'free' // Map standard/none to free
+            
             await payload.update({
               collection: 'users',
               id: transactionUserId,
               data: {
                 subscriptionStatus: {
                   status: 'active',
-                  plan,
+                  plan: userPlan,
                   expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
                 },
               },
@@ -109,7 +110,7 @@ export default async function BookingConfirmationPage({
                   event: 'RENEWED',
                   userId: transactionUserId,
                   subscriptionId: transactionId,
-                  plan,
+                  plan: userPlan,
                   entitlement: transaction.entitlement || 'standard',
                   expiresAt: expiresAtDate ? expiresAtDate.toISOString() : undefined,
                 },
@@ -120,7 +121,7 @@ export default async function BookingConfirmationPage({
               packageName: transaction.packageName || 'Member Subscription',
               amount: typeof transaction.amount === 'number' ? transaction.amount : null,
               currency: transaction.currency || 'ZAR',
-              plan,
+              plan: userPlan,
               expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
             }
           }
@@ -134,7 +135,87 @@ export default async function BookingConfirmationPage({
   // If payment was successful and we have an estimate ID, confirm estimate and create booking
   if (success && estimateId && !isSubscriptionIntent) {
     try {
-      console.log('Processing payment success callback:', { estimateId, postId, startDate, endDate, duration })
+      console.log('Processing payment success callback:', { estimateId, postId, startDate, endDate, duration, transactionId })
+      
+      // Validate that a real transaction occurred (not mock/bypassed)
+      let transactionValidated = false
+      if (transactionId) {
+        try {
+          const transaction = await payload.findByID({
+            collection: 'yoco-transactions',
+            id: transactionId,
+          })
+          
+          if (transaction) {
+            // Check if transaction is actually completed and not mock
+            const isMock = transaction.id?.toString().startsWith('mock-')
+            const isCompleted = transaction.status === 'completed'
+            
+            if (isMock) {
+              console.warn('⚠️ Mock transaction detected - payment not actually processed!')
+              // In production, reject mock transactions
+              if (process.env.NODE_ENV === 'production') {
+                console.error('❌ Production environment detected - rejecting mock transaction')
+                return (
+                  <div className="container py-10">
+                    <div className="max-w-2xl mx-auto text-center">
+                      <h1 className="text-4xl font-bold mb-4 text-red-600">Payment Error</h1>
+                      <p className="text-muted-foreground mb-8">
+                        Payment validation failed. Please contact support if you believe this is an error.
+                      </p>
+                      <Link href="/bookings" passHref>
+                        <Button>View Bookings</Button>
+                      </Link>
+                    </div>
+                  </div>
+                )
+              }
+            }
+            
+            transactionValidated = isCompleted && !isMock
+            console.log('Transaction validation:', { transactionId, isMock, isCompleted, transactionValidated })
+          } else {
+            console.warn('Transaction not found:', transactionId)
+          }
+        } catch (error) {
+          console.warn('Could not validate transaction:', error)
+          // In production, require transaction validation
+          if (process.env.NODE_ENV === 'production') {
+            console.error('❌ Production environment - transaction validation required')
+            return (
+              <div className="container py-10">
+                <div className="max-w-2xl mx-auto text-center">
+                  <h1 className="text-4xl font-bold mb-4 text-red-600">Payment Validation Error</h1>
+                  <p className="text-muted-foreground mb-8">
+                    Unable to validate payment. Please contact support.
+                  </p>
+                  <Link href="/bookings" passHref>
+                    <Button>View Bookings</Button>
+                  </Link>
+                </div>
+              </div>
+            )
+          }
+        }
+      } else {
+        // In production, require transactionId
+        if (process.env.NODE_ENV === 'production') {
+          console.error('❌ Production environment - transactionId required')
+          return (
+            <div className="container py-10">
+              <div className="max-w-2xl mx-auto text-center">
+                <h1 className="text-4xl font-bold mb-4 text-red-600">Payment Error</h1>
+                <p className="text-muted-foreground mb-8">
+                  Payment transaction ID missing. Please contact support.
+                </p>
+                <Link href="/bookings" passHref>
+                  <Button>View Bookings</Button>
+                </Link>
+              </div>
+            </div>
+          )
+        }
+      }
       
       // Get the estimate
       const estimate = await payload.findByID({
@@ -154,21 +235,27 @@ export default async function BookingConfirmationPage({
           estimateCustomerId,
           userId: user.id,
           isCustomerMatch,
+          transactionValidated,
           postId: estimate.post ? (typeof estimate.post === 'string' ? estimate.post : estimate.post.id) : null,
           fromDate: estimate.fromDate,
           toDate: estimate.toDate
         })
 
         if (isCustomerMatch) {
-          // Confirm the estimate
-          await payload.update({
-            collection: 'estimates',
-            id: estimateId,
-            data: {
-              paymentStatus: 'paid',
-            },
-          })
-          console.log('✅ Estimate confirmed')
+          // Only confirm estimate if transaction is validated (or in development with mock)
+          if (transactionValidated || (process.env.NODE_ENV !== 'production' && transactionId)) {
+            // Confirm the estimate
+            await payload.update({
+              collection: 'estimates',
+              id: estimateId,
+              data: {
+                paymentStatus: 'paid',
+              },
+            })
+            console.log('✅ Estimate confirmed')
+          } else {
+            console.warn('⚠️ Estimate not confirmed - transaction not validated')
+          }
 
           // Determine which data to use for booking creation
           const bookingPostId = postId || (estimate.post ? (typeof estimate.post === 'string' ? estimate.post : estimate.post.id) : null)
