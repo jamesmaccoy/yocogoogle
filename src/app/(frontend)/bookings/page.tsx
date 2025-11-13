@@ -58,23 +58,11 @@ export default async function Bookings() {
   console.log(upcomingBookings, pastBookings)
   const latestEstimate = await fetchLatestEstimate(user.id)
 
-  const latestEstimatePostId =
-    typeof latestEstimate?.post === 'string'
-      ? latestEstimate.post
-      : latestEstimate?.post?.id ?? null
-
-  const annualStatementHref = latestEstimatePostId
-    ? `/bookings/annual-statement?postId=${latestEstimatePostId}`
-    : '/bookings/annual-statement'
-
   return (
     <>
       <PageClient />
       <div className="my-10 container space-y-10">
         <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:justify-end">
-          <Link href={annualStatementHref}>
-            <Button variant="secondary">Annual booking statement</Button>
-          </Link>
           <div>
             {latestEstimate ? (
               <Link href={`/estimate/${latestEstimate.id}`}>
