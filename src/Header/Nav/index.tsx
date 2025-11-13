@@ -37,13 +37,13 @@ export const HeaderNav: React.FC<{ data: HeaderType }> = ({ data }) => {
         return <CMSLink key={i} {...link} appearance="link" />
       })}
       
-      {/* Add Plek Management link for standard/pro subscribers and admins */}
+      {/* Add Management link for standard/pro subscribers and admins */}
       {canManagePlek && (
         <Link 
-          href="/manage/packages" 
+          href="/manage" 
           className={buttonVariants({ variant: "link" })}
         >
-          Manage Plek
+          Manage
         </Link>
       )}
 

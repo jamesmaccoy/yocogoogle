@@ -1,11 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 
 export function DivineLightEffect() {
   const [isVisible, setIsVisible] = useState(true)
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Generate particle positions only on client to avoid hydration mismatch
+  const particles = useMemo(() => {
+    if (typeof window === 'undefined') return []
+    
+    return Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      delay: Math.random() * 2,
+      duration: 3 + Math.random() * 2,
+      size: 3 + Math.random() * 8,
+      left: 20 + Math.random() * 60,
+      top: Math.random() * 40,
+    }))
+  }, [])
 
   useEffect(() => {
+    setIsMounted(true)
+    
     // Inject CSS keyframes
     const style = document.createElement('style')
     style.textContent = `
@@ -51,7 +68,8 @@ export function DivineLightEffect() {
     }
   }, [])
 
-  if (!isVisible) return null
+  // Don't render until mounted to avoid hydration mismatch
+  if (!isMounted || !isVisible) return null
 
   return (
     <div className="fixed top-0 left-0 right-0 pointer-events-none z-50 overflow-hidden" style={{ height: '40vh' }}>
@@ -99,29 +117,20 @@ export function DivineLightEffect() {
       </div>
 
       {/* Floating light particles - spread wider */}
-      {[...Array(20)].map((_, i) => {
-        const delay = Math.random() * 2
-        const duration = 3 + Math.random() * 2
-        const size = 3 + Math.random() * 8
-        // Spread particles across wider area (center 60% of width)
-        const left = 20 + Math.random() * 60
-        const top = Math.random() * 40
-        
-        return (
-          <div
-            key={i}
-            className="absolute rounded-full bg-yellow-200/60 blur-sm"
-            style={{
-              left: `${left}%`,
-              top: `${top}%`,
-              width: `${size}px`,
-              height: `${size}px`,
-              animation: `divine-float ${duration}s ease-in-out infinite`,
-              animationDelay: `${delay}s`,
-            }}
-          />
-        )
-      })}
+      {particles.map((particle) => (
+        <div
+          key={particle.id}
+          className="absolute rounded-full bg-yellow-200/60 blur-sm"
+          style={{
+            left: `${particle.left}%`,
+            top: `${particle.top}%`,
+            width: `${particle.size}px`,
+            height: `${particle.size}px`,
+            animation: `divine-float ${particle.duration}s ease-in-out infinite`,
+            animationDelay: `${particle.delay}s`,
+          }}
+        />
+      ))}
 
       {/* Overlay gradient - focused at top */}
       <div 
