@@ -259,8 +259,40 @@ export default async function BookingConfirmationPage({
 
           // Determine which data to use for booking creation
           const bookingPostId = postId || (estimate.post ? (typeof estimate.post === 'string' ? estimate.post : estimate.post.id) : null)
-          const bookingFromDate = startDate || estimate.fromDate
-          const bookingToDate = endDate || estimate.toDate
+          let bookingFromDate = startDate || estimate.fromDate
+          let bookingToDate = endDate || estimate.toDate
+          
+          // Ensure dates are in correct order (fromDate must be before toDate)
+          const fromDateObj = new Date(bookingFromDate)
+          const toDateObj = new Date(bookingToDate)
+          
+          // Validate dates are valid
+          if (isNaN(fromDateObj.getTime()) || isNaN(toDateObj.getTime())) {
+            throw new Error(`Invalid date format: fromDate=${bookingFromDate}, toDate=${bookingToDate}`)
+          }
+          
+          // If dates are swapped, fix them
+          if (fromDateObj > toDateObj) {
+            console.warn('⚠️ Dates are swapped - fixing order:', {
+              originalFromDate: bookingFromDate,
+              originalToDate: bookingToDate,
+            })
+            // Swap the dates
+            const temp = bookingFromDate
+            bookingFromDate = bookingToDate
+            bookingToDate = temp
+            console.log('✅ Dates corrected:', {
+              correctedFromDate: bookingFromDate,
+              correctedToDate: bookingToDate,
+            })
+          }
+          
+          // Final validation: ensure fromDate is still before toDate after correction
+          const finalFromDate = new Date(bookingFromDate)
+          const finalToDate = new Date(bookingToDate)
+          if (finalFromDate >= finalToDate) {
+            throw new Error(`Invalid date range: fromDate (${bookingFromDate}) must be before toDate (${bookingToDate})`)
+          }
           const bookingTotal = estimate.total || 0
 
           if (bookingPostId && bookingFromDate && bookingToDate) {
