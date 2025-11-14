@@ -1836,32 +1836,122 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     // Parse dates from user message BEFORE processing
     const parsedDates = parseDatesFromMessage(trimmedMessage)
     
-    // Update dates if parsed successfully
+    console.log('📅 Parsed dates from message:', {
+      message: trimmedMessage,
+      parsedDates: {
+        startDate: parsedDates.startDate?.toISOString(),
+        endDate: parsedDates.endDate?.toISOString(),
+        duration: parsedDates.duration,
+      },
+      currentState: {
+        startDate: startDate?.toISOString(),
+        endDate: endDate?.toISOString(),
+        duration,
+      },
+    })
+    
+    // Update dates if parsed successfully and update estimate
     if (parsedDates.startDate && parsedDates.endDate) {
+      const newDuration = parsedDates.duration || Math.ceil((parsedDates.endDate.getTime() - parsedDates.startDate.getTime()) / (1000 * 60 * 60 * 24))
+      
+      // Update state immediately
       setStartDate(parsedDates.startDate)
       setEndDate(parsedDates.endDate)
-      if (parsedDates.duration) {
-        setDuration(parsedDates.duration)
-      } else {
-        // Calculate duration from dates
-        const calcDuration = Math.ceil((parsedDates.endDate.getTime() - parsedDates.startDate.getTime()) / (1000 * 60 * 60 * 24))
-        setDuration(calcDuration)
-      }
+      setDuration(newDuration)
+      
       // Reset package suggestions to allow new suggestions for new dates
       packagesSuggestedRef.current = false
-      // Check availability for new dates
-      setTimeout(() => {
-        checkDateAvailability(parsedDates.startDate!, parsedDates.endDate!, activeThreadRef.current, false)
-      }, 100)
+      
+      // Update estimate with new dates if we have an existing estimate
+      if (latestEstimate && isLoggedIn && currentUser) {
+        try {
+          const total = selectedPackage?.baseRate || calculateTotal(baseRate, newDuration, selectedPackage?.multiplier || 1)
+          
+          console.log('💾 Updating estimate with new dates:', {
+            estimateId: latestEstimate.id,
+            fromDate: parsedDates.startDate.toISOString(),
+            toDate: parsedDates.endDate.toISOString(),
+            duration: newDuration,
+          })
+          
+          const estimateResponse = await fetch('/api/estimates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              postId,
+              fromDate: parsedDates.startDate.toISOString(),
+              toDate: parsedDates.endDate.toISOString(),
+              guests: [],
+              baseRate: total,
+              duration: newDuration,
+              customer: currentUser.id,
+              packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
+              selectedPackage: selectedPackage ? {
+                package: selectedPackage.id,
+                customName: selectedPackage.name,
+                enabled: true,
+              } : latestEstimate.selectedPackage,
+              estimateId: latestEstimate.id, // Update existing estimate
+            }),
+          })
+          
+          if (estimateResponse.ok) {
+            const updatedEstimate = await estimateResponse.json()
+            console.log('✅ Estimate updated successfully:', updatedEstimate.id)
+            setLatestEstimate(updatedEstimate)
+          }
+        } catch (error) {
+          console.error('❌ Error updating estimate with new dates:', error)
+        }
+      }
+      
+      // Check availability immediately with parsed dates (not from state)
+      // Use parsed dates directly to ensure we check the correct dates
+      console.log('🔍 Checking availability with parsed dates:', {
+        startDate: parsedDates.startDate.toISOString(),
+        endDate: parsedDates.endDate.toISOString(),
+      })
+      await checkDateAvailability(parsedDates.startDate, parsedDates.endDate, activeThreadRef.current, false)
     } else if (parsedDates.duration && startDate) {
       // If we have a duration and existing start date, update end date
       const newEndDate = new Date(startDate.getTime() + parsedDates.duration * 24 * 60 * 60 * 1000)
       setEndDate(newEndDate)
       setDuration(parsedDates.duration)
       packagesSuggestedRef.current = false
-      setTimeout(() => {
-        checkDateAvailability(startDate, newEndDate, activeThreadRef.current, false)
-      }, 100)
+      
+      // Update estimate if exists
+      if (latestEstimate && isLoggedIn && currentUser) {
+        try {
+          const total = selectedPackage?.baseRate || calculateTotal(baseRate, parsedDates.duration, selectedPackage?.multiplier || 1)
+          
+          await fetch('/api/estimates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              postId,
+              fromDate: startDate.toISOString(),
+              toDate: newEndDate.toISOString(),
+              guests: [],
+              baseRate: total,
+              duration: parsedDates.duration,
+              customer: currentUser.id,
+              packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
+              selectedPackage: selectedPackage ? {
+                package: selectedPackage.id,
+                customName: selectedPackage.name,
+                enabled: true,
+              } : latestEstimate.selectedPackage,
+              estimateId: latestEstimate.id,
+            }),
+          })
+          
+          loadLatestEstimate(true)
+        } catch (error) {
+          console.error('Error updating estimate with new duration:', error)
+        }
+      }
+      
+      checkDateAvailability(startDate, newEndDate, activeThreadRef.current, false)
     }
 
     const userMessage: Message = { role: 'user', content: trimmedMessage }
