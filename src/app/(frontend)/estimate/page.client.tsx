@@ -732,7 +732,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   if (loading || loadingOfferings) {
     return (
       <div className="container py-10">
-        <h1 className="text-4xl font-bold tracking-tighter mb-8">Trust deed booking statement</h1>
+        <h1 className="text-4xl font-bold tracking-tighter mb-8">Annual Booking statement</h1>
         <p>Loading beneficiary records and booking options...</p>
       </div>
     )
@@ -741,7 +741,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   if (guestError) {
     return (
       <div className="container py-10">
-        <h1 className="text-4xl font-bold tracking-tighter mb-8">Trust deed booking statement</h1>
+        <h1 className="text-4xl font-bold tracking-tighter mb-8">booking statement</h1>
         <p className="text-error">Error: {guestError}</p>
       </div>
     )
