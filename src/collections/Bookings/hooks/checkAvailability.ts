@@ -21,8 +21,23 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     throw new APIError('Start date must be before end date.', 400, undefined, true)
   }
 
+  // Normalize dates to ISO strings for consistent database comparison
+  // Use full ISO strings (YYYY-MM-DDTHH:mm:ss.sssZ) for query compatibility
+  const normalizeToISOString = (dateStr: string): string => {
+    const date = new Date(dateStr)
+    const utcDate = new Date(Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate(),
+      0, 0, 0, 0
+    ))
+    return utcDate.toISOString()
+  }
+
   const formattedFromDate = format(new Date(fromDate), 'yyyy-MM-dd')
   const formattedToDate = format(new Date(toDate), 'yyyy-MM-dd')
+  const fromDateISO = normalizeToISOString(fromDate)
+  const toDateISO = normalizeToISOString(toDate)
 
   const resolveRelationshipId = (value: unknown): string | undefined => {
     if (!value) return undefined
@@ -59,13 +74,14 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   }
 
   // Check if the booking overlaps with existing bookings
+  // Use ISO date strings for proper comparison with database ISO timestamps
   const bookings = await payload.find({
     collection: 'bookings',
     where: {
       and: [
         { post: { equals: data.post } },
-        { fromDate: { less_than: formattedToDate } },
-        { toDate: { greater_than: formattedFromDate } },
+        { fromDate: { less_than: toDateISO } },
+        { toDate: { greater_than: fromDateISO } },
       ],
     },
     limit: 10, // Get more bookings for debugging
@@ -89,7 +105,14 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     }
 
     const bookingPackageId = resolveBookingPackageId(booking)
+    // If booking has no package, it conflicts with everything (property-level booking)
     if (!bookingPackageId) {
+      console.log('⚠️ Booking without package found in hook - treating as conflict:', {
+        bookingId: booking.id,
+        fromDate: booking.fromDate,
+        toDate: booking.toDate,
+        selectedPackage: booking.selectedPackage,
+      })
       return true
     }
 

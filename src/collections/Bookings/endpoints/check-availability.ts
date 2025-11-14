@@ -52,12 +52,40 @@ export const checkAvailability: Endpoint = {
 
       // Normalize dates to midnight UTC to get consistent date-only values
       // Extract just the date part (YYYY-MM-DD) to avoid timezone issues
-      const startDateStr = requestStart.toISOString().split('T')[0]
-      const endDateStr = requestEnd.toISOString().split('T')[0]
+      // Use UTC methods to ensure consistent normalization
+      const normalizeToDateOnly = (date: Date): string => {
+        const utcDate = new Date(Date.UTC(
+          date.getUTCFullYear(),
+          date.getUTCMonth(),
+          date.getUTCDate()
+        ))
+        return utcDate.toISOString().split('T')[0]
+      }
       
-      // Format dates as YYYY-MM-DD for database queries
-      const startFormatted = startDateStr
-      const endFormatted = endDateStr
+      // Normalize to ISO date strings for consistent database comparison
+      // Use full ISO strings (YYYY-MM-DDTHH:mm:ss.sssZ) for query compatibility
+      const normalizeToISOString = (date: Date): string => {
+        const utcDate = new Date(Date.UTC(
+          date.getUTCFullYear(),
+          date.getUTCMonth(),
+          date.getUTCDate(),
+          0, 0, 0, 0
+        ))
+        return utcDate.toISOString()
+      }
+      
+      const startFormatted = normalizeToDateOnly(requestStart)
+      const endFormatted = normalizeToDateOnly(requestEnd)
+      const startISO = normalizeToISOString(requestStart)
+      const endISO = normalizeToISOString(requestEnd)
+      
+      console.log('📅 Normalized dates for availability check:', {
+        original: { startDate, endDate },
+        normalized: { startFormatted, endFormatted },
+        iso: { startISO, endISO },
+        requestStart: requestStart.toISOString(),
+        requestEnd: requestEnd.toISOString(),
+      })
 
       let concurrencyLimit = 1
 
@@ -91,10 +119,12 @@ export const checkAvailability: Endpoint = {
       }
 
       // Find all bookings for this post that overlap with the requested range
+      // Use ISO date strings for proper comparison with database ISO timestamps
+      // The overlap condition: booking.fromDate < request.endDate AND booking.toDate > request.startDate
       const whereConditions: Record<string, any>[] = [
         { post: { equals: resolvedPostId } },
-        { fromDate: { less_than: endFormatted } },
-        { toDate: { greater_than: startFormatted } },
+        { fromDate: { less_than: endISO } },
+        { toDate: { greater_than: startISO } },
       ]
 
       if (bookingId && typeof bookingId === 'string') {
@@ -105,30 +135,67 @@ export const checkAvailability: Endpoint = {
         })
       }
 
+      // Get ALL overlapping bookings (not just one) to properly check conflicts
       const bookings = await req.payload.find({
         collection: 'bookings',
         where: {
           and: whereConditions,
         },
-        limit: 1,
+        limit: 100, // Get all overlapping bookings to check properly
         select: {
           slug: true,
           selectedPackage: true,
+          fromDate: true,
+          toDate: true,
+          id: true,
         },
         depth: 0,
       })
 
+      console.log('🔍 Availability check:', {
+        requestedRange: { startFormatted, endFormatted, startISO, endISO },
+        targetPackageId,
+        totalOverlappingBookings: bookings.docs.length,
+        bookings: bookings.docs.map((b: any) => ({
+          id: b.id,
+          fromDate: b.fromDate,
+          toDate: b.toDate,
+          selectedPackage: b.selectedPackage,
+          packageId: resolveRelationshipId(b?.selectedPackage?.package),
+          hasPackage: !!resolveRelationshipId(b?.selectedPackage?.package),
+        })),
+      })
+
       const conflictingBookings = bookings.docs.filter((booking: any) => {
+        // If no packageId specified, all bookings conflict (property-level availability)
         if (!targetPackageId) {
           return true
         }
 
         const bookingPackageId = resolveRelationshipId(booking?.selectedPackage?.package)
+        
+        // If booking has no package, it conflicts with everything (property-level booking)
+        // This ensures that bookings without a specific package block all other bookings
         if (!bookingPackageId) {
+          console.log('⚠️ Booking without package found - treating as conflict:', {
+            bookingId: booking.id,
+            fromDate: booking.fromDate,
+            toDate: booking.toDate,
+            selectedPackage: booking.selectedPackage,
+          })
           return true
         }
 
+        // Only check same package for concurrency limits
+        // Different packages can coexist if they have different concurrency limits
         return bookingPackageId === targetPackageId
+      })
+
+      console.log('🔍 Conflicting bookings after package filter:', {
+        targetPackageId,
+        conflictingCount: conflictingBookings.length,
+        concurrencyLimit,
+        isAvailable: conflictingBookings.length < concurrencyLimit,
       })
 
       // If any bookings were found, the dates are not available

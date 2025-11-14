@@ -1862,96 +1862,116 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       // Reset package suggestions to allow new suggestions for new dates
       packagesSuggestedRef.current = false
       
-      // Update estimate with new dates if we have an existing estimate
-      if (latestEstimate && isLoggedIn && currentUser) {
-        try {
-          const total = selectedPackage?.baseRate || calculateTotal(baseRate, newDuration, selectedPackage?.multiplier || 1)
-          
-          console.log('💾 Updating estimate with new dates:', {
-            estimateId: latestEstimate.id,
-            fromDate: parsedDates.startDate.toISOString(),
-            toDate: parsedDates.endDate.toISOString(),
-            duration: newDuration,
-          })
-          
-          const estimateResponse = await fetch('/api/estimates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              postId,
-              fromDate: parsedDates.startDate.toISOString(),
-              toDate: parsedDates.endDate.toISOString(),
-              guests: [],
-              baseRate: total,
-              duration: newDuration,
-              customer: currentUser.id,
-              packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
-              selectedPackage: selectedPackage ? {
-                package: selectedPackage.id,
-                customName: selectedPackage.name,
-                enabled: true,
-              } : latestEstimate.selectedPackage,
-              estimateId: latestEstimate.id, // Update existing estimate
-            }),
-          })
-          
-          if (estimateResponse.ok) {
-            const updatedEstimate = await estimateResponse.json()
-            console.log('✅ Estimate updated successfully:', updatedEstimate.id)
-            setLatestEstimate(updatedEstimate)
-          }
-        } catch (error) {
-          console.error('❌ Error updating estimate with new dates:', error)
-        }
-      }
-      
-      // Check availability immediately with parsed dates (not from state)
-      // Use parsed dates directly to ensure we check the correct dates
+      // IMPORTANT: Check availability BEFORE updating estimate to prevent creating estimates with unavailable dates
       console.log('🔍 Checking availability with parsed dates:', {
         startDate: parsedDates.startDate.toISOString(),
         endDate: parsedDates.endDate.toISOString(),
+        packageId: selectedPackage?.id,
       })
-      await checkDateAvailability(parsedDates.startDate, parsedDates.endDate, activeThreadRef.current, false)
+      
+      const isAvailable = await checkDateAvailability(parsedDates.startDate, parsedDates.endDate, activeThreadRef.current, false)
+      
+      if (!isAvailable) {
+        console.warn('⚠️ Dates are not available, skipping estimate update')
+        // Don't update estimate if dates are not available
+        // The availability check will show suggestions to the user
+        // Continue with AI response but don't update estimate
+      } else {
+        // Only update estimate if dates are available
+        if (latestEstimate && isLoggedIn && currentUser) {
+          try {
+            const total = selectedPackage?.baseRate || calculateTotal(baseRate, newDuration, selectedPackage?.multiplier || 1)
+            
+            console.log('💾 Updating estimate with new dates:', {
+              estimateId: latestEstimate.id,
+              fromDate: parsedDates.startDate.toISOString(),
+              toDate: parsedDates.endDate.toISOString(),
+              duration: newDuration,
+            })
+            
+            const estimateResponse = await fetch('/api/estimates', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                postId,
+                fromDate: parsedDates.startDate.toISOString(),
+                toDate: parsedDates.endDate.toISOString(),
+                guests: [],
+                baseRate: total,
+                duration: newDuration,
+                customer: currentUser.id,
+                packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
+                selectedPackage: selectedPackage ? {
+                  package: selectedPackage.id,
+                  customName: selectedPackage.name,
+                  enabled: true,
+                } : latestEstimate.selectedPackage,
+                estimateId: latestEstimate.id, // Update existing estimate
+              }),
+            })
+            
+            if (estimateResponse.ok) {
+              const updatedEstimate = await estimateResponse.json()
+              console.log('✅ Estimate updated successfully:', updatedEstimate.id)
+              setLatestEstimate(updatedEstimate)
+            }
+          } catch (error) {
+            console.error('❌ Error updating estimate with new dates:', error)
+          }
+        }
+      }
     } else if (parsedDates.duration && startDate) {
       // If we have a duration and existing start date, update end date
       const newEndDate = new Date(startDate.getTime() + parsedDates.duration * 24 * 60 * 60 * 1000)
-      setEndDate(newEndDate)
-      setDuration(parsedDates.duration)
-      packagesSuggestedRef.current = false
       
-      // Update estimate if exists
-      if (latestEstimate && isLoggedIn && currentUser) {
-        try {
-          const total = selectedPackage?.baseRate || calculateTotal(baseRate, parsedDates.duration, selectedPackage?.multiplier || 1)
-          
-          await fetch('/api/estimates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              postId,
-              fromDate: startDate.toISOString(),
-              toDate: newEndDate.toISOString(),
-              guests: [],
-              baseRate: total,
-              duration: parsedDates.duration,
-              customer: currentUser.id,
-              packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
-              selectedPackage: selectedPackage ? {
-                package: selectedPackage.id,
-                customName: selectedPackage.name,
-                enabled: true,
-              } : latestEstimate.selectedPackage,
-              estimateId: latestEstimate.id,
-            }),
-          })
-          
-          loadLatestEstimate(true)
-        } catch (error) {
-          console.error('Error updating estimate with new duration:', error)
+      // Check availability BEFORE updating
+      const isAvailable = await checkDateAvailability(startDate, newEndDate, activeThreadRef.current, false)
+      
+      if (!isAvailable) {
+        console.warn('⚠️ Dates are not available, skipping estimate update')
+        // Don't update estimate if dates are not available
+        // Continue with AI response but don't update estimate
+      } else {
+        // Only update if available
+        setEndDate(newEndDate)
+        setDuration(parsedDates.duration)
+        packagesSuggestedRef.current = false
+        
+        // Update estimate if exists
+        if (latestEstimate && isLoggedIn && currentUser) {
+          try {
+            const total = selectedPackage?.baseRate || calculateTotal(baseRate, parsedDates.duration, selectedPackage?.multiplier || 1)
+            
+            const estimateResponse = await fetch('/api/estimates', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                postId,
+                fromDate: startDate.toISOString(),
+                toDate: newEndDate.toISOString(),
+                guests: [],
+                baseRate: total,
+                duration: parsedDates.duration,
+                customer: currentUser.id,
+                packageType: selectedPackage?.yocoId || selectedPackage?.id || latestEstimate.packageType,
+                selectedPackage: selectedPackage ? {
+                  package: selectedPackage.id,
+                  customName: selectedPackage.name,
+                  enabled: true,
+                } : latestEstimate.selectedPackage,
+                estimateId: latestEstimate.id,
+              }),
+            })
+            
+            if (estimateResponse.ok) {
+              const updatedEstimate = await estimateResponse.json()
+              setLatestEstimate(updatedEstimate)
+            }
+          } catch (error) {
+            console.error('Error updating estimate with new duration:', error)
+          }
         }
       }
-      
-      checkDateAvailability(startDate, newEndDate, activeThreadRef.current, false)
     }
 
     const userMessage: Message = { role: 'user', content: trimmedMessage }
