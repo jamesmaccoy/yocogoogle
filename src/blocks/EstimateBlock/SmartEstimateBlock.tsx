@@ -1712,6 +1712,73 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       }
     }
     
+    // Parse month names with dates (e.g., "December 15", "Dec 15", "December 15-20", "December")
+    if (!parsedStartDate || !parsedEndDate) {
+      const monthNames = [
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december'
+      ]
+      const monthAbbrevs = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+      
+      // Pattern: "December 15" or "Dec 15" or "December 15-20" or "December 15 to 20"
+      const monthDatePatterns = [
+        /(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:\s*-\s*|\s+to\s+)(\d{1,2})(?:\s*,?\s*(\d{4}))?/gi,
+        /(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?/gi,
+      ]
+      
+      for (const pattern of monthDatePatterns) {
+        const matches = [...message.matchAll(pattern)]
+        for (const match of matches) {
+          try {
+            const monthName = match[1]?.toLowerCase() || ''
+            const monthIndex = monthNames.indexOf(monthName) !== -1 
+              ? monthNames.indexOf(monthName)
+              : monthAbbrevs.indexOf(monthName)
+            
+            if (monthIndex !== -1) {
+              const day1 = parseInt(match[2] || '0')
+              const day2 = match[3] ? parseInt(match[3]) : null
+              const year = match[4] ? parseInt(match[4]) : today.getFullYear()
+              
+              if (day1 && day2) {
+                // Range: "December 15-20"
+                parsedStartDate = new Date(year, monthIndex, day1)
+                parsedEndDate = new Date(year, monthIndex, day2)
+                parsedDuration = day2 - day1
+              } else if (day1 && !parsedStartDate) {
+                // Single date: "December 15"
+                parsedStartDate = new Date(year, monthIndex, day1)
+              }
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+      
+      // Also check for just month name (e.g., "December" or "in December")
+      // This will be combined with duration if available
+      if (!parsedStartDate) {
+        const monthOnlyPattern = /(?:in\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:\s|$)/gi
+        const monthMatch = message.match(monthOnlyPattern)
+        if (monthMatch) {
+          const monthName = monthMatch[0].replace(/in\s+/gi, '').trim().toLowerCase()
+          const monthIndex = monthNames.indexOf(monthName) !== -1 
+            ? monthNames.indexOf(monthName)
+            : monthAbbrevs.indexOf(monthName)
+          
+          if (monthIndex !== -1) {
+            // Default to first day of the month if no day specified
+            const year = today.getFullYear()
+            // If the month has passed this year, use next year
+            const targetMonth = monthIndex
+            const targetYear = (today.getMonth() > monthIndex) ? year + 1 : year
+            parsedStartDate = new Date(targetYear, monthIndex, 1)
+          }
+        }
+      }
+    }
+    
     // Parse relative dates and durations
     if (!parsedStartDate) {
       // "tomorrow", "next week", "next month", etc.
@@ -1909,10 +1976,13 @@ ${packages.map((pkg: any, index: number) =>
       }
       
       // For logged-in users, use the full AI API with enhanced context
-      // Use parsed dates if available, otherwise use current state
+      // IMPORTANT: Use parsed dates directly (not from state) since state updates are async
+      // This ensures the AI sees the dates the user just entered
       const effectiveStartDate = parsedDates.startDate || startDate
       const effectiveEndDate = parsedDates.endDate || endDate
-      const effectiveDuration = parsedDates.duration || duration
+      const effectiveDuration = parsedDates.duration || (effectiveStartDate && effectiveEndDate 
+        ? Math.ceil((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (1000 * 60 * 60 * 24))
+        : duration)
       
       const contextString = `
 Property Context:
@@ -1932,7 +2002,7 @@ Current Booking State:
 Availability Status:
 - Are dates available: ${areDatesAvailable ? 'Yes' : 'No'}
 - Currently checking availability: ${isCheckingAvailability ? 'Yes' : 'No'}
-${parsedDates.startDate && parsedDates.endDate ? '\nNOTE: User just requested new dates. These dates have been updated in the system.' : ''}
+${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just requested dates: ${format(parsedDates.startDate, 'MMM dd, yyyy')} to ${format(parsedDates.endDate, 'MMM dd, yyyy')}. Use these dates in your response, not any previously mentioned dates.` : ''}
       `
       
       const response = await fetch('/api/chat', {
