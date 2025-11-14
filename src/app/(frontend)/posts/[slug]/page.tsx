@@ -5,7 +5,7 @@ import { PayloadRedirects } from '@/components/PayloadRedirects'
 import configPromise from '@payload-config'
 import { getPayload } from 'payload'
 import { draftMode } from 'next/headers'
-import React, { cache } from 'react'
+import React, { cache, Suspense } from 'react'
 import RichText from '@/components/RichText'
 import { SmartEstimateBlock } from '@/blocks/EstimateBlock/SmartEstimateBlock'
 
@@ -63,12 +63,14 @@ export default async function Post({ params: paramsPromise }: Args) {
 
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
-        <SmartEstimateBlock 
-          postId={post.id} 
-          baseRate={typeof post.baseRate === 'number' ? post.baseRate : 0}
-          postTitle={post.title}
-          postDescription={post.meta?.description || ''}
-        />
+        <Suspense fallback={<div className="w-full max-w-2xl mx-auto p-4">Loading booking assistant...</div>}>
+          <SmartEstimateBlock 
+            postId={post.id} 
+            baseRate={typeof post.baseRate === 'number' ? post.baseRate : 0}
+            postTitle={post.title}
+            postDescription={post.meta?.description || ''}
+          />
+        </Suspense>
           <div className="text-center py-8">
             <h2 className="text-2xl font-semibold mb-4">Article Content Available in AI Assistant</h2>
             <p className="text-muted-foreground">
