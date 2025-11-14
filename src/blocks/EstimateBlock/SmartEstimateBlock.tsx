@@ -432,6 +432,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         const isAvailable = data.isAvailable
         const suggestedDates = data.suggestedDates || []
         
+        console.log('📅 Availability check result:', {
+          isAvailable,
+          suggestedDatesCount: suggestedDates.length,
+          suggestedDates,
+          addMessage,
+          threadId,
+          activeThread: activeThreadRef.current,
+        })
+        
         // Track previous availability to detect changes
         const previousAvailable = previousAvailabilityRef.current
         
@@ -445,10 +454,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           end: toDate.toISOString(),
         }
         
-        // Add a message to inform the user about availability only if:
-        // 1. Explicitly requested (addMessage = true) AND dates are unavailable
-        // 2. Availability changed from available to unavailable (and not explicitly requested)
-        if (addMessage && !isAvailable && activeThreadRef.current === threadId) {
+        // Add a message to inform the user about availability:
+        // 1. If explicitly requested (addMessage = true) AND dates are unavailable - always show
+        // 2. If availability changed from available to unavailable - show to notify user
+        // 3. If dates are unavailable and we have suggestions - show suggestions (even if not explicitly requested)
+        const shouldShowMessage = 
+          (addMessage && !isAvailable) || // Explicitly requested and unavailable
+          (previousAvailable === true && !isAvailable) || // Changed from available to unavailable
+          (!isAvailable && suggestedDates.length > 0 && addMessage) // Unavailable with suggestions when explicitly requested
+        
+        if (shouldShowMessage && activeThreadRef.current === threadId) {
           const availabilityMessage: Message = {
             role: 'assistant',
             content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
@@ -458,18 +473,13 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             type: suggestedDates.length > 0 ? 'date_suggestion' : 'text',
             data: suggestedDates.length > 0 ? { suggestedDates } : undefined,
           }
-          appendMessageToThread(threadId, availabilityMessage)
-        } else if (previousAvailable === true && !isAvailable && !addMessage && activeThreadRef.current === threadId) {
-          // Availability changed from available to unavailable (only if not explicitly requested)
-          const availabilityMessage: Message = {
-            role: 'assistant',
-            content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
-              toDate,
-              'MMM dd, yyyy',
-            )}) are not available.${suggestedDates.length > 0 ? ' Here are some alternative dates that are available:' : ' Please select different dates for your stay.'}`,
-            type: suggestedDates.length > 0 ? 'date_suggestion' : 'text',
-            data: suggestedDates.length > 0 ? { suggestedDates } : undefined,
-          }
+          console.log('💬 Adding availability message:', {
+            addMessage,
+            isAvailable,
+            previousAvailable,
+            suggestedDatesCount: suggestedDates.length,
+            message: availabilityMessage,
+          })
           appendMessageToThread(threadId, availabilityMessage)
         }
         
@@ -1677,45 +1687,67 @@ Availability Status:
     
     if (message.type === 'date_suggestion') {
       const { suggestedDates } = message.data || { suggestedDates: [] }
+      console.log('🎯 Rendering date_suggestion message:', {
+        messageType: message.type,
+        suggestedDatesCount: suggestedDates.length,
+        suggestedDates,
+        messageData: message.data,
+      })
+      
+      if (!suggestedDates || suggestedDates.length === 0) {
+        console.warn('⚠️ date_suggestion message has no suggestedDates')
+        // Fall back to text message if no suggestions
+        return (
+          <div key={index} className="bg-muted p-3 rounded-lg">
+            <p className="text-sm">{message.content}</p>
+          </div>
+        )
+      }
+      
       return (
         <div key={index} className="space-y-4">
           <div className="bg-muted p-3 rounded-lg">
             <p className="text-sm">{message.content}</p>
           </div>
-          {suggestedDates.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
-                const suggestionStart = new Date(suggestion.startDate)
-                const suggestionEnd = new Date(suggestion.endDate)
-                return (
-                  <Button
-                    key={idx}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => {
-                      setStartDate(suggestionStart)
-                      setEndDate(suggestionEnd)
-                      setDuration(suggestion.duration)
-                      preservedStartDateRef.current = suggestionStart
-                      
-                      // Check availability for the new dates
-                      checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
-                      
-                      const confirmMessage: Message = {
-                        role: 'assistant',
-                        content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
-                        type: 'text'
-                      }
-                      appendMessageToThread(activeThreadRef.current, confirmMessage)
-                    }}
-                  >
-                    {format(suggestionStart, 'MMM dd')} - {format(suggestionEnd, 'MMM dd')}
-                  </Button>
-                )
-              })}
-            </div>
-          )}
+          <div className="flex flex-wrap gap-2">
+            {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
+              const suggestionStart = new Date(suggestion.startDate)
+              const suggestionEnd = new Date(suggestion.endDate)
+              
+              // Validate dates
+              if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                console.error('❌ Invalid date in suggestion:', suggestion)
+                return null
+              }
+              
+              return (
+                <Button
+                  key={idx}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => {
+                    setStartDate(suggestionStart)
+                    setEndDate(suggestionEnd)
+                    setDuration(suggestion.duration)
+                    preservedStartDateRef.current = suggestionStart
+                    
+                    // Check availability for the new dates
+                    checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                    
+                    const confirmMessage: Message = {
+                      role: 'assistant',
+                      content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
+                      type: 'text'
+                    }
+                    appendMessageToThread(activeThreadRef.current, confirmMessage)
+                  }}
+                >
+                  {format(suggestionStart, 'MMM dd')} - {format(suggestionEnd, 'MMM dd')}
+                </Button>
+              )
+            })}
+          </div>
         </div>
       )
     }
@@ -2044,7 +2076,10 @@ Availability Status:
     // Only check if dates have actually changed
     const lastChecked = lastCheckedDatesRef.current
     if (!lastChecked || lastChecked.start !== startDate.toISOString() || lastChecked.end !== endDate.toISOString()) {
-      checkDateAvailability(startDate, endDate, activeThreadRef.current, false)
+      // Check availability when dates change
+      // If dates are unavailable, show suggestions (addMessage = true)
+      // This ensures users see alternative dates when they select unavailable dates
+      checkDateAvailability(startDate, endDate, activeThreadRef.current, true)
     }
 
     if (packagesSuggestedRef.current) {
