@@ -64,7 +64,15 @@ interface SmartEstimateBlockProps {
   postDescription?: string
 }
 
-const QuickActions = ({ onAction }: { onAction: (action: string, data?: any) => void }) => (
+const QuickActions = ({ 
+  onAction, 
+  hasDates, 
+  suggestedDates 
+}: { 
+  onAction: (action: string, data?: any) => void
+  hasDates: boolean
+  suggestedDates?: Array<{ startDate: string; endDate: string; duration: number }>
+}) => (
   <div className="flex flex-wrap gap-2 mb-4">
     <Button 
       variant="outline" 
@@ -78,47 +86,11 @@ const QuickActions = ({ onAction }: { onAction: (action: string, data?: any) => 
     <Button 
       variant="outline" 
       size="sm" 
-      onClick={() => onAction('suggest_duration')}
-      className="text-xs"
-    >
-      <Calendar className="h-3 w-3 mr-1" />
-      When should I visit?
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('show_packages')}
-      className="text-xs"
-    >
-      <Package className="h-3 w-3 mr-1" />
-      What packages are available?
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('debug_packages')}
-      className="text-xs"
-    >
-      <Package className="h-3 w-3 mr-1" />
-      Debug Packages
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('get_recommendation')}
+      onClick={() => onAction('smart_action')}
       className="text-xs"
     >
       <Sparkles className="h-3 w-3 mr-1" />
-      Recommend something for me
-    </Button>
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={() => onAction('check_availability')}
-      className="text-xs"
-    >
-      <Calendar className="h-3 w-3 mr-1" />
-      Check Availability
+      {hasDates ? 'Get Recommendations' : 'Help Me Choose'}
     </Button>
   </div>
 )
@@ -261,6 +233,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     timestamp: Date
   }
   const [checkpoints, setCheckpoints] = useState<EstimateCheckpoint[]>([])
+  
+  // Suggested dates state (for showing near input)
+  const [suggestedDates, setSuggestedDates] = useState<Array<{ startDate: string; endDate: string; duration: number }>>([])
   
   // Package loading state to prevent multiple API calls
   const [loadingPackages, setLoadingPackages] = useState(false)
@@ -482,11 +457,18 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         // Add a message to inform the user about availability:
         // 1. If explicitly requested (addMessage = true) AND dates are unavailable - always show
         // 2. If availability changed from available to unavailable - show to notify user
-        // 3. If dates are unavailable and we have suggestions - show suggestions (even if not explicitly requested)
+        // 3. Store suggested dates in state for display near input field
+        if (!isAvailable && suggestedDates.length > 0) {
+          setSuggestedDates(suggestedDates)
+        } else if (isAvailable) {
+          // Clear suggested dates if dates are available
+          setSuggestedDates([])
+        }
+        
+        // 4. Show message if explicitly requested or if availability changed
         const shouldShowMessage = 
           (addMessage && !isAvailable) || // Explicitly requested and unavailable
-          (previousAvailable === true && !isAvailable) || // Changed from available to unavailable
-          (!isAvailable && suggestedDates.length > 0 && addMessage) // Unavailable with suggestions when explicitly requested
+          (previousAvailable === true && !isAvailable) // Changed from available to unavailable
         
         if (shouldShowMessage && activeThreadRef.current === threadId) {
           const availabilityMessage: Message = {
@@ -494,9 +476,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
               toDate,
               'MMM dd, yyyy',
-            )}) are not available.${suggestedDates.length > 0 ? ' Here are some alternative dates that are available:' : ' Please select different dates for your stay.'}`,
-            type: suggestedDates.length > 0 ? 'date_suggestion' : 'text',
-            data: suggestedDates.length > 0 ? { suggestedDates } : undefined,
+            )}) are not available.${suggestedDates.length > 0 ? ' Please see suggested dates below.' : ' Please select different dates for your stay.'}`,
+            type: 'text',
           }
           console.log('💬 Adding availability message:', {
             addMessage,
@@ -1440,16 +1421,33 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           message = `I'd love to give you personalized recommendations! To suggest the best packages for your needs, please select your travel dates first using the "Select Dates" button above.`
         }
         break
-      case 'debug_packages':
-        console.log('🐛 DEBUG: Current state:', {
-          packages: packages,
-          packagesLength: packages.length,
-          customerEntitlement,
-          startDate,
-          endDate,
-          duration
-        })
-        message = `Debug info logged to console. Packages loaded: ${packages.length}, Entitlement: ${customerEntitlement}`
+      case 'smart_action':
+        // Intelligent action that combines multiple actions based on current state
+        if (startDate && endDate) {
+          // If dates are selected, check availability first, then show recommendations
+          checkDateAvailability(startDate, endDate, threadId, true).then((isAvailable) => {
+            if (activeThreadRef.current !== threadId) return
+            
+            if (isAvailable) {
+              // Dates are available - show recommendations and packages
+              message = `Great! Your dates (${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')}) are available. Here are my recommendations for your ${duration} ${duration === 1 ? 'night' : 'nights'} stay:`
+              const assistantMessage: Message = { role: 'assistant', content: message, type: 'text' }
+              appendMessageToThread(threadId, assistantMessage)
+              setTimeout(() => showAvailablePackages(threadId), 1000)
+            } else {
+              // Dates not available - availability check will show suggestions
+              return
+            }
+          })
+          return
+        } else {
+          // No dates selected - suggest when to visit and help choose dates
+          message = `I'd love to help you plan your visit! For ${postTitle}, I'd recommend:\n\n` +
+            `• 1-2 nights: Perfect for a quick getaway\n` +
+            `• 3-5 nights: Ideal for a relaxing break\n` +
+            `• 7+ nights: Great for a longer vacation\n\n` +
+            `Please select your dates above, and I'll show you the best packages and check availability.`
+        }
         break
       case 'check_availability':
         if (startDate && endDate) {
@@ -2524,7 +2522,11 @@ ${parsedDates.startDate && parsedDates.endDate ? '\nNOTE: User just requested ne
       <CardContent className="p-0">
         <Conversation className="h-[400px]">
           <ConversationContent className="p-4">
-            <QuickActions onAction={handleQuickAction} />
+            <QuickActions 
+              onAction={handleQuickAction} 
+              hasDates={!!(startDate && endDate)}
+              suggestedDates={suggestedDates}
+            />
             
             <div className="space-y-4">
               {messages.map((message, index) => {
@@ -2635,6 +2637,38 @@ ${parsedDates.startDate && parsedDates.endDate ? '\nNOTE: User just requested ne
             </PromptInputFooter>
           </PromptInput>
           {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
+          {suggestedDates.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs text-muted-foreground mb-2">Suggested dates:</p>
+              <Suggestions>
+                {suggestedDates.map((suggestion, idx) => {
+                  const suggestionStart = new Date(suggestion.startDate)
+                  const suggestionEnd = new Date(suggestion.endDate)
+                  
+                  if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                    return null
+                  }
+                  
+                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
+                  
+                  return (
+                    <Suggestion
+                      key={idx}
+                      suggestion={suggestionText}
+                      onClick={() => {
+                        setStartDate(suggestionStart)
+                        setEndDate(suggestionEnd)
+                        setDuration(suggestion.duration)
+                        preservedStartDateRef.current = suggestionStart
+                        setSuggestedDates([]) // Clear suggestions after selection
+                        checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                      }}
+                    />
+                  )
+                })}
+              </Suggestions>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

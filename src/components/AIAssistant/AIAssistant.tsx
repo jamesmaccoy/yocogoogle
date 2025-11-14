@@ -913,17 +913,6 @@ ${packages.map((pkg: any, index: number) =>
                       variant="outline" 
                       className="text-xs h-6 px-2"
                       onClick={() => {
-                        setInput('debug packages')
-                        handleSubmit(new Event('submit') as any)
-                      }}
-                    >
-                      Debug Packages
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="text-xs h-6 px-2"
-                      onClick={() => {
                         setInput('show me available packages')
                         handleSubmit(new Event('submit') as any)
                       }}
