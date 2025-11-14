@@ -134,6 +134,38 @@ export const checkAvailability: Endpoint = {
       // If any bookings were found, the dates are not available
       const isAvailable = conflictingBookings.length < concurrencyLimit
 
+      // If unavailable, find suggested available dates
+      let suggestedDates: Array<{ startDate: string; endDate: string; duration: number }> = []
+      
+      if (!isAvailable) {
+        const duration = Math.ceil((requestEnd.getTime() - requestStart.getTime()) / (1000 * 60 * 60 * 24))
+        
+        // Get all bookings for this post to find gaps
+        const allBookings = await req.payload.find({
+          collection: 'bookings',
+          where: {
+            post: { equals: resolvedPostId },
+          },
+          select: {
+            fromDate: true,
+            toDate: true,
+          },
+          depth: 0,
+          limit: 100,
+        })
+
+        // Find available date ranges
+        suggestedDates = findAvailableDateRanges(
+          requestStart,
+          duration,
+          allBookings.docs.map((b: any) => ({
+            fromDate: new Date(b.fromDate),
+            toDate: new Date(b.toDate),
+          })),
+          3 // Suggest up to 3 alternative date ranges
+        )
+      }
+
       return Response.json({
         isAvailable,
         requestedRange: {
@@ -144,10 +176,100 @@ export const checkAvailability: Endpoint = {
           concurrencyLimit,
           conflictingCount: conflictingBookings.length,
         },
+        suggestedDates: suggestedDates.length > 0 ? suggestedDates : undefined,
       })
     } catch (error) {
       console.error('Error checking availability:', error)
       return Response.json({ message: 'Error checking availability' }, { status: 500 })
     }
   },
+}
+
+// Helper function to find available date ranges near the requested dates
+function findAvailableDateRanges(
+  requestedStart: Date,
+  duration: number,
+  existingBookings: Array<{ fromDate: Date; toDate: Date }>,
+  maxSuggestions: number = 3
+): Array<{ startDate: string; endDate: string; duration: number }> {
+  const suggestions: Array<{ startDate: string; endDate: string; duration: number }> = []
+  
+  // Normalize dates to midnight UTC for consistent comparison
+  const normalizeDate = (date: Date): Date => {
+    const normalized = new Date(date)
+    normalized.setUTCHours(0, 0, 0, 0)
+    return normalized
+  }
+
+  const requestedStartNormalized = normalizeDate(requestedStart)
+  
+  // Sort bookings by start date
+  const sortedBookings = existingBookings
+    .map(b => ({
+      fromDate: normalizeDate(b.fromDate),
+      toDate: normalizeDate(b.toDate)
+    }))
+    .sort((a, b) => a.fromDate.getTime() - b.fromDate.getTime())
+
+  // Look for gaps before and after the requested date
+  const lookBackDays = 30 // Look back 30 days
+  const lookForwardDays = 60 // Look forward 60 days
+  
+  const searchStart = new Date(requestedStartNormalized)
+  searchStart.setUTCDate(searchStart.getUTCDate() - lookBackDays)
+  
+  const searchEnd = new Date(requestedStartNormalized)
+  searchEnd.setUTCDate(searchEnd.getUTCDate() + lookForwardDays)
+
+  // Helper to check if a date range conflicts with any booking
+  const hasConflict = (testStart: Date, testEnd: Date): boolean => {
+    return sortedBookings.some(booking => {
+      return testStart < booking.toDate && testEnd > booking.fromDate
+    })
+  }
+
+  // Check dates before the requested start (earlier options)
+  for (let daysBack = 1; daysBack <= lookBackDays && suggestions.length < maxSuggestions; daysBack++) {
+    const testStart = new Date(requestedStartNormalized)
+    testStart.setUTCDate(testStart.getUTCDate() - daysBack)
+    const testEnd = new Date(testStart)
+    testEnd.setUTCDate(testEnd.getUTCDate() + duration)
+
+    if (testStart < searchStart) break
+
+    if (!hasConflict(testStart, testEnd)) {
+      suggestions.push({
+        startDate: testStart.toISOString().split('T')[0],
+        endDate: testEnd.toISOString().split('T')[0],
+        duration,
+      })
+    }
+  }
+
+  // Check dates after the requested start (later options)
+  for (let daysForward = 1; daysForward <= lookForwardDays && suggestions.length < maxSuggestions; daysForward++) {
+    const testStart = new Date(requestedStartNormalized)
+    testStart.setUTCDate(testStart.getUTCDate() + daysForward)
+    const testEnd = new Date(testStart)
+    testEnd.setUTCDate(testEnd.getUTCDate() + duration)
+
+    if (testEnd > searchEnd) break
+
+    if (!hasConflict(testStart, testEnd)) {
+      suggestions.push({
+        startDate: testStart.toISOString().split('T')[0],
+        endDate: testEnd.toISOString().split('T')[0],
+        duration,
+      })
+    }
+  }
+
+  // Sort suggestions by proximity to requested date
+  suggestions.sort((a, b) => {
+    const aDiff = Math.abs(new Date(a.startDate).getTime() - requestedStartNormalized.getTime())
+    const bDiff = Math.abs(new Date(b.startDate).getTime() - requestedStartNormalized.getTime())
+    return aDiff - bDiff
+  })
+
+  return suggestions.slice(0, maxSuggestions)
 }

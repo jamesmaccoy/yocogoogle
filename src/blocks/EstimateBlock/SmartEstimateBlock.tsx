@@ -39,7 +39,7 @@ interface Package {
 interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
-  type?: 'text' | 'package_suggestion' | 'booking_summary' | 'quick_action' | 'date_selection'
+  type?: 'text' | 'package_suggestion' | 'booking_summary' | 'quick_action' | 'date_selection' | 'date_suggestion'
   data?: any
 }
 
@@ -430,6 +430,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       if (response.ok) {
         const data = await response.json()
         const isAvailable = data.isAvailable
+        const suggestedDates = data.suggestedDates || []
         
         // Track previous availability to detect changes
         const previousAvailable = previousAvailabilityRef.current
@@ -453,8 +454,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
               toDate,
               'MMM dd, yyyy',
-            )}) are not available. Please select different dates for your stay.`,
-            type: 'text',
+            )}) are not available.${suggestedDates.length > 0 ? ' Here are some alternative dates that are available:' : ' Please select different dates for your stay.'}`,
+            type: suggestedDates.length > 0 ? 'date_suggestion' : 'text',
+            data: suggestedDates.length > 0 ? { suggestedDates } : undefined,
           }
           appendMessageToThread(threadId, availabilityMessage)
         } else if (previousAvailable === true && !isAvailable && !addMessage && activeThreadRef.current === threadId) {
@@ -464,8 +466,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             content: `I'm sorry, but the dates you selected (${format(fromDate, 'MMM dd')} to ${format(
               toDate,
               'MMM dd, yyyy',
-            )}) are not available. Please select different dates for your stay.`,
-            type: 'text',
+            )}) are not available.${suggestedDates.length > 0 ? ' Here are some alternative dates that are available:' : ' Please select different dates for your stay.'}`,
+            type: suggestedDates.length > 0 ? 'date_suggestion' : 'text',
+            data: suggestedDates.length > 0 ? { suggestedDates } : undefined,
           }
           appendMessageToThread(threadId, availabilityMessage)
         }
@@ -1668,6 +1671,51 @@ Availability Status:
               />
             ))}
           </div>
+        </div>
+      )
+    }
+    
+    if (message.type === 'date_suggestion') {
+      const { suggestedDates } = message.data || { suggestedDates: [] }
+      return (
+        <div key={index} className="space-y-4">
+          <div className="bg-muted p-3 rounded-lg">
+            <p className="text-sm">{message.content}</p>
+          </div>
+          {suggestedDates.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
+                const suggestionStart = new Date(suggestion.startDate)
+                const suggestionEnd = new Date(suggestion.endDate)
+                return (
+                  <Button
+                    key={idx}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => {
+                      setStartDate(suggestionStart)
+                      setEndDate(suggestionEnd)
+                      setDuration(suggestion.duration)
+                      preservedStartDateRef.current = suggestionStart
+                      
+                      // Check availability for the new dates
+                      checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                      
+                      const confirmMessage: Message = {
+                        role: 'assistant',
+                        content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
+                        type: 'text'
+                      }
+                      appendMessageToThread(activeThreadRef.current, confirmMessage)
+                    }}
+                  >
+                    {format(suggestionStart, 'MMM dd')} - {format(suggestionEnd, 'MMM dd')}
+                  </Button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )
     }
