@@ -2430,6 +2430,39 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               />
             </div>
           </div>
+          {/* Show suggested dates when unavailable */}
+          {suggestedDates.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Suggested available dates:</p>
+              <Suggestions>
+                {suggestedDates.map((suggestion, idx) => {
+                  const suggestionStart = new Date(suggestion.startDate)
+                  const suggestionEnd = new Date(suggestion.endDate)
+                  
+                  if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                    return null
+                  }
+                  
+                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
+                  
+                  return (
+                    <Suggestion
+                      key={idx}
+                      suggestion={suggestionText}
+                      onClick={() => {
+                        setStartDate(suggestionStart)
+                        setEndDate(suggestionEnd)
+                        setDuration(suggestion.duration)
+                        preservedStartDateRef.current = suggestionStart
+                        setSuggestedDates([]) // Clear suggestions after selection
+                        checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                      }}
+                    />
+                  )
+                })}
+              </Suggestions>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button 
               size="sm" 
