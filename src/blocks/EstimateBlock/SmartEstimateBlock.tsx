@@ -10,6 +10,17 @@ import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import { Loader } from '@/components/ai-elements/loader'
+import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputSpeechButton,
+  PromptInputSubmit,
+  type PromptInputMessage,
+} from '@/components/ai-elements/prompt-input'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -221,6 +232,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [offerings, setOfferings] = useState<YocoProduct[]>([])
   const [isCreatingEstimate, setIsCreatingEstimate] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const selectedPackageTotal =
     selectedPackage && selectedPackage.baseRate && selectedPackage.baseRate > 0
       ? selectedPackage.baseRate
@@ -627,39 +639,70 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           recognitionRef.current.onresult = async (event: any) => {
             let interimTranscript = ''
             let finalTranscript = ''
+            let allTranscript = ''
 
             for (let i = event.resultIndex; i < event.results.length; i++) {
               const result = event.results[i]
               if (result && result[0]) {
                 const transcript = result[0].transcript
                 if (result.isFinal) {
-                  finalTranscript += transcript
+                  finalTranscript += transcript + ' '
+                  allTranscript += transcript + ' '
                 } else {
                   interimTranscript += transcript
+                  allTranscript += transcript
                 }
               }
             }
 
-            // Update input with interim results
-            setInput(interimTranscript || finalTranscript)
+            // Always update input with the combined transcript (final + interim)
+            // This ensures the user sees their full speech as they speak
+            const combinedTranscript = (finalTranscriptRef.current + allTranscript).trim()
+            setInput(combinedTranscript)
 
-            // If we have a final transcript and we're not already processing
-            if (finalTranscript && !isProcessingRef.current) {
-              isProcessingRef.current = true
-              finalTranscriptRef.current = finalTranscript
-              await handleAIRequest(finalTranscript)
-              isProcessingRef.current = false
+            // Only process final transcripts when recognition stops (not immediately)
+            // This prevents interrupting continuous recognition
+            if (finalTranscript) {
+              finalTranscriptRef.current = combinedTranscript
             }
           }
 
           recognitionRef.current.onend = () => {
-            if (isListening) {
+            // Only restart if we're still supposed to be listening
+            // and we haven't manually stopped
+            if (isListening && !isProcessingRef.current) {
+              // If we have a final transcript, process it before restarting
+              if (finalTranscriptRef.current && finalTranscriptRef.current.trim()) {
+                const transcriptToProcess = finalTranscriptRef.current.trim()
+                finalTranscriptRef.current = ''
+                
+                // Process the transcript asynchronously without blocking restart
+                handleAIRequest(transcriptToProcess).catch((error) => {
+                  console.error('Error processing voice input:', error)
+                })
+              }
+              
+              // Restart recognition for continuous listening
               try {
-                recognitionRef.current?.start()
+                // Small delay to prevent rapid restart loops
+                setTimeout(() => {
+                  if (isListening && recognitionRef.current) {
+                    recognitionRef.current.start()
+                  }
+                }, 100)
               } catch (error) {
                 console.error('Error restarting speech recognition:', error)
                 setIsListening(false)
                 setMicError('Error with speech recognition. Please try again.')
+              }
+            } else if (!isListening) {
+              // If we manually stopped, process any final transcript
+              if (finalTranscriptRef.current && finalTranscriptRef.current.trim()) {
+                const transcriptToProcess = finalTranscriptRef.current.trim()
+                finalTranscriptRef.current = ''
+                handleAIRequest(transcriptToProcess).catch((error) => {
+                  console.error('Error processing voice input:', error)
+                })
               }
             }
           }
@@ -714,11 +757,23 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const stopListening = () => {
     if (recognitionRef.current) {
       try {
+        // Set flag to prevent auto-restart
+        isProcessingRef.current = false
         recognitionRef.current.stop()
         setIsListening(false)
+        
+        // Process any remaining transcript
+        if (finalTranscriptRef.current && finalTranscriptRef.current.trim()) {
+          const transcriptToProcess = finalTranscriptRef.current.trim()
+          finalTranscriptRef.current = ''
+          handleAIRequest(transcriptToProcess).catch((error) => {
+            console.error('Error processing voice input:', error)
+          })
+        }
       } catch (error) {
         console.error('Error stopping speech recognition:', error)
         setMicError('Error stopping speech recognition.')
+        setIsListening(false)
       }
     }
   }
@@ -1653,36 +1708,43 @@ Availability Status:
     e.preventDefault()
     handleAIRequest(input)
   }
+
+  const handlePromptSubmit = (message: PromptInputMessage) => {
+    if (message.text?.trim()) {
+      handleAIRequest(message.text)
+      setInput('')
+    }
+  }
   
   const renderMessage = (message: Message, index: number) => {
     if (message.type === 'package_suggestion') {
       const { packages: suggestedPackages } = message.data || { packages: [] }
       return (
-        <div key={index} className="space-y-4">
-          <div className="bg-muted p-3 rounded-lg">
-            <p className="text-sm">{message.content || 'Here are the available packages:'}</p>
-          </div>
-          <div className="grid gap-2">
-            {suggestedPackages.map((pkg: Package, pkgIndex: number) => (
-              <PackageCard
-                key={`${pkg.id}-${pkgIndex}`}
-                package={pkg}
-                duration={duration}
-                baseRate={baseRate}
-                isSelected={selectedPackage?.id === pkg.id}
-                onSelect={() => {
-                  setSelectedPackage(pkg)
-                  const confirmMessage: Message = {
-                    role: 'assistant',
-                    content: `Great choice! You've selected "${pkg.name}". This package includes: ${pkg.features.join(', ')}. Would you like to proceed with booking or do you have any questions?`,
-                    type: 'text'
-                  }
-                  appendMessageToThread(activeThreadRef.current, confirmMessage)
-                }}
-              />
-            ))}
-          </div>
-        </div>
+        <Message key={index} from="assistant">
+          <MessageContent>
+            <MessageResponse>{message.content || 'Here are the available packages:'}</MessageResponse>
+            <div className="grid gap-2 mt-4">
+              {suggestedPackages.map((pkg: Package, pkgIndex: number) => (
+                <PackageCard
+                  key={`${pkg.id}-${pkgIndex}`}
+                  package={pkg}
+                  duration={duration}
+                  baseRate={baseRate}
+                  isSelected={selectedPackage?.id === pkg.id}
+                  onSelect={() => {
+                    setSelectedPackage(pkg)
+                    const confirmMessage: Message = {
+                      role: 'assistant',
+                      content: `Great choice! You've selected "${pkg.name}". This package includes: ${pkg.features.join(', ')}. Would you like to proceed with booking or do you have any questions?`,
+                      type: 'text'
+                    }
+                    appendMessageToThread(activeThreadRef.current, confirmMessage)
+                  }}
+                />
+              ))}
+            </div>
+          </MessageContent>
+        </Message>
       )
     }
     
@@ -1706,51 +1768,53 @@ Availability Status:
       }
       
       return (
-        <div key={index} className="space-y-4">
-          <div className="bg-muted p-3 rounded-lg">
-            <p className="text-sm">{message.content}</p>
-          </div>
-          {suggestedDates.length > 0 && (
-            <Suggestions>
-              {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
-                const suggestionStart = new Date(suggestion.startDate)
-                const suggestionEnd = new Date(suggestion.endDate)
-                
-                // Validate dates
-                if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
-                  console.error('❌ Invalid date in suggestion:', suggestion)
-                  return null
-                }
-                
-                const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
-                
-                return (
-                  <Suggestion
-                    key={idx}
-                    suggestion={suggestionText}
-                    onClick={() => {
-                      setStartDate(suggestionStart)
-                      setEndDate(suggestionEnd)
-                      setDuration(suggestion.duration)
-                      preservedStartDateRef.current = suggestionStart
-                      
-                      // Check availability for the new dates
-                      checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
-                      
-                      const confirmMessage: Message = {
-                        role: 'assistant',
-                        content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
-                        type: 'text'
-                      }
-                      appendMessageToThread(activeThreadRef.current, confirmMessage)
-                    }}
-                    className="text-xs"
-                  />
-                )
-              })}
-            </Suggestions>
-          )}
-        </div>
+        <Message key={index} from="assistant">
+          <MessageContent>
+            <MessageResponse>{message.content}</MessageResponse>
+            {suggestedDates.length > 0 && (
+              <div className="mt-4">
+                <Suggestions>
+                  {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
+                    const suggestionStart = new Date(suggestion.startDate)
+                    const suggestionEnd = new Date(suggestion.endDate)
+                    
+                    // Validate dates
+                    if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                      console.error('❌ Invalid date in suggestion:', suggestion)
+                      return null
+                    }
+                    
+                    const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
+                    
+                    return (
+                      <Suggestion
+                        key={idx}
+                        suggestion={suggestionText}
+                        onClick={() => {
+                          setStartDate(suggestionStart)
+                          setEndDate(suggestionEnd)
+                          setDuration(suggestion.duration)
+                          preservedStartDateRef.current = suggestionStart
+                          
+                          // Check availability for the new dates
+                          checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                          
+                          const confirmMessage: Message = {
+                            role: 'assistant',
+                            content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
+                            type: 'text'
+                          }
+                          appendMessageToThread(activeThreadRef.current, confirmMessage)
+                        }}
+                        className="text-xs"
+                      />
+                    )
+                  })}
+                </Suggestions>
+              </div>
+            )}
+          </MessageContent>
+        </Message>
       )
     }
     
@@ -1950,20 +2014,13 @@ Availability Status:
       )
     }
     
+    // Default text message rendering with Message component
     return (
-      <div
-        key={index}
-        className={cn(
-          'p-3 rounded-lg break-words max-w-[85%]',
-          message.role === 'user'
-            ? 'bg-primary text-primary-foreground ml-auto'
-            : 'bg-muted'
-        )}
-      >
-        <p className="text-sm" dangerouslySetInnerHTML={{ 
-          __html: (message.content || 'No content').replace(/\n/g, '<br />') 
-        }} />
-      </div>
+      <Message key={index} from={message.role}>
+        <MessageContent>
+          <MessageResponse>{message.content || 'No content'}</MessageResponse>
+        </MessageContent>
+      </Message>
     )
   }
   
@@ -2249,34 +2306,42 @@ Availability Status:
             />
           )}
           
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                isListening 
-                  ? "I'm listening..." 
-                  : isLoggedIn 
-                    ? "Ask me anything about booking..."
-                    : "Ask about packages (log in for full AI assistance)..."
-              }
-              className="flex-1"
-              disabled={isLoading || isListening}
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant={isListening ? 'destructive' : 'outline'}
-              onClick={isListening ? stopListening : startListening}
-              disabled={isLoading || isSpeaking || !!micError}
-              title={micError || (isListening ? 'Stop listening' : 'Start listening')}
-            >
-              {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
-            <Button type="submit" size="icon" disabled={isLoading || isListening || !input.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
+          <PromptInput 
+            onSubmit={handlePromptSubmit} 
+            className="mt-4"
+          >
+            <PromptInputBody>
+              <PromptInputTextarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+                placeholder={
+                  isListening 
+                    ? "I'm listening..." 
+                    : isLoggedIn 
+                      ? "Ask me anything about booking..."
+                      : "Ask about packages (log in for full AI assistance)..."
+                }
+                disabled={isLoading || isListening || !isLoggedIn}
+                className="pr-12"
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              <PromptInputTools>
+                <PromptInputSpeechButton
+                  onTranscriptionChange={(text: string) => {
+                    setInput(text)
+                    finalTranscriptRef.current = text
+                  }}
+                  textareaRef={textareaRef}
+                />
+              </PromptInputTools>
+              <PromptInputSubmit 
+                status={isLoading ? 'streaming' : 'ready'} 
+                disabled={!input.trim() || isListening || !isLoggedIn} 
+              />
+            </PromptInputFooter>
+          </PromptInput>
           {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
         </div>
       </CardContent>

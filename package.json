@@ -57,7 +57,7 @@
     "@react-email/components": "^0.1.1",
     "@revenuecat/purchases-js": "^1.12.1",
     "@types/react-datepicker": "^7.0.0",
-    "ai": "^5.0.92",
+    "ai": "^5.0.93",
     "chart.js": "^4.4.9",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

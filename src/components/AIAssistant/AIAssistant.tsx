@@ -10,6 +10,17 @@ import { cn } from '@/lib/utils'
 import { useUserContext } from '@/context/UserContext'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
+import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputSpeechButton,
+  PromptInputSubmit,
+  type PromptInputMessage,
+} from '@/components/ai-elements/prompt-input'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -152,6 +163,7 @@ export const AIAssistant = () => {
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const finalTranscriptRef = useRef('')
   const rescheduleRedirectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeThreadRef = useRef(0)
@@ -433,11 +445,21 @@ export const AIAssistant = () => {
 
     const messageToSend = (finalTranscriptRef.current || input || '').trim()
     if (!messageToSend) return
+    handleSendMessage(messageToSend)
+  }
 
+  const handlePromptSubmit = (message: PromptInputMessage) => {
+    const messageToSend = message.text?.trim() || ''
+    if (messageToSend) {
+      handleSendMessage(messageToSend)
+      setInput('')
+      finalTranscriptRef.current = ''
+    }
+  }
+
+  const handleSendMessage = async (messageToSend: string) => {
     const userMessage: Message = { role: 'user', content: messageToSend }
     const threadId = beginNewThread([userMessage])
-    setInput('')
-    finalTranscriptRef.current = ''
 
     if (!isLoggedIn) {
       const authMessage: Message = {
@@ -924,20 +946,11 @@ ${packages.map((pkg: any, index: number) =>
               )}
               
               {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    'mb-4 p-3 rounded-lg break-words max-w-[85%]',
-                    message.role === 'user'
-                      ? 'bg-primary text-primary-foreground ml-auto'
-                      : 'bg-muted',
-                  )}
-                >
-                  <p
-                    className="text-sm"
-                    dangerouslySetInnerHTML={{ __html: (message.content || '').replace(/\n/g, '<br />') }}
-                  />
-                </div>
+                <Message key={index} from={message.role}>
+                  <MessageContent>
+                    <MessageResponse>{message.content || ''}</MessageResponse>
+                  </MessageContent>
+                </Message>
               ))}
               {isLoading && (
                 <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">
@@ -992,7 +1005,7 @@ ${packages.map((pkg: any, index: number) =>
             </div>
           )}
           
-          <form onSubmit={handleSubmit} className="border-t p-4">
+          <div className="border-t p-4">
             {!isLoggedIn && (
               <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-xs text-amber-800 mb-2">
@@ -1003,33 +1016,41 @@ ${packages.map((pkg: any, index: number) =>
                 </Button>
               </div>
             )}
-            <div className="flex gap-2">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  !isLoggedIn ? "Please log in to use AI Assistant..." :
-                  isListening ? "I'm listening..." : 'Type your message...'
-                }
-                className="flex-1"
-                disabled={isLoading || isListening || !isLoggedIn}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant={isListening ? 'destructive' : 'outline'}
-                onClick={isListening ? stopListening : startListening}
-                disabled={isLoading || isSpeaking || !!micError || !isLoggedIn}
-                title={micError || (isListening ? 'Stop listening' : 'Start listening')}
-              >
-                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              </Button>
-              <Button type="submit" size="icon" disabled={isLoading || isListening || !isLoggedIn}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
+            <PromptInput 
+              onSubmit={handlePromptSubmit} 
+              className="mt-2"
+            >
+              <PromptInputBody>
+                <PromptInputTextarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
+                  placeholder={
+                    !isLoggedIn ? "Please log in to use AI Assistant..." :
+                    isListening ? "I'm listening..." : 'Type your message...'
+                  }
+                  disabled={isLoading || isListening || !isLoggedIn}
+                  className="pr-12"
+                />
+              </PromptInputBody>
+              <PromptInputFooter>
+                <PromptInputTools>
+                  <PromptInputSpeechButton
+                    onTranscriptionChange={(text: string) => {
+                      setInput(text)
+                      finalTranscriptRef.current = text
+                    }}
+                    textareaRef={textareaRef}
+                  />
+                </PromptInputTools>
+                <PromptInputSubmit 
+                  status={isLoading ? 'streaming' : 'ready'} 
+                  disabled={!input.trim() || isListening || !isLoggedIn} 
+                />
+              </PromptInputFooter>
+            </PromptInput>
             {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
-          </form>
+          </div>
         </Card>
       )}
     </div>
