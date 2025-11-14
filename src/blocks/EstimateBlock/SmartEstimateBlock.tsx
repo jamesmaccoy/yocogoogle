@@ -21,6 +21,7 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { Checkpoint, CheckpointIcon, CheckpointTrigger } from '@/components/ai-elements/checkpoint'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -28,7 +29,7 @@ import { getCustomerEntitlement, type CustomerEntitlement } from '@/utils/packag
 import { calculateTotal } from '@/lib/calculateTotal'
 import { useYoco } from '@/providers/Yoco'
 import { yocoService, YocoProduct, YocoPaymentLink } from '@/lib/yocoService'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Mic, MicOff } from 'lucide-react'
 import { PackageDisplay } from '@/components/PackageDisplay'
 
@@ -210,6 +211,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isInitialized, createPaymentLink, createPaymentLinkFromDatabase } = useYoco()
   
   // Session storage key for this specific post
@@ -249,6 +251,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   // Latest estimate state
   const [latestEstimate, setLatestEstimate] = useState<any>(null)
   const [loadingEstimate, setLoadingEstimate] = useState(false)
+  
+  // Checkpoint state for estimate restoration
+  interface EstimateCheckpoint {
+    id: string
+    messageIndex: number
+    estimateId: string
+    estimate: any
+    timestamp: Date
+  }
+  const [checkpoints, setCheckpoints] = useState<EstimateCheckpoint[]>([])
   
   // Package loading state to prevent multiple API calls
   const [loadingPackages, setLoadingPackages] = useState(false)
@@ -512,6 +524,64 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }
 
+  // Create checkpoint for an estimate
+  const createEstimateCheckpoint = useCallback((estimate: any, messageIndex: number) => {
+    const checkpoint: EstimateCheckpoint = {
+      id: `checkpoint-${estimate.id}-${Date.now()}`,
+      messageIndex,
+      estimateId: estimate.id,
+      estimate,
+      timestamp: new Date(),
+    }
+    setCheckpoints((prev) => [...prev, checkpoint])
+  }, [])
+
+  // Restore to checkpoint
+  const restoreToCheckpoint = useCallback((checkpoint: EstimateCheckpoint) => {
+    // Restore messages up to checkpoint
+    setMessages((prev) => prev.slice(0, checkpoint.messageIndex + 1))
+    
+    // Restore estimate state
+    const estimate = checkpoint.estimate
+    setLatestEstimate(estimate)
+    
+    // Restore dates
+    if (estimate.fromDate && estimate.toDate) {
+      const from = new Date(estimate.fromDate)
+      const to = new Date(estimate.toDate)
+      const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+      
+      setStartDate(from)
+      setEndDate(to)
+      setDuration(calcDuration)
+    }
+    
+    // Restore package if available
+    if (estimate.packageType) {
+      // Try to find and set the package
+      const packageId = estimate.packageType
+      const foundPackage = packages.find(pkg => 
+        pkg.id === packageId || 
+        pkg.yocoId === packageId || 
+        (pkg as any).revenueCatId === packageId
+      )
+      if (foundPackage) {
+        setSelectedPackage(foundPackage)
+      }
+    }
+    
+    // Remove checkpoints after this one
+    setCheckpoints((prev) => prev.filter(cp => cp.messageIndex <= checkpoint.messageIndex))
+    
+    // Add restoration message
+    const restoreMessage: Message = {
+      role: 'assistant',
+      content: `Restored to estimate checkpoint. Your dates and package selection have been restored.`,
+      type: 'text'
+    }
+    appendMessageToThread(activeThreadRef.current, restoreMessage)
+  }, [packages, appendMessageToThread])
+
   // Load latest estimate for the user
   const loadLatestEstimate = async (force: boolean = false) => {
     if (!isLoggedIn || (estimateLoadedRef.current && !force)) return
@@ -534,6 +604,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             setEndDate(to)
             setDuration(calcDuration)
           }
+          
+          // Create checkpoint for this estimate after initial message is set
+          // We'll create it after the welcome message, so wait a bit
+          setTimeout(() => {
+            // Create checkpoint at the end of current messages
+            const currentMessageCount = messages.length
+            createEstimateCheckpoint(estimate, currentMessageCount > 0 ? currentMessageCount - 1 : 0)
+          }, 500)
         }
       }
     } catch (error) {
@@ -547,6 +625,48 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     
     // Load unavailable dates for the post
     loadUnavailableDates()
+    
+    // Check for restoreEstimate URL parameter
+    const restoreEstimateId = searchParams?.get('restoreEstimate')
+    if (restoreEstimateId && isLoggedIn && !restored) {
+      // Load and restore to this estimate
+      fetch(`/api/estimates/latest?userId=${currentUser?.id}&postId=${postId}`)
+        .then(res => res.json())
+        .then(estimate => {
+          if (estimate && estimate.id === restoreEstimateId) {
+            // Restore dates
+            if (estimate.fromDate && estimate.toDate) {
+              const from = new Date(estimate.fromDate)
+              const to = new Date(estimate.toDate)
+              const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+              
+              setStartDate(from)
+              setEndDate(to)
+              setDuration(calcDuration)
+            }
+            
+            // Set initial message
+            const initialMessage: Message = {
+              role: 'assistant',
+              content: `Restored to your estimate checkpoint for ${postTitle}. Your dates and package selection have been restored.`,
+              type: 'text'
+            }
+            setMessages([initialMessage])
+            
+            // Create checkpoint
+            setTimeout(() => {
+              createEstimateCheckpoint(estimate, 0)
+            }, 100)
+            
+            // Clear URL parameter
+            if (typeof window !== 'undefined') {
+              router.replace(window.location.pathname, { scroll: false })
+            }
+          }
+        })
+        .catch(console.error)
+      return
+    }
     
     if (!restored) {
       // Load latest estimate first, then set initial message
@@ -576,7 +696,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       // Even if journey was restored, still load latest estimate to sync data
       loadLatestEstimate()
     }
-  }, [isLoggedIn]) // Removed postTitle and postId from dependencies to prevent infinite loops
+  }, [isLoggedIn, searchParams, currentUser?.id, postId, router, createEstimateCheckpoint]) // Added dependencies for checkpoint restoration
 
   // Refetch latest estimate when post changes
   useEffect(() => {
@@ -876,6 +996,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       }
       
       const estimate = await estimateResponse.json()
+      
+      // Update latest estimate
+      setLatestEstimate(estimate)
+      
+      // Create checkpoint after estimate is created
+      // Wait for any confirmation messages to be added first
+      setTimeout(() => {
+        createEstimateCheckpoint(estimate, messages.length)
+      }, 500)
       
       console.log('Available Yoco products:', offerings.map(pkg => ({
         id: pkg.id,
@@ -1509,9 +1638,166 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }
   
+  // Parse dates from user message
+  const parseDatesFromMessage = (message: string): { startDate: Date | null; endDate: Date | null; duration: number | null } => {
+    const lowerMessage = message.toLowerCase()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    let parsedStartDate: Date | null = null
+    let parsedEndDate: Date | null = null
+    let parsedDuration: number | null = null
+    
+    // Try to parse explicit date formats (MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, etc.)
+    const datePatterns = [
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})/g, // MM/DD/YYYY or DD/MM/YYYY
+      /(\d{4})-(\d{1,2})-(\d{1,2})/g, // YYYY-MM-DD
+      /(\d{1,2})-(\d{1,2})-(\d{4})/g, // MM-DD-YYYY or DD-MM-YYYY
+      /(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s+(\d{4}))?/gi, // "January 15" or "Jan 15 2024"
+    ]
+    
+    const dates: Date[] = []
+    
+    // Try to find explicit dates
+    for (const pattern of datePatterns) {
+      const matches = [...message.matchAll(pattern)]
+      for (const match of matches) {
+        try {
+          let date: Date
+          if (pattern === datePatterns[0] || pattern === datePatterns[2]) {
+            // MM/DD/YYYY or DD/MM/YYYY format
+            const month = match[1] ? parseInt(match[1]) : 0
+            const day = match[2] ? parseInt(match[2]) : 0
+            const year = match[3] ? parseInt(match[3]) : 0
+            if (month && day && year) {
+              date = new Date(year, month - 1, day)
+            } else {
+              continue
+            }
+          } else if (pattern === datePatterns[1]) {
+            // YYYY-MM-DD format
+            if (match[0]) {
+              date = new Date(match[0])
+            } else {
+              continue
+            }
+          } else {
+            // Month name format
+            if (match[0]) {
+              date = new Date(match[0])
+            } else {
+              continue
+            }
+          }
+          if (!isNaN(date.getTime())) {
+            dates.push(date)
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
+    
+    // If we found explicit dates, use them
+    if (dates.length >= 2) {
+      dates.sort((a, b) => a.getTime() - b.getTime())
+      parsedStartDate = dates[0] || null
+      parsedEndDate = dates[1] || null
+      if (parsedStartDate && parsedEndDate) {
+        parsedDuration = Math.ceil((parsedEndDate.getTime() - parsedStartDate.getTime()) / (1000 * 60 * 60 * 24))
+      }
+    } else if (dates.length === 1) {
+      parsedStartDate = dates[0] || null
+      // Try to infer end date from duration
+      if (parsedStartDate && parsedDuration) {
+        parsedEndDate = new Date(parsedStartDate.getTime() + parsedDuration * 24 * 60 * 60 * 1000)
+      }
+    }
+    
+    // Parse relative dates and durations
+    if (!parsedStartDate) {
+      // "tomorrow", "next week", "next month", etc.
+      if (lowerMessage.includes('tomorrow')) {
+        parsedStartDate = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+      } else if (lowerMessage.includes('next week')) {
+        parsedStartDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+      } else if (lowerMessage.includes('next month')) {
+        parsedStartDate = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate())
+      } else if (lowerMessage.includes('in ') && lowerMessage.match(/in\s+(\d+)\s+days?/i)) {
+        const daysMatch = lowerMessage.match(/in\s+(\d+)\s+days?/i)
+        if (daysMatch && daysMatch[1]) {
+          const days = parseInt(daysMatch[1])
+          parsedStartDate = new Date(today.getTime() + days * 24 * 60 * 60 * 1000)
+        }
+      }
+    }
+    
+    // Parse duration (nights, days)
+    const durationPatterns = [
+      /(\d+)\s+(?:night|nights)/i,
+      /(\d+)\s+(?:day|days)/i,
+      /for\s+(\d+)/i,
+    ]
+    
+    for (const pattern of durationPatterns) {
+      const match = message.match(pattern)
+      if (match && match[1]) {
+        parsedDuration = parseInt(match[1])
+        break
+      }
+    }
+    
+    // If we have start date and duration but no end date, calculate it
+    if (parsedStartDate && parsedDuration && !parsedEndDate) {
+      parsedEndDate = new Date(parsedStartDate.getTime() + parsedDuration * 24 * 60 * 60 * 1000)
+    }
+    
+    // If we have end date and duration but no start date, calculate it
+    if (parsedEndDate && parsedDuration && !parsedStartDate) {
+      parsedStartDate = new Date(parsedEndDate.getTime() - parsedDuration * 24 * 60 * 60 * 1000)
+    }
+    
+    return {
+      startDate: parsedStartDate,
+      endDate: parsedEndDate,
+      duration: parsedDuration,
+    }
+  }
+
   const handleAIRequest = async (message: string) => {
     const trimmedMessage = message.trim()
     if (!trimmedMessage) return
+
+    // Parse dates from user message BEFORE processing
+    const parsedDates = parseDatesFromMessage(trimmedMessage)
+    
+    // Update dates if parsed successfully
+    if (parsedDates.startDate && parsedDates.endDate) {
+      setStartDate(parsedDates.startDate)
+      setEndDate(parsedDates.endDate)
+      if (parsedDates.duration) {
+        setDuration(parsedDates.duration)
+      } else {
+        // Calculate duration from dates
+        const calcDuration = Math.ceil((parsedDates.endDate.getTime() - parsedDates.startDate.getTime()) / (1000 * 60 * 60 * 24))
+        setDuration(calcDuration)
+      }
+      // Reset package suggestions to allow new suggestions for new dates
+      packagesSuggestedRef.current = false
+      // Check availability for new dates
+      setTimeout(() => {
+        checkDateAvailability(parsedDates.startDate!, parsedDates.endDate!, activeThreadRef.current, false)
+      }, 100)
+    } else if (parsedDates.duration && startDate) {
+      // If we have a duration and existing start date, update end date
+      const newEndDate = new Date(startDate.getTime() + parsedDates.duration * 24 * 60 * 60 * 1000)
+      setEndDate(newEndDate)
+      setDuration(parsedDates.duration)
+      packagesSuggestedRef.current = false
+      setTimeout(() => {
+        checkDateAvailability(startDate, newEndDate, activeThreadRef.current, false)
+      }, 100)
+    }
 
     const userMessage: Message = { role: 'user', content: trimmedMessage }
     const threadId = beginNewThread([userMessage])
@@ -1625,6 +1911,11 @@ ${packages.map((pkg: any, index: number) =>
       }
       
       // For logged-in users, use the full AI API with enhanced context
+      // Use parsed dates if available, otherwise use current state
+      const effectiveStartDate = parsedDates.startDate || startDate
+      const effectiveEndDate = parsedDates.endDate || endDate
+      const effectiveDuration = parsedDates.duration || duration
+      
       const contextString = `
 Property Context:
 - Title: ${postTitle}
@@ -1634,15 +1925,16 @@ Property Context:
 
 Current Booking State:
 - Selected Package: ${selectedPackage?.name || 'None'}
-- Duration: ${duration} ${duration === 1 ? 'night' : 'nights'}
-- Start Date: ${startDate ? format(startDate, 'MMM dd, yyyy') : 'Not selected'}
-- End Date: ${endDate ? format(endDate, 'MMM dd, yyyy') : 'Not selected'}
+- Duration: ${effectiveDuration} ${effectiveDuration === 1 ? 'night' : 'nights'}
+- Start Date: ${effectiveStartDate ? format(effectiveStartDate, 'MMM dd, yyyy') : 'Not selected'}
+- End Date: ${effectiveEndDate ? format(effectiveEndDate, 'MMM dd, yyyy') : 'Not selected'}
 - Available Packages: ${packages.length}
 - User Entitlement: ${customerEntitlement}
 
 Availability Status:
 - Are dates available: ${areDatesAvailable ? 'Yes' : 'No'}
 - Currently checking availability: ${isCheckingAvailability ? 'Yes' : 'No'}
+${parsedDates.startDate && parsedDates.endDate ? '\nNOTE: User just requested new dates. These dates have been updated in the system.' : ''}
       `
       
       const response = await fetch('/api/chat', {
@@ -1991,24 +2283,7 @@ Availability Status:
             >
               Next Week (5 Nights)
             </Button>
-            {startDate && endDate && (
-              <Button 
-                size="sm" 
-                variant="default"
-                onClick={() => {
-                  const currentThreadId = activeThreadRef.current
-                  const confirmMessage: Message = {
-                    role: 'assistant',
-                    content: `Perfect! I've confirmed your dates: ${format(startDate, 'MMM dd')} to ${format(endDate, 'MMM dd, yyyy')} (${duration} ${duration === 1 ? 'night' : 'nights'}). Let me show you the best packages for your stay!`,
-                    type: 'text'
-                  }
-                  appendMessageToThread(currentThreadId, confirmMessage)
-                  setTimeout(() => showAvailablePackages(currentThreadId), 500)
-                }}
-              >
-                Confirm Dates
-              </Button>
-            )}
+            {/* Removed Confirm Dates button - dates update automatically when user requests them */}
           </div>
         </div>
       )
@@ -2252,7 +2527,24 @@ Availability Status:
             <QuickActions onAction={handleQuickAction} />
             
             <div className="space-y-4">
-              {messages.map(renderMessage)}
+              {messages.map((message, index) => {
+                const checkpoint = checkpoints.find(cp => cp.messageIndex === index)
+                return (
+                  <React.Fragment key={index}>
+                    {renderMessage(message, index)}
+                    {checkpoint && (
+                      <Checkpoint>
+                        <CheckpointIcon />
+                        <CheckpointTrigger
+                          onClick={() => restoreToCheckpoint(checkpoint)}
+                        >
+                          Restore to estimate checkpoint
+                        </CheckpointTrigger>
+                      </Checkpoint>
+                    )}
+                  </React.Fragment>
+                )
+              })}
               
               {isLoading && (
                 <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">

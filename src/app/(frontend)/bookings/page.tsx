@@ -65,9 +65,23 @@ export default async function Bookings() {
         <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:justify-end">
           <div>
             {latestEstimate ? (
-              <Link href={`/estimate/${latestEstimate.id}`}>
-                <Button variant="default">View your last estimate</Button>
-              </Link>
+              (() => {
+                const post = typeof latestEstimate.post === 'object' ? latestEstimate.post : null
+                const postSlug = post?.slug
+                const estimateId = latestEstimate.id
+                if (postSlug) {
+                  return (
+                    <Link href={`/posts/${postSlug}?restoreEstimate=${estimateId}`}>
+                      <Button variant="default">Restore to estimate checkpoint</Button>
+                    </Link>
+                  )
+                }
+                return (
+                  <Link href={`/estimate/${estimateId}`}>
+                    <Button variant="default">View your last estimate</Button>
+                  </Link>
+                )
+              })()
             ) : (
               <Button variant="default" disabled>No estimate available</Button>
             )}
