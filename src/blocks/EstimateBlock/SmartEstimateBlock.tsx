@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import { Loader } from '@/components/ai-elements/loader'
 import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
@@ -1709,45 +1710,46 @@ Availability Status:
           <div className="bg-muted p-3 rounded-lg">
             <p className="text-sm">{message.content}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
-              const suggestionStart = new Date(suggestion.startDate)
-              const suggestionEnd = new Date(suggestion.endDate)
-              
-              // Validate dates
-              if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
-                console.error('❌ Invalid date in suggestion:', suggestion)
-                return null
-              }
-              
-              return (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => {
-                    setStartDate(suggestionStart)
-                    setEndDate(suggestionEnd)
-                    setDuration(suggestion.duration)
-                    preservedStartDateRef.current = suggestionStart
-                    
-                    // Check availability for the new dates
-                    checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
-                    
-                    const confirmMessage: Message = {
-                      role: 'assistant',
-                      content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
-                      type: 'text'
-                    }
-                    appendMessageToThread(activeThreadRef.current, confirmMessage)
-                  }}
-                >
-                  {format(suggestionStart, 'MMM dd')} - {format(suggestionEnd, 'MMM dd')}
-                </Button>
-              )
-            })}
-          </div>
+          {suggestedDates.length > 0 && (
+            <Suggestions>
+              {suggestedDates.map((suggestion: { startDate: string; endDate: string; duration: number }, idx: number) => {
+                const suggestionStart = new Date(suggestion.startDate)
+                const suggestionEnd = new Date(suggestion.endDate)
+                
+                // Validate dates
+                if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                  console.error('❌ Invalid date in suggestion:', suggestion)
+                  return null
+                }
+                
+                const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
+                
+                return (
+                  <Suggestion
+                    key={idx}
+                    suggestion={suggestionText}
+                    onClick={() => {
+                      setStartDate(suggestionStart)
+                      setEndDate(suggestionEnd)
+                      setDuration(suggestion.duration)
+                      preservedStartDateRef.current = suggestionStart
+                      
+                      // Check availability for the new dates
+                      checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
+                      
+                      const confirmMessage: Message = {
+                        role: 'assistant',
+                        content: `Great! I've updated your dates to ${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd, yyyy')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}).`,
+                        type: 'text'
+                      }
+                      appendMessageToThread(activeThreadRef.current, confirmMessage)
+                    }}
+                    className="text-xs"
+                  />
+                )
+              })}
+            </Suggestions>
+          )}
         </div>
       )
     }
