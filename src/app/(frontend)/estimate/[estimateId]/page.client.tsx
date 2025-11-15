@@ -70,25 +70,27 @@ export function usePackages(postId: string) {
     fetch(`/api/packages/post/${postId}`)
       .then(res => res.json())
       .then(data => {
-        // Transform the data to match PostPackage interface
-        const transformedPackages = (data.packages || []).map((pkg: any) => ({
-          id: pkg.id,
-          name: pkg.name, // This will be the custom name if available
-          originalName: pkg.originalName,
-          description: pkg.description,
-          multiplier: pkg.multiplier,
-          features: pkg.features?.map((f: any) => 
-            typeof f === 'string' ? { feature: f } : f
-          ) || [],
-          category: pkg.category,
-          minNights: pkg.minNights,
-          maxNights: pkg.maxNights,
-          revenueCatId: pkg.revenueCatId,
-          baseRate: pkg.baseRate, // Include package-specific base rate
-          isEnabled: pkg.isEnabled,
-          source: pkg.source,
-          hasCustomName: pkg.hasCustomName
-        }))
+        // Transform the data to match PostPackage interface and filter out add-on packages
+        const transformedPackages = (data.packages || [])
+          .filter((pkg: any) => pkg.category !== 'addon') // Exclude add-on packages
+          .map((pkg: any) => ({
+            id: pkg.id,
+            name: pkg.name, // This will be the custom name if available
+            originalName: pkg.originalName,
+            description: pkg.description,
+            multiplier: pkg.multiplier,
+            features: pkg.features?.map((f: any) => 
+              typeof f === 'string' ? { feature: f } : f
+            ) || [],
+            category: pkg.category,
+            minNights: pkg.minNights,
+            maxNights: pkg.maxNights,
+            revenueCatId: pkg.revenueCatId,
+            baseRate: pkg.baseRate, // Include package-specific base rate
+            isEnabled: pkg.isEnabled,
+            source: pkg.source,
+            hasCustomName: pkg.hasCustomName
+          }))
         setPackages(transformedPackages)
         setLoading(false)
       })

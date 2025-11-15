@@ -33,6 +33,13 @@ const dirname = path.dirname(filename)
 
 export default buildConfig({
   admin: {
+    access: ({ req: { user } }) => {
+      if (!user) return false
+      const role = user.role
+      const roleArray = Array.isArray(role) ? role : role ? [role] : []
+      // Only allow admins and hosts to access the admin panel
+      return roleArray.includes('admin') || roleArray.includes('host')
+    },
     components: {
       afterDashboard: ['@/components/AnalyticsDashboardData/AnalyticsDashboard'],
       // The `BeforeLogin` component renders a message that you see while logging into your admin panel.

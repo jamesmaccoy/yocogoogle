@@ -13,13 +13,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
 
-    // Validate target role
-    const validRoles = ['host', 'admin']
+    // Validate target role - only allow upgrading to 'host', not 'admin'
+    const validRoles = ['host']
     if (!validRoles.includes(targetRole)) {
       return NextResponse.json({ 
         error: 'Invalid target role. Must be one of: ' + validRoles.join(', '),
         currentRoles: user.role 
-      })
+      }, { status: 400 })
+    }
+
+    // Check current role - only allow customers to upgrade
+    const role = user.role
+    const roleArray = Array.isArray(role) ? role : role ? [role] : []
+    if (roleArray.includes('admin') || roleArray.includes('host')) {
+      return NextResponse.json({ 
+        error: 'Only customers can upgrade their role. You are already a ' + roleArray[0],
+        currentRoles: roleArray
+      }, { status: 403 })
     }
 
     const subscriptionCheck = await payload.find({

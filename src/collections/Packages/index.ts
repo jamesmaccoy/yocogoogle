@@ -1,14 +1,15 @@
 import type { CollectionConfig } from 'payload'
 import { authenticated } from '../../access/authenticated'
 import { adminOrSelf } from '../../access/adminOrSelf'
+import { adminOrHost } from '../../access/adminOrHost'
 
 const Packages: CollectionConfig = {
   slug: 'packages',
   access: {
-    create: authenticated,
+    create: adminOrHost,
     read: authenticated,
-    update: authenticated,
-    delete: authenticated,
+    update: adminOrHost,
+    delete: adminOrHost,
   },
   admin: {
     useAsTitle: 'name',
