@@ -378,13 +378,42 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     return filtered
   }, [customerEntitlement])
 
+  // Helper function to normalize date to YYYY-MM-DD format for comparison
+  const normalizeDateToString = (date: Date | string): string => {
+    if (typeof date === 'string') {
+      // If it's already a string, extract date part
+      return date.split('T')[0]
+    }
+    // If it's a Date object, convert to ISO and extract date part
+    return date.toISOString().split('T')[0]
+  }
+
   // Load unavailable dates for the post
   const loadUnavailableDates = async () => {
+    // Only load if user is logged in (endpoint requires authentication)
+    if (!isLoggedIn) {
+      return
+    }
+    
     try {
       const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
       if (response.ok) {
         const data = await response.json()
-        setUnavailableDates(data.unavailableDates || [])
+        const dates = data.unavailableDates || []
+        setUnavailableDates(dates)
+        // Debug logging
+        if (dates.length > 0) {
+          console.log('📅 Loaded unavailable dates:', {
+            postId,
+            count: dates.length,
+            sampleDates: dates.slice(0, 5).map((d: string) => normalizeDateToString(d)),
+          })
+        }
+      } else if (response.status === 401) {
+        // User not authenticated - this is expected for logged-out users
+        console.log('📅 Unavailable dates require authentication')
+      } else {
+        console.error('Failed to load unavailable dates:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading unavailable dates:', error)
@@ -682,11 +711,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }, [isLoggedIn, searchParams, currentUser?.id, postId, router, createEstimateCheckpoint]) // Added dependencies for checkpoint restoration
 
-  // Refetch latest estimate when post changes
+  // Refetch latest estimate and unavailable dates when post changes
   useEffect(() => {
     estimateLoadedRef.current = false
     if (isLoggedIn && postId) {
       loadLatestEstimate(true)
+    }
+    // Reload unavailable dates when postId changes or when user logs in
+    if (postId) {
+      loadUnavailableDates()
     }
   }, [postId, isLoggedIn])
 
@@ -2344,8 +2377,16 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       // Disable past dates
                       if (checkDate < today) return true
                       
-                      // Disable unavailable dates
-                      if (unavailableDates.includes(date.toISOString())) return true
+                      // Normalize date to YYYY-MM-DD format for comparison
+                      const dateStr = normalizeDateToString(checkDate)
+                      
+                      // Check if this date is unavailable by comparing date parts
+                      const isUnavailable = unavailableDates.some((unavailableDateStr) => {
+                        const unavailableDatePart = normalizeDateToString(unavailableDateStr)
+                        return unavailableDatePart === dateStr
+                      })
+                      
+                      if (isUnavailable) return true
                       
                       return false
                     }}
@@ -2422,8 +2463,16 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       startDateOnly.setHours(0, 0, 0, 0)
                       if (checkDate <= startDateOnly) return true
                       
-                      // Disable unavailable dates
-                      if (unavailableDates.includes(date.toISOString())) return true
+                      // Normalize date to YYYY-MM-DD format for comparison
+                      const dateStr = normalizeDateToString(checkDate)
+                      
+                      // Check if this date is unavailable by comparing date parts
+                      const isUnavailable = unavailableDates.some((unavailableDateStr) => {
+                        const unavailableDatePart = normalizeDateToString(unavailableDateStr)
+                        return unavailableDatePart === dateStr
+                      })
+                      
+                      if (isUnavailable) return true
                       
                       // Disable if there are unavailable dates between startDate and this date
                       if (hasUnavailableDateBetween(unavailableDates, startDate, date)) return true
