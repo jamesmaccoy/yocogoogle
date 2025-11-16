@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -97,6 +98,7 @@ export const AIAssistant = () => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
   const router = useRouter()
+  const pathname = usePathname()
   
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
     if (!usage || typeof usage !== 'object') return null
@@ -429,6 +431,28 @@ export const AIAssistant = () => {
       }
     }
   }, [])
+
+  // If user is on a post page, try to infer context immediately and on route changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (pathname && /^\/posts\//.test(pathname)) {
+      const ctx = (window as any).postContext
+      if (ctx?.context === 'post-article') {
+        setCurrentContext(ctx)
+      }
+    }
+  }, [pathname])
+
+  const handleToggleOpen = () => {
+    const opening = !isOpen
+    if (opening && typeof window !== 'undefined') {
+      const ctx = (window as any).postContext || (window as any).bookingContext
+      if (ctx && !currentContext) {
+        setCurrentContext(ctx)
+      }
+    }
+    setIsOpen(opening)
+  }
 
   const startListening = () => {
     if (!recognitionRef.current) {
@@ -910,7 +934,7 @@ ${packages.map((pkg: any, index: number) =>
   return (
     <div className="fixed bottom-4 right-4 z-50">
       <Button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleToggleOpen}
         className={cn(
           'rounded-full w-12 h-12 p-0',
           isOpen ? 'bg-destructive hover:bg-destructive/90' : 'bg-primary hover:bg-primary/90',
