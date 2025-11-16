@@ -162,6 +162,7 @@ export const AIAssistant = () => {
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
+  const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const synthRef = useRef<SpeechSynthesis | null>(null)
   const isProcessingRef = useRef(false)
@@ -206,6 +207,36 @@ export const AIAssistant = () => {
     }
     return ''
   }, [])
+
+  // Subscribe to token usage updates for UI indicator
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem('ai:lastTokenUsage')
+      if (raw) {
+        setLastUsage(JSON.parse(raw))
+      }
+    } catch {
+      // ignore
+    }
+    const handler = (e: any) => {
+      if (e?.detail) setLastUsage(e.detail as TokenUsageDetails)
+    }
+    window.addEventListener('aiTokenUsage', handler as EventListener)
+    return () => {
+      window.removeEventListener('aiTokenUsage', handler as EventListener)
+    }
+  }, [])
+
+  const formatUsageInline = (usage: TokenUsageDetails | null) => {
+    if (!usage || usage.total == null) return null
+    const parts: string[] = [`${usage.total}`]
+    if (usage.prompt != null) parts.push(`in ${usage.prompt}`)
+    if (usage.candidates != null) parts.push(`out ${usage.candidates}`)
+    if (usage.cached != null) parts.push(`cache ${usage.cached}`)
+    if (usage.thoughts != null) parts.push(`r ${usage.thoughts}`)
+    return parts.join(' • ')
+  }
 
   const beginNewThread = useCallback(
     (initialMessages: Message[] = []) => {
@@ -948,12 +979,19 @@ ${packages.map((pkg: any, index: number) =>
           <div className="p-4 border-b">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">AI Assistant</h3>
-              {!isLoggedIn && (
-                <div className="flex items-center gap-1 text-xs text-amber-600">
-                  <Lock className="h-3 w-3" />
-                  <span>Login Required</span>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {lastUsage && lastUsage.total != null && (
+                  <div className="text-[10px] leading-none px-2 py-1 rounded bg-muted text-muted-foreground">
+                    Tokens: {formatUsageInline(lastUsage)}
+                  </div>
+                )}
+                {!isLoggedIn && (
+                  <div className="flex items-center gap-1 text-xs text-amber-600">
+                    <Lock className="h-3 w-3" />
+                    <span>Login Required</span>
+                  </div>
+                )}
+              </div>
             </div>
             {currentContext?.context === 'package-suggestions' && (
               <p className="text-xs text-muted-foreground">Package suggestions mode</p>
