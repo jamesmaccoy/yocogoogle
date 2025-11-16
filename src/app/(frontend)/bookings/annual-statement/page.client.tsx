@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { formatAmountToZAR } from "@/lib/currency"
-import { Loader2, AlertCircle, UserIcon, CopyIcon } from "lucide-react"
+import { Loader2, AlertCircle, UserIcon, CopyIcon, FileText as FileTextIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useUserContext } from "@/context/UserContext"
 
@@ -555,6 +555,593 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
       .catch((error) => console.error("Failed to copy statement URL:", error))
   }
 
+  const generateLeaseAgreement = () => {
+    if (!postDetails || !currentUser) return
+
+    // Calculate lease period (12 months from now)
+    const now = new Date()
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    const endDate = new Date(now.getFullYear() + 1, now.getMonth(), 0)
+    
+    const formatLeaseDate = (date: Date) => {
+      const day = date.getDate()
+      const month = date.toLocaleDateString('en-US', { month: 'long' })
+      const year = date.getFullYear()
+      const daySuffix = day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'
+      return `${day}${daySuffix} ${month} ${year}`
+    }
+
+    // Calculate average monthly rental from completed transactions
+    const completedTransactions = transactionsForPeriod.filter(t => t.status === 'completed')
+    const totalRevenue = completedTransactions.reduce((sum, t) => sum + (t.amount || 0), 0)
+    const monthlyRental = completedTransactions.length > 0 
+      ? Math.round(totalRevenue / 12) 
+      : 20000 // Default fallback
+    
+    const formatCurrency = (amount: number) => {
+      return `R${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }
+
+    const formatCurrencyWords = (amount: number) => {
+      // Simple number to words conversion for common amounts
+      const thousands = Math.floor(amount / 1000)
+      const remainder = amount % 1000
+      let words = ''
+      if (thousands > 0) {
+        words += `${thousands} thousand`
+      }
+      if (remainder > 0) {
+        if (words) words += ' '
+        words += `${remainder} rand`
+      }
+      return words || 'zero rand'
+    }
+
+    // Extract data
+    const postName = postDetails.title || 'SimplePlek'
+    const landlordName = postDetails.authors?.[0] || 'LANDLORD NAME'
+    const tenantName = currentUser.name || currentUser.email || 'LEASER NAME'
+    const hostName = postDetails.authors?.[0] || 'HOST NAME'
+    const hostContact = currentUser.email || 'hello@thanks.digital'
+    const rentalAmount = monthlyRental
+    const rentalAmountFormatted = formatCurrency(rentalAmount)
+    const rentalAmountWords = formatCurrencyWords(rentalAmount)
+
+    // Generate lease document
+    const leaseDocument = `LEASE AGREEMENT
+
+of premises known as
+
+"${postName}"
+
+
+
+
+
+${landlordName}
+
+
+
+and
+
+
+
+${tenantName}
+
+
+
+1
+
+
+
+TERMS AND CONDITIONS OF LEASE (7 pages)
+
+For convenience sake the residence is regarded as "${postName}"
+
+and the occupier "The tenant ${tenantName}"
+
+PERIOD OF LEASE
+
+The renewed lease period will be from ${formatLeaseDate(startDate)} to ${formatLeaseDate(endDate)}
+
+i.e. a period of a full 12 months.
+
+RENT
+
+Rental will be
+
+${rentalAmountFormatted} (${rentalAmountWords} only).
+
+Rental is payable in advance on the first day of each and every month.
+
+Rent should be paid by pre-arranged debit order, or by bank transfer into the account as
+
+given below:-
+
+${hostName} (RENT ${postName}) (Admin)
+
+BANK NAME
+
+Account no 
+
+Branch Hout Bay
+
+Please sent payment details to email: - ${hostContact}
+
+Please pay the amount in full each month.
+
+Please do not pay cash into this account.
+
+DEPOSIT
+
+There is no deposit required.
+
+KEYS
+
+ONE set of keys for the house and a remote for the gate will be given on payment of the
+
+rental for the first month and these must be returned at the end of lease agreement.
+
+In the event of loss or need to replace this will be at the tenant's expense.
+
+An emergency 2nd set will be held by Chris Harding on 021 7902655 or cell no
+
+0724089592. He lives at no 32 Llandudno Road.
+
+Copies of keys and new remotes are for your account.
+
+LIABILITY
+
+"${postName}" will be occupied by TWO persons only.
+
+${tenantName}, will be liable for any damage due to negligence, dog damage or
+
+domestic violence in the event of his sub-letting the premises for short term rentals.
+
+We will not accept liability in the case of persons falling through or off the deck
+
+area.
+
+See Repairs and Maintenance
+
+
+
+2
+
+
+
+NOTICE
+
+TWO months notice is required on both sides after the initial 12 month lease term.
+
+A new lease agreement must be drawn up at end of the initial term.
+
+Please communicate wish to terminate or extend the lease agreement in writing to
+
+${hostContact}
+
+DEFAULT IN PAYMENT OF RENTAL
+
+Failure to pay on the first day of each month or habitual late payment could be interpreted as
+
+intentional break in lease agreement. We understand that debit orders get delayed over weekends and
+
+holidays.
+
+Please communicate should there be a problem, so that there is no misunderstanding.
+
+INCREASE IN RENTAL
+
+The rental will increase by about 5% percent per annum.
+
+This is based on increase in insurance rates,PPS Security rates, City of CT rates and water accounts
+
+or Llandudno local improvement group rates, which are difficult to estimate in advance.
+
+SUBLETTING
+
+There may be Short Term only Subletting of the above premises but you are responsible for all
+
+repairs and damage.
+
+You may also give SIMPLEPLEKs' name and number for any problems they may have with "${postName}" in your absence.
+
+If the place is to be left unoccupied for a short period please advise us of this too.
+
+This is for Insurance purposes.
+
+REPAIRS AND MAINTENANCE , RE-DECORATING AND PAINTING
+
+"${postName}" will be freshly painted inside periodically, in white.
+
+Please consult the owners prior to any changes in paint finishes and fittings etc.
+
+"${postName}" must be restored to its original colour and freshly painted in white on vacating.
+
+Please let us know when things need repainting or fixing in between due to "wear and tear"
+
+"Wear and tear" will be considered, but any damage will be for your account.
+
+Please do not make any refurbishments or additions without consulting us first.
+
+Please note that any other installations or modifications should remain on departure.
+
+Please prevent damage where possible, especially to windows, which should not be left to bang in the
+
+wind. You will be held liable for broken glass if latches are not used.
+
+The front deck is flimsy so will not allow for many people on it at the same time.
+
+The side deck is newer and stronger.
+
+Best not use the heavy garden chairs on deck as the metal tears the wood.There is a camp chair in the
+
+back room and the lighter basket chair can be used outside too.
+
+Please do not leave chairs or cushions outside in the rain.
+
+AREA OF RENTAL
+
+"${postName}" consists of two rooms as well as kitchen and toilet/shower room.
+
+The garden is for your use as well. Please park only on the paved driveway and not on the grass.
+
+When entertaining, please ask guests to park outside in the parking area. Driveway takes a max of 3
+
+cars.
+
+
+
+3
+
+
+
+DEFECTS/FAULTS
+
+Please report any defects, or tap leaks etc immediately, preferably in writing to
+
+${hostContact}.or by phone – SIMPLEPLEK or ${hostName} so that these
+
+may be attended to ASAP.
+
+"${postName}" is old so please respect the structure by living gently!
+
+No large numbers of guests inside and entertaining is best done in the garden – weather dependent!
+
+The roof was repaired recently so there should not be any leaks, but if so, these must be reported
+
+immediately, so that they may be rectified. Water damage can be drastic!
+
+The sewers were cleared recently. The manhole is in the pathway to the outside loo. There is another
+
+one at the bottom of the garden with new brick surrounds, as the ground levels have been changed.
+
+The geyser is in the cupboard outside but can be switched off on the electricity board inside if you go
+
+away or water is off due to C of CT water problems.
+
+Please advise us immediately should anything break.
+
+Please consult with us first before calling in plumbers etc.
+
+Any damage due to negligence or break in will be for your own account e.g. broken windows.
+
+Please keep all doors and windows closed when not there, to prevent opportunistic theft.
+
+Please also prevent windows from banging in wind, by latching or placing pillows on window sills
+
+as you will be liable for new glass if it gets broken or cracked.
+
+Please use the ALARM when going out or leaving.
+
+Please advise guests to do this too. Could put in online notes.
+
+NO SMOKING/FIRE RISK
+
+"${postName}" is a NO smoking house as the wood absorbs the smell.
+
+We understand you are a non-smoker.
+
+Please ask visitors to smoke outside and to use an ashtray.
+
+Please do not throw cigarette butts into the bush, as these may cause bush fire.
+
+Candles too are a problem. Please do not use.
+
+Rather use the rechargeable lamps provided.
+
+Candles left unattended or put too close to curtains or walls which too may catch alight, or cause
+
+oily smoke marks up walls that are difficult to paint over.
+
+When braai-ing please use a garden hose to water the surrounding bush to prevent sparks igniting
+
+the whole area. No fires on really windy days! Rather use the gas braai on wooden deck.
+
+You will be held liable in case of fire and subsequent call-out of the fire brigade etc.
+
+GARDEN MAINTENANCE
+
+It is your responsibility to keep the garden neat and tidy. Please cut the grass regularly and give
+
+grass is regular water especially in summer heat. It may require fertilizer every 6 months to keep
+
+weeds down and encourage growth.
+
+Please ask Chris to cut trees as they grow and in the event of no lawnmower he can cut
+
+the grass too, for which he may ask you to pay towards his staff member. The larger timber in the
+
+garden can preferably be used for landscaping and smaller branches be burned as braai-wood.
+
+Leaves can make mulch/compost. This helps to reduce fire hazard as it dries out.
+
+Please park only on the paving in the drive-way.
+
+
+
+4
+
+
+
+The top garden maintenance is your responsibility. The bottom garden looks a bit sad as it has been
+
+so dry things have died. Please organize a clean up if it gets too overgrown in winter.
+
+Please pick up any dog mess in the whole garden. All dogs prefer to go down there, so please clean
+
+up their mess. There is poop scoop provided.
+
+DOG/S
+
+We understand you have ONE dog. These are important as added security.
+
+Damage by friends/guests dogs is also for your liability.
+
+Dogs are permitted on the beach in winter months but in summer only from 6pm to 9am.
+
+Please pick up any dog poo and put it in a bag in the bins provided. There are sometimes bags
+
+provided at the top of the middle stairs to the beach. Best have a key ring container for bags available
+
+from vet shops.
+
+Damage and fleas etc are covered under Liability etc.
+
+The deposit may not cover any damage done by unruly dogs, left unattended.
+
+Dog poo can be put in bins in parking areas as these are emptied daily.
+
+WATER
+
+Any excessive water accounts will be your responsibility.
+
+We will cover that amount in rent, but any excess will be for your account.
+
+There should be ample water for TWO persons especially if you take short showers.
+
+City asking to limit showers to 5mins only but 2 mins shower is preferable.
+
+Wet yourself, then switch off water while washing hair etc. switching taps on again to rinse off.
+
+A hose is connected to the shower outlet pipe, which runs onto the grass area. Please check it has not
+
+pulled out and vary hose position daily. Suggest use basin in shower
+
+to catch water. This and dog water bowls can be put onto new plants in front of the house.
+
+Remember water usage is charged again under sewerage, so please be aware of any leaks etc.
+
+There is a dish washing machine in the kitchen. Please use rather than doing endless short washing
+
+up sessions.
+
+Please watch out for water leaks from this machine.! Dish washers use less water if only washed a
+
+few times a week.
+
+ELECTRICITY
+
+This is your responsibility as it is supplied by pre pre-paid meter.
+
+You have installed solar and an inverter to reduce high electricity rates.
+
+Please be aware of flashing lights or loud beeps from the meter to warn if it is getting low.
+
+Burglar Alarm and electronic gate needs power so best not run out!!!
+
+Please reload prior to going away. Suggest you keep a R20.00 voucher on top in case of emergency
+
+or for when there are guests, if run-out at night.
+
+Please warn guests if Load shedding returns .
+
+INTERNET and WIFI
+
+These are for your own account.
+
+Please liaise with us prior to cancellation on your departure.
+
+ELECTRONIC GATE OPENER
+
+The gate has an electronic motor opener and one remote will be supplied.
+
+Please keep the metal track free of sand and leaves. If gate sluggish check track is clear!!!
+
+Keep the gate closed at all times as a security measure.
+
+
+
+5
+
+
+
+Please advise guests that:-
+
+If it is slow to react it usually means the electricity is off and that it is in battery mode.
+
+Please limit using it in this mode. You may be liable for a new battery if it goes flat.
+
+The solar electricity should prevent this happening.
+
+There is an emergency override key to open the motor in emergency.
+
+There are reflectors on gates and some trees to prevent people driving into them in the dark.
+
+Please keep the bushes trimmed in the driveway so as to not damage cars reversing up driveway.
+
+Please use your mirrors to reverse! Please replace reflectors from time to time.
+
+BURGLAR ALARM/security
+
+PPS is included in your rental
+
+Please keep all doors and windows closed, and arm the alarm when not there, to prevent
+
+opportunistic theft.
+
+There are no burglar bars in the front room or kitchen doors and windows.
+
+The bedroom and the high back two windows- bedroom and bathroom- do have burglar bars.
+
+The bedroom has a bolt on the door should you or guests wish to lock themselves in further,
+
+especially if nervous overnight.
+
+There is a panic button under the bedroom window and on the alarm panel. It needs to be held down
+
+for 5 seconds to longer to activate, not just a quick touch!
+
+There is an alarmed response in place connected to PPS, the resident alarm company.
+
+The monthly account is covered in your rental and is paid by debit order.
+
+You are advised to check it monthly to see if it is working. Let it go off by not deactivating the alarm
+
+on arrival and PPS should ring you to check if it is a false alarm. Please make note of their number to
+
+phone in an emergency. The cars patrol and there are also foot patrols. Make yourself known to the
+
+cars on patrol. They do sit in the parking area at times and sit in a hut at the top at the entrance.
+
+They do not charge for calls for security matters however do charge for maintenance issues.
+
+If nervous they can accompany you home. Please ring them if there is any suspicious behavior or
+
+threat of intruders in the garden. Better safe than sorry.
+
+There are three outside lights for checking movement in the garden or if going out at night.
+
+Insurance of furniture and effects is covered by insurance, but not guests private belongings.
+
+
+
+FLOORING
+
+The wooden floors have been painted white, which does rather show the dirt if they have dogs inside.
+
+It is best that these be protected by using rugs /mats which can be vacuumed or shaken outside.
+
+Warmer rugs will be needed in winter months.
+
+FURNITURE
+
+"${postName}" is let furnished. A Double Bed and bedding is supplied but you may need to replace
+
+from season to season. Same with Towels.
+
+A list and photos will be taken of the furniture left.
+
+There is a wooden slatted double bed and new mattress, wooden chest of drawers and cupboard in
+
+the bedroom. Shelves in the bathroom for toiletries and towels etc.
+
+Fridge, dish washer, washing machine, induction hot plate for cooking with correct saucepans,
+
+microwave, crockery, cutlery, toaster, kettle and general household effects have been left.
+
+We may replace broken or lost crockery and cutlery from time to time.
+
+
+
+6
+
+
+
+HEATING
+
+Please do not leave Econoheat panels on when out all day nor cover with wet objects as these too
+
+may cause fires.
+
+A new one is supplied each winter as they seem to crack
+
+PETS (see Animals above)
+
+Pets are permitted but any damage done must be repaired at your cost.
+
+Any damage done must be repaired to our agreed specifications
+
+Please do not leave any dog unattended inside the house. Be aware that any barking carries around
+
+the valley and that if irritating, neighbors will complain.
+
+FENCING
+
+The plot is fenced all round.
+
+The wall and gates have been raised recently to prevent people and dogs jumping over as well as to
+
+increase security. Please keep the electronic gate closed for your own protection.
+
+Please keep the gate at the bottom of the garden locked at all times.
+
+Please make sure branches dont bang or lean / fall on ${postName}, which will damage it.
+
+REFUSE COLLECTION
+
+Please place rubbish in bins in the parking area, which has regular collection.
+
+There should be bin emptying on a weekly basis, usually on a Tuesday. There is a separate recycling
+
+business who gives the clear plastic bags and collects them on Tuesday or Wednesdays. Please add
+
+yours to the piles left in Llandudno Road as they don't seem to come to the ${postName} gate.
+
+No bin has been supplied but we will look into getting one from the local council.
+
+There are two gray bins in the kitchen. These must be left on departure.
+
+INSPECTION OF PREMISES
+
+There may be occasional inspection of premises by prior arrangement, but more likely by
+
+way of telephone call to check if all in order, or occasional pop in for tea if in town.
+
+OTHER
+
+-Please ring us should there be water or electrical problems as the details have to match the
+
+account name.
+
+-Please use your home address for tax etc purposes.
+
+Please discuss directly with us any issues you may have or amendments to the lease agreement.
+
+We trust that the above meets with your approval..`
+
+    // Create and download the file
+    const blob = new Blob([leaseDocument], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Lease_Agreement_${postName.replace(/\s+/g, '_')}_${formatLeaseDate(startDate).replace(/\s+/g, '_')}.txt`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   const formatRole = (role?: User["role"]) => {
     if (!role) return "Viewer"
 
@@ -620,31 +1207,41 @@ export default function AnnualStatementClient({ postId, year }: AnnualStatementC
                 {trustAuthors ? `Trust deed compiled by ${trustAuthors}` : "No author details recorded for this trust."}
               </CardDescription>
             </div>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline">Share statement</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Share annual booking statement</DialogTitle>
-                  <DialogDescription>Copy the secure link below to share these figures with trustees and beneficiaries.</DialogDescription>
-                </DialogHeader>
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Input value={shareUrl} readOnly className="flex-1" />
-                    <Button size="sm" onClick={copyShareUrl}>
-                      <CopyIcon className="mr-2 h-4 w-4" />
-                      {shareCopied ? "Copied!" : "Copy"}
-                    </Button>
+            <div className="flex gap-2">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline">Share statement</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Share annual booking statement</DialogTitle>
+                    <DialogDescription>Copy the secure link below to share these figures with trustees and beneficiaries.</DialogDescription>
+                  </DialogHeader>
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input value={shareUrl} readOnly className="flex-1" />
+                      <Button size="sm" onClick={copyShareUrl}>
+                        <CopyIcon className="mr-2 h-4 w-4" />
+                        {shareCopied ? "Copied!" : "Copy"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {currentUser
+                        ? `Shared by ${currentUser.name || currentUser.email || "You"} (${formatRole(currentUser.role)})`
+                        : "Share link generated for your current session."}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {currentUser
-                      ? `Shared by ${currentUser.name || currentUser.email || "You"} (${formatRole(currentUser.role)})`
-                      : "Share link generated for your current session."}
-                  </p>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
+              <Button 
+                variant="outline" 
+                onClick={generateLeaseAgreement}
+                disabled={!postDetails || !currentUser}
+              >
+                <FileTextIcon className="mr-2 h-4 w-4" />
+                Lease Agreement
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-4 text-sm md:grid-cols-2">
             <div>

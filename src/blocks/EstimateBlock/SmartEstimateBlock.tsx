@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2 } from 'lucide-react'
-import { parse as parseChrono } from 'chrono-node'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import { Loader } from '@/components/ai-elements/loader'
@@ -383,10 +382,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const normalizeDateToString = (date: Date | string): string => {
     if (typeof date === 'string') {
       const datePart = date.split('T')[0]
-      return datePart || ''
+      return datePart or ''
     }
     const isoString = date.toISOString()
-    return isoString.split('T')[0] || ''
+    return isoString.split('T')[0] or ''
   }
 
   // Format date using natural language style (like NaturalLanguageDatePicker)
@@ -401,11 +400,30 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
 
   // Load unavailable dates for the post
   const loadUnavailableDates = async () => {
+    // Only load if user is logged in (endpoint requires authentication)
+    if (!isLoggedIn) {
+      return
+    }
+    
     try {
       const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
       if (response.ok) {
         const data = await response.json()
-        setUnavailableDates(data.unavailableDates || [])
+        const dates = data.unavailableDates || []
+        setUnavailableDates(dates)
+        // Debug logging
+        if (dates.length > 0) {
+          console.log('📅 Loaded unavailable dates:', {
+            postId,
+            count: dates.length,
+            sampleDates: dates.slice(0, 5).map((d: string) => normalizeDateToString(d)),
+          })
+        }
+      } else if (response.status === 401) {
+        // User not authenticated - this is expected for logged-out users
+        console.log('📅 Unavailable dates require authentication')
+      } else {
+        console.error('Failed to load unavailable dates:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error loading unavailable dates:', error)
@@ -703,11 +721,15 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }, [isLoggedIn, searchParams, currentUser?.id, postId, router, createEstimateCheckpoint]) // Added dependencies for checkpoint restoration
 
-  // Refetch latest estimate when post changes
+  // Refetch latest estimate and unavailable dates when post changes
   useEffect(() => {
     estimateLoadedRef.current = false
     if (isLoggedIn && postId) {
       loadLatestEstimate(true)
+    }
+    // Reload unavailable dates when postId changes or when user logs in
+    if (postId) {
+      loadUnavailableDates()
     }
   }, [postId, isLoggedIn])
 
@@ -2357,6 +2379,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                         // Only adjust endDate if it's before the new startDate
                         if (endDate && normalizedDate > endDate) {
                           setEndDate(new Date(normalizedDate.getTime() + duration * 24 * 60 * 60 * 1000))
+                        }
                         }
                       }
                     }}
