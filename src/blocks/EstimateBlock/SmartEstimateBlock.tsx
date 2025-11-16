@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Bot, Send, Calendar, Package, Sparkles, Loader2 } from 'lucide-react'
+import { Calendar as CalendarComponent } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2 } from 'lucide-react'
+import { parse as parseChrono } from 'chrono-node'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import { Loader } from '@/components/ai-elements/loader'
@@ -23,6 +26,7 @@ import {
 } from '@/components/ai-elements/prompt-input'
 import { Checkpoint, CheckpointIcon, CheckpointTrigger } from '@/components/ai-elements/checkpoint'
 import { format } from 'date-fns'
+import { hasUnavailableDateBetween } from '@/utilities/hasUnavailableDateBetween'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
 import { getCustomerEntitlement, type CustomerEntitlement } from '@/utils/packageSuggestions'
@@ -374,6 +378,26 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     
     return filtered
   }, [customerEntitlement])
+
+  // Helper function to normalize date to YYYY-MM-DD format for comparison
+  const normalizeDateToString = (date: Date | string): string => {
+    if (typeof date === 'string') {
+      const datePart = date.split('T')[0]
+      return datePart || ''
+    }
+    const isoString = date.toISOString()
+    return isoString.split('T')[0] || ''
+  }
+
+  // Format date using natural language style (like NaturalLanguageDatePicker)
+  const formatDateNatural = (date: Date | null | undefined): string => {
+    if (!date) return ''
+    return date.toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    })
+  }
 
   // Load unavailable dates for the post
   const loadUnavailableDates = async () => {
@@ -2301,133 +2325,159 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-muted-foreground">Start Date</label>
-              <Input
-                type="date"
-                value={startDate ? format(startDate, 'yyyy-MM-dd') : ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  // Only process if we have a valid date value (iOS Safari can send empty string during selection)
-                  if (!value || value.trim() === '') {
-                    // If value is empty but we have a preserved startDate, restore it
-                    if (preservedStartDateRef.current) {
-                      setStartDate(preservedStartDateRef.current)
-                    }
-                    return
-                  }
-                  
-                  // Parse date more safely - handle iOS Safari date format
-                  const date = new Date(value + 'T00:00:00') // Add time to avoid timezone issues
-                  
-                  // Validate the date is actually valid
-                  if (isNaN(date.getTime())) {
-                    // If date is invalid but we have a preserved startDate, restore it
-                    if (preservedStartDateRef.current) {
-                      setStartDate(preservedStartDateRef.current)
-                    }
-                    return
-                  }
-                  
-                  // Update preserved date
-                  preservedStartDateRef.current = date
-                  setStartDate(date)
-                  packagesSuggestedRef.current = false
-                  
-                  // Only adjust endDate if it's before the new startDate
-                  if (endDate && date > endDate) {
-                    setEndDate(new Date(date.getTime() + duration * 24 * 60 * 60 * 1000))
-                  }
-                }}
-                onBlur={(e) => {
-                  // On blur, ensure we have a valid date (iOS Safari sometimes doesn't fire onChange properly)
-                  const value = e.target.value
-                  if (value && value.trim() !== '') {
-                    const date = new Date(value + 'T00:00:00')
-                    if (!isNaN(date.getTime())) {
-                      preservedStartDateRef.current = date
-                      setStartDate(date)
-                    } else if (preservedStartDateRef.current) {
-                      // If value is invalid, restore preserved date
-                      setStartDate(preservedStartDateRef.current)
-                    }
-                  } else if (preservedStartDateRef.current) {
-                    // If value is empty on blur, restore preserved date
-                    setStartDate(preservedStartDateRef.current)
-                  }
-                }}
-                className="text-xs"
-                min={format(new Date(), 'yyyy-MM-dd')}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">End Date</label>
-              <Input
-                type="date"
-                value={endDate ? format(endDate, 'yyyy-MM-dd') : ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  // Only process if we have a valid date value (iOS Safari can send empty string during selection)
-                  if (!value || value.trim() === '') {
-                    return
-                  }
-                  
-                  // Parse date more safely - handle iOS Safari date format
-                  const date = new Date(value + 'T00:00:00') // Add time to avoid timezone issues
-                  
-                  // Validate the date is actually valid
-                  if (isNaN(date.getTime())) {
-                    return
-                  }
-                  
-                  setEndDate(date)
-                  packagesSuggestedRef.current = false
-                  
-                  // CRITICAL FIX: Preserve startDate when selecting endDate on iOS Safari
-                  // iOS Safari can trigger onChange events that might affect startDate
-                  // Only adjust startDate if endDate is actually before startDate (user error case)
-                  if (startDate && preservedStartDateRef.current) {
-                    const startDateOnly = new Date(startDate)
-                    startDateOnly.setHours(0, 0, 0, 0)
-                    const endDateOnly = new Date(date)
-                    endDateOnly.setHours(0, 0, 0, 0)
-                    
-                    // Only adjust if end date is actually before start date (not equal)
-                    if (endDateOnly < startDateOnly) {
-                      // Calculate new start date based on duration, but don't go before today
+              <label className="text-xs text-muted-foreground mb-1 block">Start Date</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'w-full justify-start text-left font-normal text-xs h-9',
+                      !startDate && 'text-muted-foreground',
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-3 w-3" />
+                    {startDate ? formatDateNatural(startDate) : <span>Select start date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={startDate || undefined}
+                    onSelect={(date) => {
+                      if (date) {
+                        // Normalize to start of day
+                        const normalizedDate = new Date(date)
+                        normalizedDate.setHours(0, 0, 0, 0)
+                        
+                        // Update preserved date
+                        preservedStartDateRef.current = normalizedDate
+                        setStartDate(normalizedDate)
+                        packagesSuggestedRef.current = false
+                        
+                        // Only adjust endDate if it's before the new startDate
+                        if (endDate && normalizedDate > endDate) {
+                          setEndDate(new Date(normalizedDate.getTime() + duration * 24 * 60 * 60 * 1000))
+                        }
+                      }
+                    }}
+                    disabled={(date) => {
                       const today = new Date()
                       today.setHours(0, 0, 0, 0)
-                      const newStartDate = new Date(endDateOnly.getTime() - duration * 24 * 60 * 60 * 1000)
-                      // Only update if the calculated date is valid and not before today
-                      if (newStartDate >= today) {
-                        setStartDate(newStartDate)
-                        preservedStartDateRef.current = newStartDate
+                      const checkDate = new Date(date)
+                      checkDate.setHours(0, 0, 0, 0)
+                      
+                      // Disable past dates
+                      if (checkDate < today) return true
+                      
+                      // Normalize date to YYYY-MM-DD format for comparison
+                      const dateStr = normalizeDateToString(checkDate)
+                      
+                      // Check if this date is unavailable by comparing date parts
+                      const isUnavailable = unavailableDates.some((unavailableDateStr) => {
+                        const unavailableDatePart = normalizeDateToString(unavailableDateStr)
+                        return unavailableDatePart === dateStr
+                      })
+                      
+                      if (isUnavailable) return true
+                      
+                      return false
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">End Date</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      'w-full justify-start text-left font-normal text-xs h-9',
+                      !endDate && 'text-muted-foreground',
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-3 w-3" />
+                    {endDate ? formatDateNatural(endDate) : <span>Select end date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={endDate || undefined}
+                    onSelect={(date) => {
+                      if (date) {
+                        // Normalize to start of day
+                        const normalizedDate = new Date(date)
+                        normalizedDate.setHours(0, 0, 0, 0)
+                        
+                        setEndDate(normalizedDate)
+                        packagesSuggestedRef.current = false
+                        
+                        // CRITICAL FIX: Preserve startDate when selecting endDate
+                        // Only adjust startDate if endDate is actually before startDate (user error case)
+                        if (startDate && preservedStartDateRef.current) {
+                          const startDateOnly = new Date(startDate)
+                          startDateOnly.setHours(0, 0, 0, 0)
+                          const endDateOnly = new Date(normalizedDate)
+                          endDateOnly.setHours(0, 0, 0, 0)
+                          
+                          // Only adjust if end date is actually before start date (not equal)
+                          if (endDateOnly < startDateOnly) {
+                            // Calculate new start date based on duration, but don't go before today
+                            const today = new Date()
+                            today.setHours(0, 0, 0, 0)
+                            const newStartDate = new Date(endDateOnly.getTime() - duration * 24 * 60 * 60 * 1000)
+                            // Only update if the calculated date is valid and not before today
+                            if (newStartDate >= today) {
+                              setStartDate(newStartDate)
+                              preservedStartDateRef.current = newStartDate
+                            }
+                          } else {
+                            // If endDate is valid and >= startDate, ensure startDate is preserved
+                            if (preservedStartDateRef.current && startDate.getTime() !== preservedStartDateRef.current.getTime()) {
+                              setStartDate(preservedStartDateRef.current)
+                            }
+                          }
+                        }
                       }
-                    } else {
-                      // If endDate is valid and >= startDate, ensure startDate is preserved
-                      // This prevents iOS Safari from resetting startDate to today
-                      if (preservedStartDateRef.current && startDate.getTime() !== preservedStartDateRef.current.getTime()) {
-                        setStartDate(preservedStartDateRef.current)
-                      }
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  // On blur, ensure we have a valid date (iOS Safari sometimes doesn't fire onChange properly)
-                  const value = e.target.value
-                  if (value && value.trim() !== '') {
-                    const date = new Date(value + 'T00:00:00')
-                    if (!isNaN(date.getTime())) {
-                      setEndDate(date)
-                    }
-                  }
-                  // Ensure startDate is preserved even after endDate blur
-                  if (preservedStartDateRef.current && (!startDate || startDate.getTime() !== preservedStartDateRef.current.getTime())) {
-                    setStartDate(preservedStartDateRef.current)
-                  }
-                }}
-                className="text-xs"
-                min={startDate ? format(startDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')}
-              />
+                    }}
+                    disabled={(date) => {
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      const checkDate = new Date(date)
+                      checkDate.setHours(0, 0, 0, 0)
+                      
+                      // Disable if no start date selected
+                      if (!startDate) return true
+                      
+                      // Disable past dates
+                      if (checkDate < today) return true
+                      
+                      // Disable dates before or equal to start date
+                      const startDateOnly = new Date(startDate)
+                      startDateOnly.setHours(0, 0, 0, 0)
+                      if (checkDate <= startDateOnly) return true
+                      
+                      // Normalize date to YYYY-MM-DD format for comparison
+                      const dateStr = normalizeDateToString(checkDate)
+                      
+                      // Check if this date is unavailable by comparing date parts
+                      const isUnavailable = unavailableDates.some((unavailableDateStr) => {
+                        const unavailableDatePart = normalizeDateToString(unavailableDateStr)
+                        return unavailableDatePart === dateStr
+                      })
+                      
+                      if (isUnavailable) return true
+                      
+                      // Disable if there are unavailable dates between startDate and this date
+                      if (hasUnavailableDateBetween(unavailableDates, startDate, date)) return true
+                      
+                      return false
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           {/* Show suggested dates when unavailable */}
