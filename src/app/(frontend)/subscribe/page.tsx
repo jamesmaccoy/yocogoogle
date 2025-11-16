@@ -404,7 +404,7 @@ export default function SubscribePage() {
           </CardContent>
         </Card>
 
-        <Card className="border-purple-300">
+        <Card className="border-cyan-200">
           <CardHeader>
             <Badge className="w-fit bg-purple-600 text-purple-100">Pro Hosting</Badge>
             <CardTitle className="text-2xl">Annual Pro Plek</CardTitle>
@@ -439,7 +439,7 @@ export default function SubscribePage() {
             <Button
               onClick={() => handleSubscribe(proProduct)}
               disabled={!proProduct || paymentLoading}
-              className="w-full bg-purple-600 hover:bg-purple-500"
+              className="w-full bg-cyan-600 hover:bg-cyan-200"
             >
               {paymentLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {subscriptionStatus.isSubscribed && subscriptionStatus.entitlements.some((entitlement) => entitlement.includes('pro'))
