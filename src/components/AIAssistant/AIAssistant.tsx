@@ -1124,6 +1124,47 @@ ${packages.map((pkg: any, index: number) =>
                     >
                       My Entitlements
                     </Button>
+                    {currentContext?.context === 'booking-details' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          try {
+                            const fromISO = currentContext?.booking?.fromDate
+                            const toISO = currentContext?.booking?.toDate
+                            const from = fromISO ? new Date(fromISO) : null
+                            const to = toISO ? new Date(toISO) : null
+                            const msPerDay = 24 * 60 * 60 * 1000
+                            const nights =
+                              from && to
+                                ? Math.max(1, Math.round((to.getTime() - from.getTime()) / msPerDay))
+                                : undefined
+                            const guestsArr = Array.isArray(currentContext?.guests?.guests)
+                              ? currentContext.guests.guests
+                              : []
+                            const guestCount = guestsArr.length || 0
+                            const guestPhrase =
+                              guestCount > 0
+                                ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}`
+                                : 'guests'
+                            const stayPhrase =
+                              typeof nights === 'number'
+                                ? `${nights} ${nights === 1 ? 'day' : 'days'}`
+                                : 'your stay'
+                            const summary = `Your booking includes ${guestPhrase} for ${stayPhrase}.`
+                            const msg = `Tell me about this booking. ${summary} Please include dates, package, payment status, and the guest list.`
+                            setInput(msg)
+                            handleSubmit(new Event('submit') as any)
+                          } catch {
+                            setInput('Tell me about this booking including the guest list and length of stay')
+                            handleSubmit(new Event('submit') as any)
+                          }
+                        }}
+                      >
+                        Tell me about this booking
+                      </Button>
+                    )}
                     {currentContext?.context === 'post-article' && (
                       <Button
                         size="sm"
@@ -1135,37 +1176,6 @@ ${packages.map((pkg: any, index: number) =>
                         }}
                       >
                         Tell me about my bookings
-                      </Button>
-                    )}
-                    {currentContext?.context === 'booking-details' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs h-6 px-2"
-                        onClick={() => {
-                          try {
-                            const bookingTitle = currentContext?.booking?.title || 'this booking'
-                            const guestNames = Array.isArray(currentContext?.guests?.guests)
-                              ? currentContext.guests.guests
-                                  .map((g: any) => (typeof g === 'object' ? g?.name : g))
-                                  .filter(Boolean)
-                              : []
-                            const customerName = currentContext?.guests?.customer?.name
-                            const uniqueNames = Array.from(new Set([customerName, ...guestNames].filter(Boolean)))
-                            const guestLine =
-                              uniqueNames.length > 0
-                                ? ` Guests: ${uniqueNames.join(', ')}.`
-                                : ''
-                            const msg = `Tell me about ${bookingTitle} including dates, package, payment status, and the guest list.${guestLine}`
-                            setInput(msg)
-                            handleSubmit(new Event('submit') as any)
-                          } catch {
-                            setInput('Tell me about this booking including the guest list')
-                            handleSubmit(new Event('submit') as any)
-                          }
-                        }}
-                      >
-                        Tell me about this booking
                       </Button>
                     )}
                     {currentContext?.context === 'post-article' && (
