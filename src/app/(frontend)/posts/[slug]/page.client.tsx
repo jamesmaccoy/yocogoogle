@@ -43,6 +43,20 @@ const PageClient: React.FC<PageClientProps> = ({ post }) => {
     }
   }
 
+  // Set post context immediately on mount and when post changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const context = getPostContext()
+    if (context) {
+      ;(window as any).postContext = context
+      try {
+        window.dispatchEvent(new CustomEvent('aiPostContextReady', { detail: context }))
+      } catch {
+        // no-op
+      }
+    }
+  }, [post])
+
   return (
     <>
       <AIAssistant />
