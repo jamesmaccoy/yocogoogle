@@ -382,10 +382,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const normalizeDateToString = (date: Date | string): string => {
     if (typeof date === 'string') {
       const datePart = date.split('T')[0]
-      return datePart or ''
+      return datePart || ''
     }
     const isoString = date.toISOString()
-    return isoString.split('T')[0] or ''
+    return isoString.split('T')[0] || ''
   }
 
   // Format date using natural language style (like NaturalLanguageDatePicker)
