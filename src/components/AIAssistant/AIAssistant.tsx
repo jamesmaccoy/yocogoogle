@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Context as AIContextCard, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Bot, Send, X, Mic, MicOff, Lock } from 'lucide-react'
@@ -183,6 +184,17 @@ export const AIAssistant = () => {
     if (typeof content === 'object') {
       // Common rich text shapes: { text }, { children }, blocks with { value }, etc.
       const textParts: string[] = []
+      // Handle explicit line breaks from lexical
+      if ((content as any).type === 'linebreak') {
+        textParts.push('\n')
+      }
+      // Handle autolink nodes that might only carry a URL
+      if ((content as any).type === 'autolink') {
+        const url = (content as any)?.fields?.url
+        if (typeof url === 'string' && url.length > 0) {
+          textParts.push(url)
+        }
+      }
       if (typeof (content as any).text === 'string') {
         textParts.push((content as any).text)
       }
@@ -206,6 +218,39 @@ export const AIAssistant = () => {
       return textParts.filter(Boolean).join('\n')
     }
     return ''
+  }, [])
+
+  const extractAutolinksFromContent = useCallback((content: any): string[] => {
+    const urls: string[] = []
+    const walk = (node: any) => {
+      if (!node) return
+      if (Array.isArray(node)) {
+        node.forEach(walk)
+        return
+      }
+      if (typeof node === 'object') {
+        if (node.type === 'autolink') {
+          const url = node?.fields?.url
+          if (typeof url === 'string' && url.length > 0) {
+            urls.push(url)
+          }
+        }
+        // traverse common keys
+        if (node.children) walk(node.children)
+        if (node.content) walk(node.content)
+        if (node.value) walk(node.value)
+        if (node.fields) walk(node.fields)
+        // scan any other nested objects/arrays
+        for (const v of Object.values(node as Record<string, unknown>)) {
+          if (v && (typeof v === 'object' || Array.isArray(v))) {
+            walk(v as any)
+          }
+        }
+      }
+    }
+    walk(content)
+    // de-dupe
+    return Array.from(new Set(urls))
   }, [])
 
   // Subscribe to token usage updates for UI indicator
@@ -816,7 +861,46 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
         const fullContentTextRaw = extractPlainTextFromContent(postContext.post?.content)
         // Limit to a reasonable length to avoid token overuse while keeping relevance
         const fullContentText = (fullContentTextRaw || 'No content available').split('\n').map((l: string) => l.trim()).filter(Boolean).join('\n')
-        const limitedContentText = fullContentText.length > 12000 ? fullContentText.slice(0, 12000) + '\n[...truncated...]' : fullContentText
+        // Expand content chunk limit to include more of the article body
+        const CONTENT_LIMIT = 60000
+        const limitedContentText = fullContentText.length > CONTENT_LIMIT ? fullContentText.slice(0, CONTENT_LIMIT) + '\n[...truncated...]' : fullContentText
+
+        const categoriesLine =
+          Array.isArray(postContext.post?.categories) && postContext.post?.categories.length > 0
+            ? postContext.post.categories.join(', ')
+            : 'None'
+
+        const hero = postContext.post?.heroImage
+        const heroSummary =
+          hero && typeof hero === 'object'
+            ? `${hero.filename || 'image'}${hero.width && hero.height ? ` (${hero.width}x${hero.height})` : ''}`
+            : 'None'
+
+        const sourceUrls = extractAutolinksFromContent(postContext.post?.content)
+        const sourcesBlock =
+          sourceUrls.length > 0
+            ? `\nSources:\n${sourceUrls.map((u) => `- ${u}`).join('\n')}\n`
+            : ''
+
+        // If user asks for a summary, enrich the instruction to include key aspects
+        const lower = messageToSend.toLowerCase()
+        const isSummaryRequest =
+          lower === 'summarize this page' ||
+          lower === 'tell me about my bookings' ||
+          lower.includes('summarize this article') ||
+          lower.includes('summary')
+        const enrichedUserQuestion = isSummaryRequest
+          ? `Summarize the property using the article content. Include:
+- vibe and who it's ideal for
+- suitability for children and families (sleeping arrangements, provisions)
+- location clues (e.g., Llandudno / beach proximity)
+- minimum stay requirements
+- key amenities and features
+- notable house rules or restrictions (e.g., no BBQ/candles/fires)
+- notable categories: ${categoriesLine}
+- any standout details users should know
+Finish with a concise, guest-friendly blurb.`
+          : messageToSend
 
         const contextString = `
 Article Context:
@@ -824,6 +908,10 @@ Article Context:
 - Description: ${postContext.post?.description || 'No description'}
 - Base Rate: ${postContext.post?.baseRate ? `R${postContext.post.baseRate}` : 'Not set'}
 - Related Posts: ${postContext.post?.relatedPosts?.map((p: any) => p.title || p).join(', ') || 'None'}
+- Categories: ${categoriesLine}
+- Hero Image: ${heroSummary}
+ - Hero Image: ${heroSummary}
+${sourcesBlock}
 
 Full Article Content:
 ${limitedContentText}
@@ -833,7 +921,7 @@ ${limitedContentText}
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: `${contextString}\n\nUser question: ${messageToSend}`,
+            message: `${contextString}\n\nUser question: ${enrichedUserQuestion}`,
             context: 'post-article'
           }),
         })
@@ -980,11 +1068,10 @@ ${packages.map((pkg: any, index: number) =>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">AI Assistant</h3>
               <div className="flex items-center gap-3">
-                {lastUsage && lastUsage.total != null && (
-                  <div className="text-[10px] leading-none px-2 py-1 rounded bg-muted text-muted-foreground">
-                    Tokens: {formatUsageInline(lastUsage)}
-                  </div>
-                )}
+                <AIContextCard usage={lastUsage || undefined}>
+                  <ContextTrigger />
+                  <ContextContent />
+                </AIContextCard>
                 {!isLoggedIn && (
                   <div className="flex items-center gap-1 text-xs text-amber-600">
                     <Lock className="h-3 w-3" />
@@ -1036,6 +1123,32 @@ ${packages.map((pkg: any, index: number) =>
                     >
                       My Entitlements
                     </Button>
+                    {currentContext?.context === 'post-article' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          setInput('Tell me about my bookings')
+                          handleSubmit(new Event('submit') as any)
+                        }}
+                      >
+                        Tell me about my bookings
+                      </Button>
+                    )}
+                    {currentContext?.context === 'post-article' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          setInput('Summarize this page')
+                          handleSubmit(new Event('submit') as any)
+                        }}
+                      >
+                        Summarize this page
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

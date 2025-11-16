@@ -38,7 +38,11 @@ const PageClient: React.FC<PageClientProps> = ({ post }) => {
         description: post.meta?.description || '',
         content: post.content,
         baseRate: post.baseRate,
-        relatedPosts: post.relatedPosts || []
+        relatedPosts: post.relatedPosts || [],
+        categories: Array.isArray(post.categories)
+          ? post.categories.map((c: any) => (typeof c === 'object' ? c.title || c.slug : c))
+          : [],
+        heroImage: post.heroImage
       }
     }
   }
