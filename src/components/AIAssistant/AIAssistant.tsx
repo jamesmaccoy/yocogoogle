@@ -169,6 +169,42 @@ export const AIAssistant = () => {
   const activeThreadRef = useRef(0)
   const historyKeyRef = useRef<string | null>(null)
 
+  // Naive rich content -> plain text extractor for Payload/lexical-like trees
+  const extractPlainTextFromContent = useCallback((content: any, depth = 0): string => {
+    if (content == null) return ''
+    if (typeof content === 'string') return content
+    if (typeof content === 'number' || typeof content === 'boolean') return String(content)
+    if (Array.isArray(content)) {
+      return content.map((c) => extractPlainTextFromContent(c, depth + 1)).filter(Boolean).join('\n')
+    }
+    if (typeof content === 'object') {
+      // Common rich text shapes: { text }, { children }, blocks with { value }, etc.
+      const textParts: string[] = []
+      if (typeof (content as any).text === 'string') {
+        textParts.push((content as any).text)
+      }
+      if ((content as any).children) {
+        textParts.push(extractPlainTextFromContent((content as any).children, depth + 1))
+      }
+      // Some Payload blocks store content under fields like "content", "value", or "fields"
+      const candidateKeys = ['content', 'value', 'fields', 'data']
+      for (const key of candidateKeys) {
+        if ((content as any)[key] && typeof (content as any)[key] !== 'function') {
+          textParts.push(extractPlainTextFromContent((content as any)[key], depth + 1))
+        }
+      }
+      // Fallback: scan other string props
+      for (const [k, v] of Object.entries(content as Record<string, unknown>)) {
+        if (k === 'text' || candidateKeys.includes(k) || k === 'children') continue
+        if (typeof v === 'string' && v.trim().length > 0) {
+          textParts.push(v)
+        }
+      }
+      return textParts.filter(Boolean).join('\n')
+    }
+    return ''
+  }, [])
+
   const beginNewThread = useCallback(
     (initialMessages: Message[] = []) => {
       const nextThreadId = activeThreadRef.current + 1
@@ -292,12 +328,15 @@ export const AIAssistant = () => {
     }
 
     window.addEventListener('openAIAssistant', handleOpenAIAssistant as EventListener)
+    // Ensure we also pick up contexts that are set on the window 'load' event
+    window.addEventListener('load', checkContext)
     
     // Check for context after a short delay to ensure it's set
     const timeoutId = setTimeout(checkContext, 100)
     
     return () => {
       window.removeEventListener('openAIAssistant', handleOpenAIAssistant as EventListener)
+      window.removeEventListener('load', checkContext)
       clearTimeout(timeoutId)
     }
   }, [isLoggedIn])
@@ -719,6 +758,11 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
         const postContext = currentContext
 
         // Create a comprehensive context string for the AI
+        const fullContentTextRaw = extractPlainTextFromContent(postContext.post?.content)
+        // Limit to a reasonable length to avoid token overuse while keeping relevance
+        const fullContentText = (fullContentTextRaw || 'No content available').split('\n').map((l: string) => l.trim()).filter(Boolean).join('\n')
+        const limitedContentText = fullContentText.length > 12000 ? fullContentText.slice(0, 12000) + '\n[...truncated...]' : fullContentText
+
         const contextString = `
 Article Context:
 - Title: ${postContext.post?.title || 'Unknown title'}
@@ -727,7 +771,7 @@ Article Context:
 - Related Posts: ${postContext.post?.relatedPosts?.map((p: any) => p.title || p).join(', ') || 'None'}
 
 Full Article Content:
-${JSON.stringify(postContext.post?.content || 'No content available')}
+${limitedContentText}
         `
 
         const response = await fetch('/api/chat', {
