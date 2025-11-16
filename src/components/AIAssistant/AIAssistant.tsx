@@ -891,8 +891,9 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
           lower.includes('summary')
         const enrichedUserQuestion = isSummaryRequest
           ? `Summarize the property using the article content. Include:
-- vibe and who it's ideal for
+- guest-focused highlights first: who it’s perfect for (couples, families, groups), typical group size, and guest vibe
 - suitability for children and families (sleeping arrangements, provisions)
+- accessibility or ease-of-stay considerations if implied
 - location clues (e.g., Llandudno / beach proximity)
 - minimum stay requirements
 - key amenities and features
@@ -1134,6 +1135,37 @@ ${packages.map((pkg: any, index: number) =>
                         }}
                       >
                         Tell me about my bookings
+                      </Button>
+                    )}
+                    {currentContext?.context === 'booking-details' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          try {
+                            const bookingTitle = currentContext?.booking?.title || 'this booking'
+                            const guestNames = Array.isArray(currentContext?.guests?.guests)
+                              ? currentContext.guests.guests
+                                  .map((g: any) => (typeof g === 'object' ? g?.name : g))
+                                  .filter(Boolean)
+                              : []
+                            const customerName = currentContext?.guests?.customer?.name
+                            const uniqueNames = Array.from(new Set([customerName, ...guestNames].filter(Boolean)))
+                            const guestLine =
+                              uniqueNames.length > 0
+                                ? ` Guests: ${uniqueNames.join(', ')}.`
+                                : ''
+                            const msg = `Tell me about ${bookingTitle} including dates, package, payment status, and the guest list.${guestLine}`
+                            setInput(msg)
+                            handleSubmit(new Event('submit') as any)
+                          } catch {
+                            setInput('Tell me about this booking including the guest list')
+                            handleSubmit(new Event('submit') as any)
+                          }
+                        }}
+                      >
+                        Tell me about this booking
                       </Button>
                     )}
                     {currentContext?.context === 'post-article' && (
