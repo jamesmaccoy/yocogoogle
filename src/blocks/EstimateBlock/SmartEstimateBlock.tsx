@@ -2380,7 +2380,6 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                         if (endDate && normalizedDate > endDate) {
                           setEndDate(new Date(normalizedDate.getTime() + duration * 24 * 60 * 60 * 1000))
                         }
-                        }
                       }
                     }}
                     disabled={(date) => {
