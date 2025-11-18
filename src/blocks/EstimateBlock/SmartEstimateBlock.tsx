@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2 } from 'lucide-react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
@@ -200,6 +202,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [duration, setDuration] = useState(1)
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
+  const [showPerHourPackages, setShowPerHourPackages] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
@@ -1554,6 +1557,13 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         }
       }
       
+      // Filter for per-hour packages (1 night duration) if toggle is on
+      if (showPerHourPackages) {
+        suitablePackages = suitablePackages.filter((pkg: any) => {
+          return pkg.minNights === 1 && pkg.maxNights === 1
+        })
+      }
+      
       // Sort packages by relevance and select top 3
       const sortedPackages = suitablePackages.sort((a: any, b: any) => {
         
@@ -2535,7 +2545,30 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               </Suggestions>
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md">
+              <Switch
+                id="per-hour-toggle"
+                checked={showPerHourPackages}
+                onCheckedChange={(checked) => {
+                  setShowPerHourPackages(checked)
+                  if (checked) {
+                    // Set dates to 1 night when toggle is enabled
+                    const today = new Date()
+                    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+                    const endDate = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000) // 1 night
+                    setStartDate(tomorrow)
+                    setEndDate(endDate)
+                    setDuration(1)
+                    // Reset to allow new package suggestions
+                    packagesSuggestedRef.current = false
+                  }
+                }}
+              />
+              <Label htmlFor="per-hour-toggle" className="text-xs cursor-pointer">
+                per hour
+              </Label>
+            </div>
             <Button 
               size="sm" 
               variant="outline"
@@ -2545,6 +2578,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 const endDate = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000) // 3 nights
                 setStartDate(tomorrow)
                 setEndDate(endDate)
+                setShowPerHourPackages(false) // Turn off per-hour toggle
                 // Reset to allow new package suggestions
                 packagesSuggestedRef.current = false
               }}
@@ -2560,6 +2594,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 const endDate = new Date(nextWeek.getTime() + 5 * 24 * 60 * 60 * 1000) // 5 nights
                 setStartDate(nextWeek)
                 setEndDate(endDate)
+                setShowPerHourPackages(false) // Turn off per-hour toggle
                 // Reset to allow new package suggestions
                 packagesSuggestedRef.current = false
               }}
