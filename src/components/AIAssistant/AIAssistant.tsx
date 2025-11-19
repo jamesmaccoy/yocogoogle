@@ -15,6 +15,7 @@ import { useSubscription } from '@/hooks/useSubscription'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import {
   Plan,
   PlanHeader,
@@ -27,6 +28,7 @@ import {
 } from '@/components/ai-elements/plan'
 import {
   PromptInput,
+  PromptInputHeader,
   PromptInputBody,
   PromptInputTextarea,
   PromptInputFooter,
@@ -193,6 +195,7 @@ export const AIAssistant = () => {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
+  const [dateSuggestions, setDateSuggestions] = useState<Array<{ startDate: Date; endDate: Date; label: string }>>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
   const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -303,6 +306,110 @@ export const AIAssistant = () => {
       window.removeEventListener('aiTokenUsage', handler as EventListener)
     }
   }, [])
+
+  // Generate date suggestions when on a post page
+  useEffect(() => {
+    const generateDateSuggestions = async () => {
+      if (currentContext?.context !== 'post-article' || !currentContext?.post?.id || !isLoggedIn) {
+        setDateSuggestions([])
+        return
+      }
+
+      try {
+        const postId = currentContext.post.id
+        const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`, {
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          setDateSuggestions([])
+          return
+        }
+
+        const data = await response.json()
+        const unavailableDates = new Set(data.unavailableDates || [])
+
+        // Generate date suggestions for common durations
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const suggestions: Array<{ startDate: Date; endDate: Date; label: string }> = []
+
+        // Helper to normalize dates to midnight UTC (matching check-availability.ts)
+        const normalizeDate = (date: Date): Date => {
+          const normalized = new Date(date)
+          normalized.setUTCHours(0, 0, 0, 0)
+          return normalized
+        }
+
+        // Helper to check if a date range conflicts with unavailable dates
+        const hasConflict = (testStart: Date, testEnd: Date): boolean => {
+          const checkDate = new Date(testStart)
+          while (checkDate < testEnd) {
+            const dateStr = checkDate.toISOString()
+            if (unavailableDates.has(dateStr)) {
+              return true
+            }
+            checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+          }
+          return false
+        }
+
+        // Generate suggestions for 3, 5, and 7 night stays
+        // Spread them across different months for variety
+        const durations = [3, 5, 7]
+        const todayNormalized = normalizeDate(today)
+        
+        // Target dates spread across months: 1 week, 1 month, 2 months from now
+        const targetDates = [
+          new Date(todayNormalized.getTime() + 7 * 24 * 60 * 60 * 1000),   // ~1 week
+          new Date(todayNormalized.getTime() + 30 * 24 * 60 * 60 * 1000),  // ~1 month
+          new Date(todayNormalized.getTime() + 60 * 24 * 60 * 60 * 1000),  // ~2 months
+        ]
+
+        for (const targetDate of targetDates) {
+          for (const nights of durations) {
+            // Look for available dates around the target date (±7 days)
+            const searchWindow = 7
+            let found = false
+            
+            for (let offset = 0; offset <= searchWindow && !found; offset++) {
+              // Try dates before and after target
+              for (const direction of [-1, 1]) {
+                const startDate = new Date(targetDate)
+                startDate.setUTCDate(startDate.getUTCDate() + (offset * direction))
+                const endDate = new Date(startDate)
+                endDate.setUTCDate(endDate.getUTCDate() + nights)
+
+                // Ensure dates are in the future
+                if (startDate < todayNormalized) continue
+
+                if (!hasConflict(startDate, endDate)) {
+                  const startStr = format(startDate, 'MMM d')
+                  const endStr = format(endDate, 'MMM d')
+                  suggestions.push({
+                    startDate,
+                    endDate,
+                    label: `${startStr} - ${endStr}`,
+                  })
+                  found = true
+                  break
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by start date and limit to 6 suggestions
+        suggestions.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+        setDateSuggestions(suggestions.slice(0, 6))
+      } catch (error) {
+        console.error('Error generating date suggestions:', error)
+        setDateSuggestions([])
+      }
+    }
+
+    generateDateSuggestions()
+  }, [currentContext, isLoggedIn])
 
   const formatUsageInline = (usage: TokenUsageDetails | null) => {
     if (!usage || usage.total == null) return null
@@ -1870,6 +1977,25 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               onSubmit={handlePromptSubmit} 
               className="mt-2"
             >
+              {currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
+                <PromptInputHeader className="pb-2">
+                  <Suggestions>
+                    {dateSuggestions.map((suggestion, idx) => (
+                      <Suggestion
+                        key={idx}
+                        suggestion={suggestion.label}
+                        onClick={(label) => {
+                          const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
+                          const toStr = format(suggestion.endDate, 'MMM d, yyyy')
+                          const nights = Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000))
+                          setInput(`Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`)
+                        }}
+                        className="text-xs"
+                      />
+                    ))}
+                  </Suggestions>
+                </PromptInputHeader>
+              )}
               <PromptInputBody>
                 <PromptInputTextarea
                   ref={textareaRef}
