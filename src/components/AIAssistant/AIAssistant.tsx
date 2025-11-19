@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Bot, Send, X, Mic, MicOff, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserContext } from '@/context/UserContext'
+import { useSubscription } from '@/hooks/useSubscription'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
@@ -98,8 +99,15 @@ interface TokenUsageDetails {
 export const AIAssistant = () => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
+  const { isSubscribed } = useSubscription()
   const router = useRouter()
   const pathname = usePathname()
+  
+  // Determine if user has standard or pro subscription
+  const userRole = Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean)
+  const isHostOrAdmin = userRole.includes('host') || userRole.includes('admin')
+  const subscriptionPlan = currentUser?.subscriptionStatus?.plan || 'none'
+  const hasStandardOrPro = isSubscribed && (subscriptionPlan === 'standard' || subscriptionPlan === 'pro' || isHostOrAdmin)
   
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
     if (!usage || typeof usage !== 'object') return null
@@ -911,7 +919,6 @@ Article Context:
 - Related Posts: ${postContext.post?.relatedPosts?.map((p: any) => p.title || p).join(', ') || 'None'}
 - Categories: ${categoriesLine}
 - Hero Image: ${heroSummary}
- - Hero Image: ${heroSummary}
 ${sourcesBlock}
 
 Full Article Content:
@@ -1012,6 +1019,120 @@ ${packages.map((pkg: any, index: number) =>
           }
           appendMessageToThread(threadId, assistantMessage)
           speakSafely('Error fetching debug information.')
+        }
+      } else if (
+        (messageToSend.toLowerCase().includes('both') && 
+         (messageToSend.toLowerCase().includes('available') || messageToSend.toLowerCase().includes('availability'))) ||
+        messageToSend.toLowerCase().includes('when are both') ||
+        messageToSend.toLowerCase().includes('simultaneously') ||
+        messageToSend.toLowerCase().includes('at the same time')
+      ) {
+        // Handle multi-post availability queries
+        try {
+          // Extract post names/slugs from the message
+          const lowerMessage = messageToSend.toLowerCase()
+          
+          // Try to find post names in the message (e.g., "the shack and sea side cottage")
+          // This is a simple extraction - could be enhanced with NLP
+          const postMatches = messageToSend.match(/(?:the\s+)?([a-z\s]+?)(?:\s+and\s+(?:the\s+)?([a-z\s]+?))?(?:\s+available|availability|sleep|both)/i)
+          
+          if (!postMatches) {
+            // Fallback: ask user to specify posts
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'I can help you check availability for multiple properties! Please specify which properties you\'d like to check (e.g., "the shack and sea side cottage"). You can provide post names, slugs, or IDs.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('Please specify which properties you\'d like to check.')
+            return
+          }
+
+          // For now, use the chat API to help extract post IDs from names
+          // In a production system, you'd want a more robust post name/slug lookup
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `User is asking about availability for multiple properties. Message: "${messageToSend}". 
+              
+Please help identify which posts/properties they're referring to. If you can identify post names, slugs, or IDs from the message, provide them. Otherwise, ask the user to clarify which properties they mean.
+
+The user wants to know when multiple properties are available at the same time.`,
+              context: 'multi-post-availability'
+            }),
+          })
+
+          const data = await response.json()
+          if (activeThreadRef.current !== threadId) return
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent = data.message || data.response || 'I can help you check availability for multiple properties. Please specify which properties you\'d like to check (e.g., "the shack and sea side cottage").'
+
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(baseContent)
+        } catch (error) {
+          console.error('Multi-post availability error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while checking multi-property availability. Please try again.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error checking multi-property availability.')
+        }
+      } else if (
+        isHostOrAdmin && (
+          messageToSend.toLowerCase().includes('cleaner') ||
+          messageToSend.toLowerCase().includes('cleaning') ||
+          messageToSend.toLowerCase().includes('send') && messageToSend.toLowerCase().includes('cleaner')
+        )
+      ) {
+        // Handle cleaning schedule queries for hosts
+        try {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `As a host, I'm asking about cleaning schedules. ${messageToSend}
+
+Please help me understand:
+- When to send cleaners based on booking check-out dates
+- How many cleaners to send (e.g., "send 1 cleaner instead of 2")
+- Cleaning schedule optimization
+
+If I mentioned specific bookings or dates, please reference them.`,
+              context: 'cleaning-schedule',
+              userRole: isHostOrAdmin ? 'host' : 'admin'
+            }),
+          })
+
+          const data = await response.json()
+          if (activeThreadRef.current !== threadId) return
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent = data.message || data.response || 'I can help you with cleaning schedules. Please provide more details about which bookings or dates you\'re referring to.'
+
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(baseContent)
+        } catch (error) {
+          console.error('Cleaning schedule error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while processing your cleaning schedule query. Please try again.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error processing cleaning schedule query.')
         }
       } else {
         // Regular chat API call
@@ -1165,7 +1286,7 @@ ${packages.map((pkg: any, index: number) =>
                         Tell me about this booking
                       </Button>
                     )}
-                    {currentContext?.context === 'post-article' && (
+                    {currentContext?.context === 'post-article' && hasStandardOrPro && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1178,7 +1299,7 @@ ${packages.map((pkg: any, index: number) =>
                         Tell me about my bookings
                       </Button>
                     )}
-                    {currentContext?.context === 'post-article' && (
+                    {currentContext?.context === 'post-article' && hasStandardOrPro && (
                       <Button
                         size="sm"
                         variant="outline"
