@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
+import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Context as AIContextCard, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
 import { Card } from '@/components/ui/card'
@@ -1029,15 +1030,42 @@ ${packages.map((pkg: any, index: number) =>
       ) {
         // Handle multi-post availability queries
         try {
-          // Extract post names/slugs from the message
-          const lowerMessage = messageToSend.toLowerCase()
+          // First, use chat API to help identify post names from the message
+          const chatResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `I need to identify which properties the user is asking about. User message: "${messageToSend}"
+
+Please extract the property/post names mentioned. Respond ONLY with a JSON array of property names/slugs you can identify, like: ["the-shack", "sea-side-cottage"] or ["The Shack", "Seaside Cottage"]. If you can't identify specific properties, respond with an empty array: [].`,
+              context: 'multi-post-availability-extraction'
+            }),
+          })
+
+          const chatData = await chatResponse.json()
+          const extractionText = chatData.message || chatData.response || '[]'
           
-          // Try to find post names in the message (e.g., "the shack and sea side cottage")
-          // This is a simple extraction - could be enhanced with NLP
-          const postMatches = messageToSend.match(/(?:the\s+)?([a-z\s]+?)(?:\s+and\s+(?:the\s+)?([a-z\s]+?))?(?:\s+available|availability|sleep|both)/i)
-          
-          if (!postMatches) {
-            // Fallback: ask user to specify posts
+          // Try to parse JSON from the response
+          let postIdentifiers: string[] = []
+          try {
+            // Try to extract JSON array from the response
+            const jsonMatch = extractionText.match(/\[.*?\]/s)
+            if (jsonMatch) {
+              postIdentifiers = JSON.parse(jsonMatch[0])
+            }
+          } catch (e) {
+            // If parsing fails, try to extract post names manually
+            const lowerMessage = messageToSend.toLowerCase()
+            // Look for common patterns like "the shack and sea side cottage"
+            const matches = messageToSend.match(/(?:the\s+)?([a-z\s-]+?)(?:\s+and\s+(?:the\s+)?([a-z\s-]+?))?(?:\s+available|availability|sleep|both|simultaneously)/i)
+            if (matches) {
+              if (matches[1]) postIdentifiers.push(matches[1].trim())
+              if (matches[2]) postIdentifiers.push(matches[2].trim())
+            }
+          }
+
+          if (postIdentifiers.length < 2) {
+            // Ask user to clarify
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'I can help you check availability for multiple properties! Please specify which properties you\'d like to check (e.g., "the shack and sea side cottage"). You can provide post names, slugs, or IDs.',
@@ -1047,40 +1075,141 @@ ${packages.map((pkg: any, index: number) =>
             return
           }
 
-          // For now, use the chat API to help extract post IDs from names
-          // In a production system, you'd want a more robust post name/slug lookup
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: `User is asking about availability for multiple properties. Message: "${messageToSend}". 
+          // Look up post IDs from names/slugs
+          const postIdPromises = postIdentifiers.map(async (identifier: string) => {
+            try {
+              // Try to find by slug first (normalize to slug format)
+              const slug = identifier.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+              const response = await fetch(`/api/posts/search?slug=${encodeURIComponent(slug)}`, {
+                credentials: 'include',
+              })
+              if (response.ok) {
+                const data = await response.json()
+                if (data.docs && data.docs.length > 0) {
+                  return data.docs[0].id
+                }
+              }
               
-Please help identify which posts/properties they're referring to. If you can identify post names, slugs, or IDs from the message, provide them. Otherwise, ask the user to clarify which properties they mean.
-
-The user wants to know when multiple properties are available at the same time.`,
-              context: 'multi-post-availability'
-            }),
+              // Try to find by title/name
+              const titleResponse = await fetch(`/api/posts/search?title=${encodeURIComponent(identifier)}`, {
+                credentials: 'include',
+              })
+              if (titleResponse.ok) {
+                const titleData = await titleResponse.json()
+                if (titleData.docs && titleData.docs.length > 0) {
+                  return titleData.docs[0].id
+                }
+              }
+            } catch (e) {
+              console.error(`Error looking up post: ${identifier}`, e)
+            }
+            return null
           })
 
-          const data = await response.json()
-          if (activeThreadRef.current !== threadId) return
-          const usage = normalizeTokenUsage(data.usage)
-          const baseContent = data.message || data.response || 'I can help you check availability for multiple properties. Please specify which properties you\'d like to check (e.g., "the shack and sea side cottage").'
+          const postIds = (await Promise.all(postIdPromises)).filter((id): id is string => id !== null)
 
-          persistTokenUsage(usage)
+          if (postIds.length < 2) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `I couldn't find both properties you mentioned. I found ${postIds.length} of ${postIdentifiers.length} properties. Please check the property names and try again, or provide post IDs directly.`,
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('I couldn\'t find both properties. Please check the names and try again.')
+            return
+          }
+
+          // Call the multi-post availability endpoint
+          const availabilityResponse = await fetch(
+            `/api/bookings/multi-post-availability?postIds=${postIds.join(',')}`,
+            {
+              credentials: 'include',
+            }
+          )
+
+          if (!availabilityResponse.ok) {
+            throw new Error('Failed to fetch availability data')
+          }
+
+          const availabilityData = await availabilityResponse.json()
+          
+          // Process the data to find when both are available
+          const unavailableInAnyPost = new Set(availabilityData.unavailableInAnyPost || [])
+          
+          // Get post details
+          const postDetails = availabilityData.posts || []
+          const postNames = postDetails.map((p: any) => p.title).join(' and ')
+          
+          // Calculate available date ranges (simplified - show next 90 days)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const futureDate = new Date(today)
+          futureDate.setDate(futureDate.getDate() + 90)
+          
+          const availableRanges: Array<{ start: Date; end: Date }> = []
+          let currentRangeStart: Date | null = null
+          
+          const checkDate = new Date(today)
+          while (checkDate <= futureDate) {
+            const dateStr = checkDate.toISOString()
+            const isUnavailable = unavailableInAnyPost.has(dateStr)
+            
+            if (!isUnavailable && !currentRangeStart) {
+              // Start of available range
+              currentRangeStart = new Date(checkDate)
+            } else if (isUnavailable && currentRangeStart) {
+              // End of available range
+              availableRanges.push({
+                start: currentRangeStart,
+                end: new Date(checkDate.getTime() - 24 * 60 * 60 * 1000), // Previous day
+              })
+              currentRangeStart = null
+            }
+            
+            checkDate.setDate(checkDate.getDate() + 1)
+          }
+          
+          // If we ended in an available range, close it
+          if (currentRangeStart) {
+            availableRanges.push({
+              start: currentRangeStart,
+              end: futureDate,
+            })
+          }
+
+          // Format the response
+          let responseText = `I checked availability for **${postNames}**. Here's when both properties are available simultaneously:\n\n`
+          
+          if (availableRanges.length === 0) {
+            responseText += '❌ **No overlapping availability found** in the next 90 days. Both properties have conflicting bookings.\n\n'
+          } else {
+            responseText += `✅ **Found ${availableRanges.length} available period${availableRanges.length > 1 ? 's' : ''}** when both properties are free:\n\n`
+            
+            availableRanges.slice(0, 10).forEach((range, idx) => {
+              const startStr = format(range.start, 'MMM d, yyyy')
+              const endStr = format(range.end, 'MMM d, yyyy')
+              const nights = Math.ceil((range.end.getTime() - range.start.getTime()) / (24 * 60 * 60 * 1000))
+              responseText += `${idx + 1}. **${startStr}** to **${endStr}** (${nights} night${nights !== 1 ? 's' : ''})\n`
+            })
+            
+            if (availableRanges.length > 10) {
+              responseText += `\n...and ${availableRanges.length - 10} more period${availableRanges.length - 10 > 1 ? 's' : ''}.\n`
+            }
+          }
+          
+          responseText += `\n💡 **Tip:** Both properties can sleep 2 people each, so booking both together gives you capacity for 4 guests!`
 
           const assistantMessage: Message = {
             role: 'assistant',
-            content: appendUsageToContent(baseContent, usage),
+            content: responseText,
           }
           appendMessageToThread(threadId, assistantMessage)
-          speakSafely(baseContent)
+          speakSafely(`I found ${availableRanges.length} available period${availableRanges.length !== 1 ? 's' : ''} when both properties are free.`)
         } catch (error) {
           console.error('Multi-post availability error:', error)
           if (activeThreadRef.current !== threadId) return
           const assistantMessage: Message = {
             role: 'assistant',
-            content: 'Sorry, I encountered an error while checking multi-property availability. Please try again.',
+            content: 'Sorry, I encountered an error while checking multi-property availability. Please try again or specify the property names more clearly.',
           }
           appendMessageToThread(threadId, assistantMessage)
           speakSafely('Error checking multi-property availability.')
