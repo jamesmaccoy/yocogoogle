@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
 import { format } from 'date-fns'
@@ -78,6 +78,18 @@ declare global {
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  propertySuggestions?: {
+    fromDate: string
+    toDate: string
+    properties: Array<{
+      id: string
+      title: string
+      slug: string
+      description?: string
+      baseRate?: number
+      categories?: string
+    }>
+  }
 }
 
 interface PackageSuggestion {
@@ -1469,9 +1481,26 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
 
           persistTokenUsage(usage)
 
+          // Prepare property suggestions data for Plan component
+          const propertySuggestionsData = {
+            fromDate: fromStr,
+            toDate: toStr,
+            properties: availablePosts.map((p: any) => ({
+              id: p.id,
+              title: p.title,
+              slug: p.slug || p.id,
+              description: p.meta?.description || '',
+              baseRate: p.baseRate,
+              categories: Array.isArray(p.categories) 
+                ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
+                : 'None',
+            })),
+          }
+
           const assistantMessage: Message = {
             role: 'assistant',
             content: appendUsageToContent(baseContent, usage),
+            propertySuggestions: propertySuggestionsData,
           }
           appendMessageToThread(threadId, assistantMessage)
           speakSafely(`I found ${availablePosts.length} other properties available for your dates.`)
@@ -1702,11 +1731,76 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               )}
               
               {messages.map((message, index) => (
-                <Message key={index} from={message.role}>
-                  <MessageContent>
-                    <MessageResponse>{message.content || ''}</MessageResponse>
-                  </MessageContent>
-                </Message>
+                <React.Fragment key={index}>
+                  <Message from={message.role}>
+                    <MessageContent>
+                      <MessageResponse>{message.content || ''}</MessageResponse>
+                    </MessageContent>
+                  </Message>
+                  {message.propertySuggestions && message.propertySuggestions.properties.length > 0 && (
+                    <div className="mb-4">
+                      <Plan defaultOpen={true}>
+                        <PlanHeader>
+                          <PlanTitle>
+                            {`Available Properties for ${message.propertySuggestions.fromDate} to ${message.propertySuggestions.toDate}`}
+                          </PlanTitle>
+                          <PlanDescription>
+                            {`${message.propertySuggestions.properties.length} properties available for your selected dates`}
+                          </PlanDescription>
+                        </PlanHeader>
+                        <PlanTrigger>View Properties</PlanTrigger>
+                        <PlanContent>
+                          <div className="space-y-4">
+                            {(() => {
+                              const suggestions = message.propertySuggestions!
+                              const fromDateParam = new Date(suggestions.fromDate).toISOString().split('T')[0]
+                              const toDateParam = new Date(suggestions.toDate).toISOString().split('T')[0]
+                              
+                              return suggestions.properties.map((property, idx) => {
+                                const basePostUrl = property.slug ? `/posts/${property.slug}` : `/posts/${property.id}`
+                                // Add date parameters to the URL
+                                const postUrl = `${basePostUrl}?fromDate=${fromDateParam}&toDate=${toDateParam}`
+                                return (
+                                  <div key={property.id} className="border-b pb-4 last:border-0 last:pb-0">
+                                    <h4 className="font-semibold mb-2">
+                                      <a 
+                                        href={postUrl} 
+                                        className="text-primary hover:underline"
+                                      >
+                                        {idx + 1}. {property.title}
+                                      </a>
+                                    </h4>
+                                    {property.description && (
+                                      <p className="text-sm text-muted-foreground mb-2">
+                                        {property.description}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mb-2">
+                                      {property.baseRate && (
+                                        <span>Base Rate: R{property.baseRate}</span>
+                                      )}
+                                      {property.categories && property.categories !== 'None' && (
+                                        <span>Categories: {property.categories}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mb-2">
+                                      <span>Available: {suggestions.fromDate} to {suggestions.toDate}</span>
+                                    </div>
+                                    <div className="mt-2">
+                                      <PlanAction asChild size="sm" variant="outline">
+                                        <a href={postUrl}>View Property with Dates</a>
+                                      </PlanAction>
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            })()}
+                          </div>
+                        </PlanContent>
+                      </Plan>
+                    </div>
+                  )}
+                </React.Fragment>
               ))}
               {isLoading && (
                 <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">

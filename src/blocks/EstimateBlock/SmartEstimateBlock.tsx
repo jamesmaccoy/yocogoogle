@@ -652,6 +652,35 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     // Load unavailable dates for the post
     loadUnavailableDates()
     
+    // Check for fromDate and toDate URL parameters (from property suggestions)
+    const fromDateParam = searchParams?.get('fromDate')
+    const toDateParam = searchParams?.get('toDate')
+    if (fromDateParam && toDateParam && !restored) {
+      try {
+        const from = new Date(fromDateParam)
+        const to = new Date(toDateParam)
+        
+        // Validate dates
+        if (!isNaN(from.getTime()) && !isNaN(to.getTime()) && to > from) {
+          const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+          
+          setStartDate(from)
+          setEndDate(to)
+          setDuration(calcDuration)
+          
+          // Clear URL parameters after setting dates
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('fromDate')
+            url.searchParams.delete('toDate')
+            router.replace(url.pathname + url.search, { scroll: false })
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing date parameters:', error)
+      }
+    }
+    
     // Check for restoreEstimate URL parameter
     const restoreEstimateId = searchParams?.get('restoreEstimate')
     if (restoreEstimateId && isLoggedIn && !restored) {
