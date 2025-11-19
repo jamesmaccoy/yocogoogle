@@ -16,6 +16,16 @@ import { Conversation, ConversationContent, ConversationScrollButton } from '@/c
 import { Loader } from '@/components/ai-elements/loader'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
 import {
+  Plan,
+  PlanHeader,
+  PlanTitle,
+  PlanDescription,
+  PlanTrigger,
+  PlanContent,
+  PlanFooter,
+  PlanAction,
+} from '@/components/ai-elements/plan'
+import {
   PromptInput,
   PromptInputBody,
   PromptInputTextarea,
@@ -1414,6 +1424,20 @@ If I mentioned specific bookings or dates, please reference them.`,
             return
           }
           
+          // Build property list with links
+          const propertyList = availablePosts.map((p: any, idx: number) => {
+            const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
+            const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${postUrl}` : postUrl
+            const categories = Array.isArray(p.categories) 
+              ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
+              : 'None'
+            return `${idx + 1}. **[${p.title}](${postUrl})** - [View Property](${postUrl})
+   - **Link:** [${fullUrl}](${postUrl})
+   - **Description:** ${p.meta?.description || 'No description'}
+   - **Base Rate:** ${p.baseRate ? `R${p.baseRate}` : 'Not set'}
+   - **Categories:** ${categories}`
+          }).join('\n\n')
+
           // Use chat API to format a nice response with property details and links
           const response = await fetch('/api/chat', {
             method: 'POST',
@@ -1421,19 +1445,9 @@ If I mentioned specific bookings or dates, please reference them.`,
             body: JSON.stringify({
               message: `User has dates ${fromStr} to ${toStr}. I found ${availablePosts.length} other properties available for these exact dates:
 
-${availablePosts.map((p: any, idx: number) => {
-  const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
-  const categories = Array.isArray(p.categories) 
-    ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
-    : 'None'
-  return `${idx + 1}. **[${p.title}](${postUrl})**
-   - Link: ${postUrl}
-   - Description: ${p.meta?.description || 'No description'}
-   - Base Rate: ${p.baseRate ? `R${p.baseRate}` : 'Not set'}
-   - Categories: ${categories}`
-}).join('\n\n')}
+${propertyList}
 
-Please provide a helpful summary of these available properties, highlighting their key features and why they might be good alternatives. Include clickable links to each property using markdown format [Property Name](/posts/slug). Format it nicely with markdown.`,
+IMPORTANT: You MUST include clickable markdown links to each property in your response. Use the format [Property Name](${typeof window !== 'undefined' ? window.location.origin : ''}/posts/slug) for each property. List each property with its link prominently. Format it nicely with markdown, making sure every property name is a clickable link.`,
               context: 'property-suggestions',
             }),
           })
@@ -1441,7 +1455,17 @@ Please provide a helpful summary of these available properties, highlighting the
           const data = await response.json()
           if (activeThreadRef.current !== threadId) return
           const usage = normalizeTokenUsage(data.usage)
-          const baseContent = data.message || data.response || `I found ${availablePosts.length} other properties available for your dates from ${fromStr} to ${toStr}.`
+          let baseContent = data.message || data.response || `I found ${availablePosts.length} other properties available for your dates from ${fromStr} to ${toStr}.`
+
+          // Ensure links are included even if AI didn't add them
+          if (!baseContent.includes('[') || !baseContent.includes('](')) {
+            const linksSection = '\n\n**Available Properties:**\n\n' + 
+              availablePosts.map((p: any) => {
+                const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
+                return `- [${p.title}](${postUrl})`
+              }).join('\n')
+            baseContent += linksSection
+          }
 
           persistTokenUsage(usage)
 

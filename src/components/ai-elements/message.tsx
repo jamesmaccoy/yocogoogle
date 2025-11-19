@@ -53,11 +53,32 @@ export const MessageResponse = ({ children, className, ...props }: MessageRespon
   // For now, render as plain text/markdown. Streamdown will be added when properly installed
   const content = typeof children === 'string' ? children : String(children)
   
+  // Convert markdown links to HTML links
+  const processMarkdown = (text: string): string => {
+    // Convert markdown links [text](url) to HTML <a> tags
+    let processed = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+      // Handle relative URLs
+      const href = url.startsWith('http') ? url : url
+      return `<a href="${href}" class="text-primary underline hover:text-primary/80" target="_self">${text}</a>`
+    })
+    
+    // Convert **bold** to <strong>
+    processed = processed.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    
+    // Convert *italic* to <em>
+    processed = processed.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    
+    // Convert line breaks
+    processed = processed.replace(/\n/g, '<br />')
+    
+    return processed
+  }
+  
   return (
     <div
       className={cn('prose prose-sm max-w-none dark:prose-invert', className)}
       {...props}
-      dangerouslySetInnerHTML={{ __html: content.replace(/\n/g, '<br />') }}
+      dangerouslySetInnerHTML={{ __html: processMarkdown(content) }}
     />
   )
 }
