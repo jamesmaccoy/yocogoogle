@@ -104,11 +104,11 @@ export const AIAssistant = () => {
   const router = useRouter()
   const pathname = usePathname()
   
-  // Determine if user has standard or pro subscription
+  // Determine if user has basic, pro, or enterprise subscription
   const userRole = Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean)
   const isHostOrAdmin = userRole.includes('host') || userRole.includes('admin')
   const subscriptionPlan = currentUser?.subscriptionStatus?.plan || 'none'
-  const hasStandardOrPro = isSubscribed && (subscriptionPlan === 'standard' || subscriptionPlan === 'pro' || isHostOrAdmin)
+  const hasStandardOrPro = isSubscribed && (subscriptionPlan === 'basic' || subscriptionPlan === 'pro' || subscriptionPlan === 'enterprise' || isHostOrAdmin)
   
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
     if (!usage || typeof usage !== 'object') return null
@@ -1266,23 +1266,52 @@ If I mentioned specific bookings or dates, please reference them.`,
           speakSafely('Error processing cleaning schedule query.')
         }
       } else if (
-        currentContext?.context === 'estimate-details' &&
+        (currentContext?.context === 'estimate-details' || currentContext?.context === 'booking-details') &&
         (messageToSend.toLowerCase().includes('other properties') ||
          messageToSend.toLowerCase().includes('suggest other') ||
          messageToSend.toLowerCase().includes('find other') ||
          messageToSend.toLowerCase().includes('available for my dates'))
       ) {
-        // Handle estimate-based property suggestions
+        // Handle property suggestions for estimates or bookings
         try {
-          const estimateContext = currentContext
-          const fromDate = estimateContext.estimate?.fromDate
-          const toDate = estimateContext.estimate?.toDate
-          const currentPostId = estimateContext?.post?.id
+          const context = currentContext
+          let fromDate: string | undefined
+          let toDate: string | undefined
+          let currentPostId: string | undefined
+          let currentPostCategories: string[] = []
+          
+          if (context.context === 'estimate-details') {
+            fromDate = context.estimate?.fromDate
+            toDate = context.estimate?.toDate
+            currentPostId = context?.post?.id
+            // Get categories from current post if available
+            if (context?.post && typeof context.post === 'object') {
+              const postCategories = (context.post as any).categories
+              if (Array.isArray(postCategories)) {
+                currentPostCategories = postCategories.map((c: any) => 
+                  typeof c === 'object' ? (c.id || c.slug || c.title) : c
+                ).filter(Boolean)
+              }
+            }
+          } else if (context.context === 'booking-details') {
+            fromDate = context.booking?.fromDate
+            toDate = context.booking?.toDate
+            currentPostId = context?.property?.id
+            // Get categories from property if available
+            if (context?.property && typeof context.property === 'object') {
+              const propertyCategories = (context.property as any).categories
+              if (Array.isArray(propertyCategories)) {
+                currentPostCategories = propertyCategories.map((c: any) => 
+                  typeof c === 'object' ? (c.id || c.slug || c.title) : c
+                ).filter(Boolean)
+              }
+            }
+          }
           
           if (!fromDate || !toDate) {
             const assistantMessage: Message = {
               role: 'assistant',
-              content: 'I need dates to find other available properties. Please make sure your estimate has check-in and check-out dates set.',
+              content: 'I need dates to find other available properties. Please make sure your booking/estimate has check-in and check-out dates set.',
             }
             appendMessageToThread(threadId, assistantMessage)
             speakSafely('I need dates to find other available properties.')
@@ -1290,7 +1319,7 @@ If I mentioned specific bookings or dates, please reference them.`,
           }
           
           // Fetch all posts
-          const postsResponse = await fetch('/api/posts?limit=100&depth=1', {
+          const postsResponse = await fetch('/api/posts?limit=100&depth=2', {
             credentials: 'include',
           })
           
@@ -1302,9 +1331,25 @@ If I mentioned specific bookings or dates, please reference them.`,
           const allPosts = postsData.docs || []
           
           // Filter out current post if specified
-          const otherPosts = currentPostId 
+          let otherPosts = currentPostId 
             ? allPosts.filter((p: any) => p.id !== currentPostId)
             : allPosts
+          
+          // Filter by same categories if we have categories from current post
+          if (currentPostCategories.length > 0) {
+            const categoryFiltered = otherPosts.filter((p: any) => {
+              const postCategories = Array.isArray(p.categories) 
+                ? p.categories.map((c: any) => typeof c === 'object' ? (c.id || c.slug || c.title) : c).filter(Boolean)
+                : []
+              // Check if any category matches
+              return postCategories.some((catId: string) => currentPostCategories.includes(catId))
+            })
+            
+            // If we found category matches, use those; otherwise use all posts
+            if (categoryFiltered.length > 0) {
+              otherPosts = categoryFiltered
+            }
+          }
           
           if (otherPosts.length === 0) {
             const assistantMessage: Message = {
@@ -1369,22 +1414,27 @@ If I mentioned specific bookings or dates, please reference them.`,
             return
           }
           
-          // Use chat API to format a nice response with property details
+          // Use chat API to format a nice response with property details and links
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: `User has an estimate for dates ${fromStr} to ${toStr}. I found ${availablePosts.length} other properties available for these exact dates:
+              message: `User has dates ${fromStr} to ${toStr}. I found ${availablePosts.length} other properties available for these exact dates:
 
-${availablePosts.map((p: any, idx: number) => 
-  `${idx + 1}. **${p.title}** (${p.slug || 'no slug'})
+${availablePosts.map((p: any, idx: number) => {
+  const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
+  const categories = Array.isArray(p.categories) 
+    ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
+    : 'None'
+  return `${idx + 1}. **[${p.title}](${postUrl})**
+   - Link: ${postUrl}
    - Description: ${p.meta?.description || 'No description'}
    - Base Rate: ${p.baseRate ? `R${p.baseRate}` : 'Not set'}
-   - Categories: ${Array.isArray(p.categories) ? p.categories.map((c: any) => typeof c === 'object' ? c.title || c.slug : c).join(', ') : 'None'}`
-).join('\n\n')}
+   - Categories: ${categories}`
+}).join('\n\n')}
 
-Please provide a helpful summary of these available properties, highlighting their key features and why they might be good alternatives. Format it nicely with markdown.`,
-              context: 'estimate-property-suggestions',
+Please provide a helpful summary of these available properties, highlighting their key features and why they might be good alternatives. Include clickable links to each property using markdown format [Property Name](/posts/slug). Format it nicely with markdown.`,
+              context: 'property-suggestions',
             }),
           })
 
@@ -1402,7 +1452,7 @@ Please provide a helpful summary of these available properties, highlighting the
           appendMessageToThread(threadId, assistantMessage)
           speakSafely(`I found ${availablePosts.length} other properties available for your dates.`)
         } catch (error) {
-          console.error('Estimate property suggestions error:', error)
+          console.error('Property suggestions error:', error)
           if (activeThreadRef.current !== threadId) return
           const assistantMessage: Message = {
             role: 'assistant',
@@ -1576,7 +1626,7 @@ Please provide a helpful summary of these available properties, highlighting the
                         Tell me about my bookings
                       </Button>
                     )}
-                    {currentContext?.context === 'post-article' && hasStandardOrPro && (
+                    {(currentContext?.context === 'post-article' || currentContext?.context === 'booking-details') && hasStandardOrPro && (
                       <Button
                         size="sm"
                         variant="outline"
