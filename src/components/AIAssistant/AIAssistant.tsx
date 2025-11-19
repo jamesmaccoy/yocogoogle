@@ -409,6 +409,8 @@ export const AIAssistant = () => {
     const checkContext = () => {
       if ((window as any).bookingContext) {
         setCurrentContext((window as any).bookingContext)
+      } else if ((window as any).estimateContext) {
+        setCurrentContext((window as any).estimateContext)
       } else if ((window as any).postContext) {
         setCurrentContext((window as any).postContext)
       }
@@ -1263,6 +1265,152 @@ If I mentioned specific bookings or dates, please reference them.`,
           appendMessageToThread(threadId, assistantMessage)
           speakSafely('Error processing cleaning schedule query.')
         }
+      } else if (
+        currentContext?.context === 'estimate-details' &&
+        (messageToSend.toLowerCase().includes('other properties') ||
+         messageToSend.toLowerCase().includes('suggest other') ||
+         messageToSend.toLowerCase().includes('find other') ||
+         messageToSend.toLowerCase().includes('available for my dates'))
+      ) {
+        // Handle estimate-based property suggestions
+        try {
+          const estimateContext = currentContext
+          const fromDate = estimateContext.estimate?.fromDate
+          const toDate = estimateContext.estimate?.toDate
+          const currentPostId = estimateContext?.post?.id
+          
+          if (!fromDate || !toDate) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'I need dates to find other available properties. Please make sure your estimate has check-in and check-out dates set.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('I need dates to find other available properties.')
+            return
+          }
+          
+          // Fetch all posts
+          const postsResponse = await fetch('/api/posts?limit=100&depth=1', {
+            credentials: 'include',
+          })
+          
+          if (!postsResponse.ok) {
+            throw new Error('Failed to fetch posts')
+          }
+          
+          const postsData = await postsResponse.json()
+          const allPosts = postsData.docs || []
+          
+          // Filter out current post if specified
+          const otherPosts = currentPostId 
+            ? allPosts.filter((p: any) => p.id !== currentPostId)
+            : allPosts
+          
+          if (otherPosts.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'No other properties found to check availability for.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('No other properties found.')
+            return
+          }
+          
+          // Check availability for each post
+          const availabilityChecks = await Promise.all(
+            otherPosts.slice(0, 20).map(async (post: any) => {
+              try {
+                const availResponse = await fetch(
+                  `/api/bookings/unavailable-dates?postId=${post.id}`,
+                  { credentials: 'include' }
+                )
+                if (!availResponse.ok) return { post, available: false, error: true }
+                
+                const availData = await availResponse.json()
+                const unavailableDates = new Set(availData.unavailableDates || [])
+                
+                // Check if the date range overlaps with unavailable dates
+                const from = new Date(fromDate)
+                const to = new Date(toDate)
+                const checkDate = new Date(from)
+                let isAvailable = true
+                
+                while (checkDate < to && isAvailable) {
+                  const dateStr = checkDate.toISOString()
+                  if (unavailableDates.has(dateStr)) {
+                    isAvailable = false
+                    break
+                  }
+                  checkDate.setDate(checkDate.getDate() + 1)
+                }
+                
+                return { post, available: isAvailable, error: false }
+              } catch (e) {
+                return { post, available: false, error: true }
+              }
+            })
+          )
+          
+          const availablePosts = availabilityChecks
+            .filter((result: any) => result.available && !result.error)
+            .map((result: any) => result.post)
+          
+          // Format response with available properties
+          const fromStr = format(new Date(fromDate), 'MMM d, yyyy')
+          const toStr = format(new Date(toDate), 'MMM d, yyyy')
+          
+          if (availablePosts.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `I checked ${otherPosts.length} other properties for availability from **${fromStr}** to **${toStr}**, but none are available for those exact dates. You may want to consider adjusting your dates slightly or checking back later.`,
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('No other properties are available for those dates.')
+            return
+          }
+          
+          // Use chat API to format a nice response with property details
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `User has an estimate for dates ${fromStr} to ${toStr}. I found ${availablePosts.length} other properties available for these exact dates:
+
+${availablePosts.map((p: any, idx: number) => 
+  `${idx + 1}. **${p.title}** (${p.slug || 'no slug'})
+   - Description: ${p.meta?.description || 'No description'}
+   - Base Rate: ${p.baseRate ? `R${p.baseRate}` : 'Not set'}
+   - Categories: ${Array.isArray(p.categories) ? p.categories.map((c: any) => typeof c === 'object' ? c.title || c.slug : c).join(', ') : 'None'}`
+).join('\n\n')}
+
+Please provide a helpful summary of these available properties, highlighting their key features and why they might be good alternatives. Format it nicely with markdown.`,
+              context: 'estimate-property-suggestions',
+            }),
+          })
+
+          const data = await response.json()
+          if (activeThreadRef.current !== threadId) return
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent = data.message || data.response || `I found ${availablePosts.length} other properties available for your dates from ${fromStr} to ${toStr}.`
+
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(`I found ${availablePosts.length} other properties available for your dates.`)
+        } catch (error) {
+          console.error('Estimate property suggestions error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while finding other properties. Please try again.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error finding other properties.')
+        }
       } else {
         // Regular chat API call
         const response = await fetch('/api/chat', {
@@ -1439,6 +1587,40 @@ If I mentioned specific bookings or dates, please reference them.`,
                         }}
                       >
                         Summarize this page
+                      </Button>
+                    )}
+                    {currentContext?.context === 'estimate-details' && currentContext?.estimate && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          try {
+                            const fromDate = currentContext.estimate?.fromDate
+                            const toDate = currentContext.estimate?.toDate
+                            const currentPostId = currentContext?.post?.id
+                            
+                            if (!fromDate || !toDate) {
+                              setInput('Find other properties available for my dates')
+                              handleSubmit(new Event('submit') as any)
+                              return
+                            }
+                            
+                            const from = new Date(fromDate)
+                            const to = new Date(toDate)
+                            const fromStr = format(from, 'MMM d, yyyy')
+                            const toStr = format(to, 'MMM d, yyyy')
+                            
+                            const msg = `Find other properties available from ${fromStr} to ${toStr}${currentPostId ? ` (excluding the current property)` : ''}. Show me properties that are available for these exact dates.`
+                            setInput(msg)
+                            handleSubmit(new Event('submit') as any)
+                          } catch {
+                            setInput('Find other properties available for my dates')
+                            handleSubmit(new Event('submit') as any)
+                          }
+                        }}
+                      >
+                        Suggest Other Properties
                       </Button>
                     )}
                   </div>

@@ -699,6 +699,33 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
           </div>
         </div>
           </TabsContent>
+          
+          {/* Set estimate context for AI Assistant */}
+          {data && (
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `
+                  window.addEventListener('load', function() {
+                    const context = ${JSON.stringify({
+                      context: 'estimate-details',
+                      estimate: {
+                        id: data.id,
+                        fromDate: data.fromDate,
+                        toDate: data.toDate,
+                        total: data.total,
+                      },
+                      post: typeof data.post === 'object' ? {
+                        id: data.post.id,
+                        title: data.post.title,
+                        slug: data.post.slug,
+                      } : null,
+                    })};
+                    window.estimateContext = context;
+                  });
+                `
+              }}
+            />
+          )}
 
           <TabsContent value="guests">
             <div className="max-w-2xl mx-auto">
