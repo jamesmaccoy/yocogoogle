@@ -92,6 +92,25 @@ interface Message {
       categories?: string
     }>
   }
+  cleaningSchedule?: {
+    sameDayCheckouts: Array<{
+      date: string
+      dateISO: string
+      properties: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkoutDate: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        nextCheckin: {
+          date: string
+          propertyTitle: string
+        } | null
+      }>
+    }>
+  }
 }
 
 interface PackageSuggestion {
@@ -666,6 +685,11 @@ export const AIAssistant = () => {
       if (ctx && !currentContext) {
         setCurrentContext(ctx)
       }
+    }
+    // Stop speech when closing the assistant
+    if (!opening && synthRef.current) {
+      synthRef.current.cancel()
+      setIsSpeaking(false)
     }
     setIsOpen(opening)
   }
@@ -1381,6 +1405,7 @@ If I mentioned specific bookings or dates, please reference them.`,
           const assistantMessage: Message = {
             role: 'assistant',
             content: appendUsageToContent(baseContent, usage),
+            cleaningSchedule: data.cleaningSchedule || undefined,
           }
           appendMessageToThread(threadId, assistantMessage)
           speakSafely(baseContent)
@@ -1927,6 +1952,69 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       </Plan>
                     </div>
                   )}
+                  {message.cleaningSchedule && message.cleaningSchedule.sameDayCheckouts.length > 0 && (
+                    <div className="mb-4">
+                      <Plan defaultOpen={true}>
+                        <PlanHeader>
+                          <PlanTitle>Same Day Checkout Schedule</PlanTitle>
+                          <PlanDescription>
+                            {`Properties checking out grouped by date`}
+                          </PlanDescription>
+                        </PlanHeader>
+                        <PlanTrigger>View Checkout Schedule</PlanTrigger>
+                        <PlanContent>
+                          <div className="space-y-6">
+                            {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                              <div key={groupIdx} className="border-b pb-4 last:border-0 last:pb-0">
+                                <h4 className="font-semibold mb-3 text-base">
+                                  {checkoutGroup.date} ({checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
+                                </h4>
+                                <div className="space-y-3">
+                                  {checkoutGroup.properties.map((property, propIdx) => (
+                                    <div key={property.id} className="pl-4 border-l-2 border-muted">
+                                      <div className="font-medium text-sm mb-1">
+                                        {property.propertySlug ? (
+                                          <a 
+                                            href={`/posts/${property.propertySlug}`}
+                                            className="text-primary hover:underline"
+                                          >
+                                            {property.propertyTitle}
+                                          </a>
+                                        ) : (
+                                          property.propertyTitle
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground space-y-1">
+                                        <div>
+                                          <span className="font-medium">Checkout:</span> {property.checkoutDate}
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">Check-in:</span> {property.checkinDate}
+                                        </div>
+                                        {property.nextCheckin && (
+                                          <div className="text-primary">
+                                            <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on {property.nextCheckin.date}
+                                          </div>
+                                        )}
+                                        <div>
+                                          <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
+                                        </div>
+                                        {property.proximityCategories.length > 0 && (
+                                          <div>
+                                            <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </PlanContent>
+                      </Plan>
+                    </div>
+                  )}
                 </React.Fragment>
               ))}
               {isLoading && (
@@ -1970,6 +2058,10 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                           })
                           window.dispatchEvent(event)
                           // Close AI Assistant after applying
+                          if (synthRef.current) {
+                            synthRef.current.cancel()
+                            setIsSpeaking(false)
+                          }
                           setIsOpen(false)
                         }}
                       >

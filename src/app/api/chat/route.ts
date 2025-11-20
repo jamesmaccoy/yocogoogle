@@ -279,10 +279,14 @@ Respond with clear, specific suggestions for updating the package.`
             sleepCapacity = match1 || match2 || sleepCapacity
           }
 
+          const checkoutDateISO = booking.toDate.split('T')[0] // YYYY-MM-DD format
+          const checkinDateISO = booking.fromDate.split('T')[0] // YYYY-MM-DD format
+
           return {
             id: booking.id,
             propertyTitle: post?.title || booking.title || 'Unknown Property',
             propertySlug: post?.slug || '',
+            propertyId: post?.id || '',
             fromDate: booking.fromDate,
             toDate: booking.toDate,
             checkoutDate: new Date(booking.toDate).toLocaleDateString('en-US', { 
@@ -291,10 +295,33 @@ Respond with clear, specific suggestions for updating the package.`
               month: 'short', 
               day: 'numeric' 
             }),
-            checkoutDateISO: booking.toDate.split('T')[0], // YYYY-MM-DD format for comparison
+            checkinDate: new Date(booking.fromDate).toLocaleDateString('en-US', { 
+              weekday: 'short', 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            }),
+            checkoutDateISO: checkoutDateISO,
+            checkinDateISO: checkinDateISO,
             status: booking.paymentStatus || 'unknown',
             proximityCategories: categories,
             sleepCapacity: sleepCapacity,
+          }
+        })
+
+        // Find next bookings for each property to determine cleaning needs before check-in
+        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] | null> = {}
+        cleaningBookingsInfo.forEach((booking) => {
+          const propertyId = booking.propertyId
+          if (!propertyId) return
+          
+          // Find the next booking for this property (earliest check-in after this checkout)
+          const nextBooking = cleaningBookingsInfo
+            .filter(b => b.propertyId === propertyId && b.checkinDateISO > booking.checkoutDateISO)
+            .sort((a, b) => a.checkinDateISO.localeCompare(b.checkinDateISO))[0]
+          
+          if (nextBooking) {
+            propertyNextBookings[booking.id] = nextBooking
           }
         })
 
@@ -310,6 +337,28 @@ Respond with clear, specific suggestions for updating the package.`
         const todayCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === todayISO)
         const tomorrowCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === tomorrowISO)
 
+        // Group bookings by checkout date for same-day analysis
+        const bookingsByCheckoutDate: Record<string, typeof cleaningBookingsInfo> = {}
+        cleaningBookingsInfo.forEach((booking) => {
+          if (!bookingsByCheckoutDate[booking.checkoutDateISO]) {
+            bookingsByCheckoutDate[booking.checkoutDateISO] = []
+          }
+          bookingsByCheckoutDate[booking.checkoutDateISO].push(booking)
+        })
+
+        // Build detailed booking info with next booking context
+        const detailedBookingsInfo = cleaningBookingsInfo.map((b) => {
+          const nextBooking = propertyNextBookings[b.id]
+          return {
+            ...b,
+            nextCheckin: nextBooking ? {
+              date: nextBooking.checkinDate,
+              dateISO: nextBooking.checkinDateISO,
+              propertyTitle: nextBooking.propertyTitle,
+            } : null,
+          }
+        })
+
         const systemPrompt = `You are an expert operations assistant helping a host plan cleaner routes.
 
 HOST CONTEXT:
@@ -317,46 +366,76 @@ HOST CONTEXT:
 - Email: ${user.email}
 - Today's date: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
-ALL UPCOMING BOOKINGS (checking out):
-${cleaningBookingsInfo.length > 0 
-  ? cleaningBookingsInfo.map(
-      (b) =>
-        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+ALL UPCOMING BOOKINGS WITH CLEANING CONTEXT:
+${detailedBookingsInfo.length > 0 
+  ? detailedBookingsInfo.map(
+      (b) => {
+        const nextInfo = b.nextCheckin 
+          ? ` → Next check-in: ${b.nextCheckin.propertyTitle} on ${b.nextCheckin.date} (clean on ${b.checkoutDate} before next guest)`
+          : ` → No immediate next booking (clean on ${b.checkoutDate})`
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Check-in: ${b.checkinDate}${nextInfo} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+      }
     ).join('\n')
   : 'No upcoming bookings found.'}
+
+SAME-DAY CHECKOUTS BY DATE:
+${Object.entries(bookingsByCheckoutDate)
+  .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+  .map(([date, bookings]) => {
+    const dateFormatted = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}`
+  }).join('\n')}
 
 TODAY'S CHECKOUTS (${todayCheckouts.length}):
 ${todayCheckouts.length > 0
   ? todayCheckouts.map(
-      (b) =>
-        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+      (b) => {
+        const nextInfo = propertyNextBookings[b.id]
+          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean today before next guest)`
+          : ''
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+      }
     ).join('\n')
   : 'No checkouts today.'}
 
 TOMORROW'S CHECKOUTS (${tomorrowCheckouts.length}):
 ${tomorrowCheckouts.length > 0
   ? tomorrowCheckouts.map(
-      (b) =>
-        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+      (b) => {
+        const nextInfo = propertyNextBookings[b.id]
+          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean tomorrow before next guest)`
+          : ''
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+      }
     ).join('\n')
   : 'No checkouts tomorrow.'}
 
-CRITICAL INSTRUCTIONS:
-1. **ALWAYS start with today's checkouts first**. If there are no checkouts today, mention that clearly and move to tomorrow.
-2. **Use categories as proximity data** - Properties sharing categories like 'southern peninsular', 'cape-town', etc. are close together. Group them into routes.
-3. **Use sleep capacity to estimate cleaning time**:
-   - Properties sleeping 1-2: ~1-2 hours cleaning
-   - Properties sleeping 3-4: ~2-3 hours cleaning  
-   - Properties sleeping 5+: ~3-4 hours cleaning
-4. **Create optimized routes**:
-   - Group properties by shared categories (proximity)
-   - Name routes by area (e.g. "South Peninsula Route", "City Route")
-   - Suggest time windows (e.g. 10:00-14:00)
-   - Calculate if 1 cleaner can handle the route or if 2 are needed
-5. **Be direct and actionable** - Create the plan immediately using the data provided. Do NOT ask for more information.
-6. **Format as a clear cleaning schedule** with dates, routes, properties, and cleaner assignments.
+CRITICAL INSTRUCTIONS - BE CONCISE AND FOCUSED:
 
-Create the cleaning plan now using the available data.`
+1. **If there are overlapping checkouts (same day)**: 
+   - Briefly mention: "X properties checking out on [date]" and if they're in close proximity
+   - Example: "2 properties checking out tomorrow in southern peninsular area"
+
+2. **If NO overlapping checkouts**:
+   - Simply list when to send cleaners: "Tomorrow, and twice next week" or "Dec 19, Dec 21, Jan 17"
+   - Be concise - just the dates/times, no elaboration
+
+3. **Only mention proximity if properties share categories AND checkout on the same day** - otherwise skip proximity details
+
+4. **Do NOT elaborate on**:
+   - Individual property details unless asked
+   - Sleep capacity unless relevant to cleaner count
+   - Detailed routes unless there are same-day checkouts
+   - Next check-in dates unless critical
+
+5. **Keep response under 3-4 sentences** - focus on key insights only
+
+Respond concisely with just the essential information.`
 
         const chat = model.startChat({
           history: [
@@ -376,7 +455,42 @@ Create the cleaning plan now using the available data.`
         const text = response.text()
         const usage = serializeUsageMetadata(response.usageMetadata)
 
-        return NextResponse.json({ response: text, usage })
+        // Structure same-day checkouts by date for the Plan component
+        const sameDayCheckoutsByDate = Object.entries(bookingsByCheckoutDate)
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([dateISO, bookings]) => {
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })
+            return {
+              date: dateFormatted,
+              dateISO: dateISO,
+              properties: bookings.map(b => ({
+                id: b.id,
+                propertyTitle: b.propertyTitle,
+                propertySlug: b.propertySlug,
+                checkoutDate: b.checkoutDate,
+                checkinDate: b.checkinDate,
+                sleepCapacity: b.sleepCapacity,
+                proximityCategories: b.proximityCategories,
+                nextCheckin: propertyNextBookings[b.id] ? {
+                  date: propertyNextBookings[b.id]!.checkinDate,
+                  propertyTitle: propertyNextBookings[b.id]!.propertyTitle,
+                } : null,
+              })),
+            }
+          })
+
+        return NextResponse.json({ 
+          response: text, 
+          usage,
+          cleaningSchedule: {
+            sameDayCheckouts: sameDayCheckoutsByDate,
+          },
+        })
       } catch (error) {
         console.error('Error in cleaning-schedule context:', error)
         return NextResponse.json({
