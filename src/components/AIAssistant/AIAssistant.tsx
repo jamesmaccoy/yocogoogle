@@ -8,7 +8,18 @@ import { Button } from '@/components/ui/button'
 import { Context as AIContextCard, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Bot, Send, X, Mic, MicOff, Lock } from 'lucide-react'
+import {
+  Bot,
+  Send,
+  X,
+  Mic,
+  MicOff,
+  Lock,
+  CalendarDays,
+  MapPin,
+  Clock,
+  ArrowRight,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -27,6 +38,20 @@ import {
   PlanAction,
 } from '@/components/ai-elements/plan'
 import {
+  Queue,
+  QueueSection,
+  QueueSectionTrigger,
+  QueueSectionLabel,
+  QueueSectionContent,
+  QueueList,
+  QueueItem,
+  QueueItemIndicator,
+  QueueItemContent,
+  QueueItemDescription,
+  QueueItemActions,
+  QueueItemAction,
+} from '@/components/ai-elements/queue'
+import {
   PromptInput,
   PromptInputHeader,
   PromptInputBody,
@@ -37,6 +62,7 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { Reasoning, ReasoningTrigger, ReasoningContent } from '@/components/ai-elements/reasoning'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -161,10 +187,6 @@ interface Message {
 
 type CleaningScheduleSuggestion = NonNullable<
   NonNullable<Message['cleaningSchedule']>['scheduleSuggestions']
->[number]
-
-type CleaningTimeWindowSuggestion = NonNullable<
-  NonNullable<Message['cleaningSchedule']>['dateSuggestions']
 >[number]
 
 interface PackageSuggestion {
@@ -2130,145 +2152,244 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       </Plan>
                     </div>
                   )}
-                  {message.cleaningSchedule && (
-                    <>
-                      {message.cleaningSchedule.sameDayCheckouts.length > 0 && (
-                        <div className="mb-4">
-                          <Plan defaultOpen={true}>
-                            <PlanHeader>
-                              <PlanTitle>Same Day Checkout Schedule</PlanTitle>
-                              <PlanDescription>
-                                {`Properties checking out grouped by date`}
-                              </PlanDescription>
-                            </PlanHeader>
-                            <PlanTrigger>View Checkout Schedule</PlanTrigger>
-                            <PlanContent>
-                              <div className="space-y-6">
-                                {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
-                                  <div key={groupIdx} className="border-b pb-4 last:border-0 last:pb-0">
-                                    <h4 className="font-semibold mb-3 text-base">
-                                      {checkoutGroup.date} ({checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
-                                    </h4>
-                                    <div className="space-y-3">
-                                      {checkoutGroup.properties.map((property, propIdx) => (
-                                        <div key={property.id} className="pl-4 border-l-2 border-muted">
-                                          <div className="font-medium text-sm mb-1">
-                                            {property.propertySlug ? (
-                                              <a 
-                                                href={`/posts/${property.propertySlug}`}
-                                                className="text-primary hover:underline"
-                                              >
-                                                {property.propertyTitle}
-                                              </a>
-                                            ) : (
-                                              property.propertyTitle
-                                            )}
-                                          </div>
-                                          <div className="text-xs text-muted-foreground space-y-1">
-                                            <div>
-                                              <span className="font-medium">Checkout:</span> {property.checkoutDate}
-                                            </div>
-                                            <div>
-                                              <span className="font-medium">Check-in:</span> {property.checkinDate}
-                                            </div>
-                                            {property.nextCheckin && (
-                                              <>
-                                                <div className="text-primary">
-                                                  <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on {property.nextCheckin.date}
+                  {message.cleaningSchedule &&
+                    (() => {
+                      const overlappingGroups = message.cleaningSchedule.sameDayCheckouts.filter(
+                        (group) => group.properties.length > 1,
+                      )
+                      const reasoningLines =
+                        overlappingGroups.length > 0
+                          ? overlappingGroups.map((group) => {
+                              const propertyList = group.properties
+                                .map((p) => p.propertyTitle)
+                                .join(', ')
+                              return `${group.properties.length} properties check out on ${group.date}: ${propertyList}`
+                            })
+                          : ['No overlapping same-day checkouts detected. Cleaners can move sequentially.']
+
+                      return (
+                        <>
+                          {message.cleaningSchedule.sameDayCheckouts.length > 0 && (
+                            <div className="mb-4">
+                              <Plan defaultOpen={true}>
+                                <PlanHeader>
+                                  <PlanTitle>Same Day Checkout Schedule</PlanTitle>
+                                  <PlanDescription>
+                                    {`Properties checking out grouped by date`}
+                                  </PlanDescription>
+                                </PlanHeader>
+                                <PlanTrigger>View Checkout Schedule</PlanTrigger>
+                                <PlanContent>
+                                  <Reasoning className="mb-4" isStreaming={false}>
+                                    <ReasoningTrigger title="Cleaning insight" />
+                                    <ReasoningContent>
+                                      {reasoningLines.map((line) => `• ${line}`).join('\n')}
+                                    </ReasoningContent>
+                                  </Reasoning>
+                                  <Queue className="mb-4">
+                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                                      <QueueSection key={checkoutGroup.date} defaultOpen={groupIdx === 0}>
+                                        <QueueSectionTrigger>
+                                          <QueueSectionLabel
+                                            label={checkoutGroup.date}
+                                            count={checkoutGroup.properties.length}
+                                            icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
+                                          />
+                                        </QueueSectionTrigger>
+                                        <QueueSectionContent>
+                                          <QueueList>
+                                            {checkoutGroup.properties.map((property, propIdx) => {
+                                              const windowLabel =
+                                                property.nextCheckin?.timeWindowHours !== undefined
+                                                  ? property.nextCheckin.timeWindowHours < 24
+                                                    ? `${property.nextCheckin.timeWindowHours} hr`
+                                                    : property.nextCheckin.timeWindowDays === 1
+                                                    ? '1 day'
+                                                    : `${property.nextCheckin.timeWindowDays} days`
+                                                  : 'Awaiting next booking'
+
+                                              return (
+                                                <QueueItem key={property.id ?? `${checkoutGroup.date}-${propIdx}`}>
+                                                  <QueueItemIndicator completed={false} />
+                                                  <div className="flex-1">
+                                                    <QueueItemContent>{property.propertyTitle}</QueueItemContent>
+                                                    <QueueItemDescription>
+                                                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                        <span className="inline-flex items-center gap-1">
+                                                          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                                          Checkout {property.checkoutDate}
+                                                        </span>
+                                                        {property.nextCheckin && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            Next {property.nextCheckin.date}
+                                                          </span>
+                                                        )}
+                                                        {property.proximityCategories.length > 0 && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            {property.proximityCategories.join(', ')}
+                                                          </span>
+                                                        )}
+                                                        {property.nextCheckin && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            {windowLabel}
+                                                          </span>
+                                                        )}
+                                                        <span className="inline-flex items-center gap-1">
+                                                          Sleeps {property.sleepCapacity}
+                                                        </span>
+                                                      </div>
+                                                    </QueueItemDescription>
+                                                  </div>
+                                                  {property.propertySlug && (
+                                                    <QueueItemActions>
+                                                      <QueueItemAction asChild>
+                                                        <a
+                                                          href={`/posts/${property.propertySlug}`}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                        >
+                                                          Open
+                                                        </a>
+                                                      </QueueItemAction>
+                                                    </QueueItemActions>
+                                                  )}
+                                                </QueueItem>
+                                              )
+                                            })}
+                                          </QueueList>
+                                        </QueueSectionContent>
+                                      </QueueSection>
+                                    ))}
+                                  </Queue>
+                                  <div className="space-y-6">
+                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                                      <div key={`${checkoutGroup.date}-${groupIdx}`} className="border-b pb-4 last:border-0 last:pb-0">
+                                        <h4 className="mb-3 text-base font-semibold">
+                                          {checkoutGroup.date} ({checkoutGroup.properties.length}{' '}
+                                          {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
+                                        </h4>
+                                        <div className="space-y-3">
+                                          {checkoutGroup.properties.map((property, propIdx) => (
+                                            <div key={property.id ?? `${groupIdx}-${propIdx}`} className="border-l-2 border-muted pl-4">
+                                              <div className="mb-1 text-sm font-medium">
+                                                {property.propertySlug ? (
+                                                  <a href={`/posts/${property.propertySlug}`} className="text-primary hover:underline">
+                                                    {property.propertyTitle}
+                                                  </a>
+                                                ) : (
+                                                  property.propertyTitle
+                                                )}
+                                              </div>
+                                              <div className="space-y-1 text-xs text-muted-foreground">
+                                                <div>
+                                                  <span className="font-medium">Checkout:</span> {property.checkoutDate}
                                                 </div>
-                                                {property.nextCheckin.timeWindowHours !== undefined && (
-                                                  <div className="text-primary font-medium">
-                                                    <span className="font-medium">Cleaning window:</span> {property.nextCheckin.timeWindowHours < 24 
-                                                      ? `${property.nextCheckin.timeWindowHours} hour${property.nextCheckin.timeWindowHours !== 1 ? 's' : ''}`
-                                                      : property.nextCheckin.timeWindowDays === 1
-                                                      ? '1 day'
-                                                      : `${property.nextCheckin.timeWindowDays} days`
-                                                    }
-                                                  </div>
+                                                <div>
+                                                  <span className="font-medium">Check-in:</span> {property.checkinDate}
+                                                </div>
+                                                {property.nextCheckin && (
+                                                  <>
+                                                    <div className="text-primary">
+                                                      <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on{' '}
+                                                      {property.nextCheckin.date}
+                                                    </div>
+                                                    {property.nextCheckin.timeWindowHours !== undefined && (
+                                                      <div className="font-medium text-primary">
+                                                        <span className="font-medium">Cleaning window:</span>{' '}
+                                                        {property.nextCheckin.timeWindowHours < 24
+                                                          ? `${property.nextCheckin.timeWindowHours} hour${
+                                                              property.nextCheckin.timeWindowHours !== 1 ? 's' : ''
+                                                            }`
+                                                          : property.nextCheckin.timeWindowDays === 1
+                                                          ? '1 day'
+                                                          : `${property.nextCheckin.timeWindowDays} days`}
+                                                      </div>
+                                                    )}
+                                                    {property.nextCheckin.packageName && (
+                                                      <div className="text-xs">
+                                                        <span className="font-medium">Next package:</span> {property.nextCheckin.packageName}
+                                                      </div>
+                                                    )}
+                                                  </>
                                                 )}
-                                                {property.nextCheckin.packageName && (
+                                                {property.currentPackageName && (
                                                   <div className="text-xs">
-                                                    <span className="font-medium">Next package:</span> {property.nextCheckin.packageName}
+                                                    <span className="font-medium">Current package:</span> {property.currentPackageName}
                                                   </div>
                                                 )}
-                                              </>
-                                            )}
-                                            {property.currentPackageName && (
-                                              <div className="text-xs">
-                                                <span className="font-medium">Current package:</span> {property.currentPackageName}
+                                                {property.isGuestBooking && (
+                                                  <div className="text-xs text-green-600">
+                                                    <span className="font-medium">Guest booking</span>
+                                                  </div>
+                                                )}
+                                                <div>
+                                                  <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
+                                                </div>
+                                                {property.proximityCategories.length > 0 && (
+                                                  <div>
+                                                    <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
+                                                  </div>
+                                                )}
                                               </div>
-                                            )}
-                                            {property.isGuestBooking && (
-                                              <div className="text-xs text-green-600">
-                                                <span className="font-medium">Guest booking</span>
-                                              </div>
-                                            )}
-                                            <div>
-                                              <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
                                             </div>
-                                            {property.proximityCategories.length > 0 && (
-                                              <div>
-                                                <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
-                                              </div>
-                                            )}
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PlanContent>
+                              </Plan>
+                            </div>
+                          )}
+                          {message.cleaningSchedule.dateSuggestions && message.cleaningSchedule.dateSuggestions.length > 0 && (
+                            <div className="mb-4">
+                              <Plan defaultOpen={false}>
+                                <PlanHeader>
+                                  <PlanTitle>Cleaning Time Windows</PlanTitle>
+                                  <PlanDescription>
+                                    {`Time available for cleaning between bookings`}
+                                  </PlanDescription>
+                                </PlanHeader>
+                                <PlanTrigger>View Time Windows</PlanTrigger>
+                                <PlanContent>
+                                  <div className="space-y-3">
+                                    {message.cleaningSchedule.dateSuggestions.map((suggestion, idx) => (
+                                      <div key={idx} className="border-b pb-3 last:border-0 last:pb-0">
+                                        <div className="mb-1 text-sm font-medium">{suggestion.propertyTitle}</div>
+                                        <div className="space-y-1 text-xs text-muted-foreground">
+                                          <div>
+                                            <span className="font-medium">Checkout:</span> {suggestion.checkoutDateFormatted}
                                           </div>
+                                          <div>
+                                            <span className="font-medium">Next check-in:</span> {suggestion.nextCheckinDateFormatted}
+                                          </div>
+                                          <div className="font-medium text-primary">
+                                            <span className="font-medium">Cleaning window:</span> {suggestion.timeWindowLabel}
+                                          </div>
+                                          {suggestion.nextPackageName && (
+                                            <div>
+                                              <span className="font-medium">Next package:</span> {suggestion.nextPackageName}
+                                            </div>
+                                          )}
+                                          {suggestion.isGuestBooking && (
+                                            <div className="text-green-600">
+                                              <span className="font-medium">Guest booking</span>
+                                            </div>
+                                          )}
                                         </div>
-                                      ))}
-                                    </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            </PlanContent>
-                          </Plan>
-                        </div>
-                      )}
-                      {message.cleaningSchedule.dateSuggestions && message.cleaningSchedule.dateSuggestions.length > 0 && (
-                        <div className="mb-4">
-                          <Plan defaultOpen={false}>
-                            <PlanHeader>
-                              <PlanTitle>Cleaning Time Windows</PlanTitle>
-                              <PlanDescription>
-                                {`Time available for cleaning between bookings`}
-                              </PlanDescription>
-                            </PlanHeader>
-                            <PlanTrigger>View Time Windows</PlanTrigger>
-                            <PlanContent>
-                              <div className="space-y-3">
-                                {message.cleaningSchedule.dateSuggestions.map((suggestion, idx) => (
-                                  <div key={idx} className="border-b pb-3 last:border-0 last:pb-0">
-                                    <div className="font-medium text-sm mb-1">
-                                      {suggestion.propertyTitle}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground space-y-1">
-                                      <div>
-                                        <span className="font-medium">Checkout:</span> {suggestion.checkoutDateFormatted}
-                                      </div>
-                                      <div>
-                                        <span className="font-medium">Next check-in:</span> {suggestion.nextCheckinDateFormatted}
-                                      </div>
-                                      <div className="text-primary font-medium">
-                                        <span className="font-medium">Cleaning window:</span> {suggestion.timeWindowLabel}
-                                      </div>
-                                      {suggestion.nextPackageName && (
-                                        <div>
-                                          <span className="font-medium">Next package:</span> {suggestion.nextPackageName}
-                                        </div>
-                                      )}
-                                      {suggestion.isGuestBooking && (
-                                        <div className="text-green-600">
-                                          <span className="font-medium">Guest booking</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </PlanContent>
-                          </Plan>
-                        </div>
-                      )}
-                    </>
-                  )}
+                                </PlanContent>
+                              </Plan>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                 </React.Fragment>
               ))}
               {isLoading && (
