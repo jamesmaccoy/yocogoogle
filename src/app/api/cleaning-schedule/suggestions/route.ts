@@ -31,19 +31,6 @@ type ScheduleSuggestion = {
   properties: CleaningBookingInfo[]
 }
 
-type CleaningWindowSuggestion = {
-  checkoutDate: string
-  checkoutDateFormatted: string
-  nextCheckinDate: string
-  nextCheckinDateFormatted: string
-  propertyTitle: string
-  timeWindowHours: number
-  timeWindowDays: number
-  timeWindowLabel: string
-  nextPackageName?: string
-  isGuestBooking: boolean
-}
-
 function extractSleepCapacity(description?: string, content?: string): string {
   const sources = [description ?? '', content ?? '']
   for (const source of sources) {
@@ -69,7 +56,7 @@ export async function GET(request: NextRequest) {
     const isHostOrAdmin = roles?.some((role) => role === 'host' || role === 'admin')
 
     if (!isHostOrAdmin) {
-      return NextResponse.json({ scheduleSuggestions: [], dateSuggestions: [] })
+      return NextResponse.json({ scheduleSuggestions: [] })
     }
 
     const bookingsResult = await payload.find({
@@ -225,43 +212,7 @@ export async function GET(request: NextRequest) {
         }))
       })
 
-    const dateSuggestions: CleaningWindowSuggestion[] = cleaningBookingsInfo
-      .map((booking) => {
-        const nextBooking = propertyNextBookings[booking.id]
-        if (!nextBooking) return null
-
-        const checkoutDate = new Date(booking.toDate)
-        const nextCheckinDate = new Date(nextBooking.fromDate)
-        const timeWindowMs = nextCheckinDate.getTime() - checkoutDate.getTime()
-        const timeWindowHours = Math.max(0, Math.floor(timeWindowMs / (1000 * 60 * 60)))
-        const timeWindowDays = Math.max(0, Math.floor(timeWindowMs / (1000 * 60 * 60 * 24)))
-
-        let timeWindowLabel = ''
-        if (timeWindowHours < 24) {
-          timeWindowLabel = `${timeWindowHours} hour${timeWindowHours === 1 ? '' : 's'}`
-        } else if (timeWindowDays === 1) {
-          timeWindowLabel = '1 day'
-        } else {
-          timeWindowLabel = `${timeWindowDays} days`
-        }
-
-        return {
-          checkoutDate: booking.checkoutDateISO,
-          checkoutDateFormatted: booking.checkoutDate,
-          nextCheckinDate: nextBooking.checkinDateISO,
-          nextCheckinDateFormatted: nextBooking.checkinDate,
-          propertyTitle: booking.propertyTitle,
-          timeWindowHours,
-          timeWindowDays,
-          timeWindowLabel,
-          nextPackageName: nextBooking.currentPackageName,
-          isGuestBooking: booking.isGuestBooking,
-        }
-      })
-      .filter((item): item is CleaningWindowSuggestion => Boolean(item))
-      .sort((a, b) => a.checkoutDate.localeCompare(b.checkoutDate))
-
-    return NextResponse.json({ scheduleSuggestions, dateSuggestions })
+    return NextResponse.json({ scheduleSuggestions })
   } catch (error) {
     console.error('Error fetching cleaning schedule suggestions:', error)
     return NextResponse.json({ error: 'Failed to load cleaning schedule suggestions' }, { status: 500 })
