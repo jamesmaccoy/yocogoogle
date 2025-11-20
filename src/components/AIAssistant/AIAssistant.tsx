@@ -567,16 +567,52 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
     const latestCleaningMessage = [...messages].reverse().find((msg) => msg.cleaningSchedule)
     if (latestCleaningMessage?.cleaningSchedule?.scheduleSuggestions) {
       setScheduleSuggestions(latestCleaningMessage.cleaningSchedule.scheduleSuggestions)
-    } else {
-      setScheduleSuggestions([])
     }
-
     if (latestCleaningMessage?.cleaningSchedule?.dateSuggestions) {
       setCleaningWindowSuggestions(latestCleaningMessage.cleaningSchedule.dateSuggestions)
-    } else {
-      setCleaningWindowSuggestions([])
     }
   }, [messages])
+
+  useEffect(() => {
+    if (!isOpen || !isHostOrAdmin) return
+    if (scheduleSuggestions.length > 0 || cleaningWindowSuggestions.length > 0) return
+
+    let isCancelled = false
+
+    const fetchSuggestions = async () => {
+      try {
+        const response = await fetch('/api/cleaning-schedule/suggestions', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to load cleaning suggestions')
+        }
+
+        const data = await response.json()
+        if (isCancelled) return
+
+        if (Array.isArray(data?.scheduleSuggestions) && data.scheduleSuggestions.length > 0) {
+          setScheduleSuggestions(data.scheduleSuggestions)
+        }
+
+        if (Array.isArray(data?.dateSuggestions) && data.dateSuggestions.length > 0) {
+          setCleaningWindowSuggestions(data.dateSuggestions)
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Error fetching cleaning schedule suggestions:', error)
+        }
+      }
+    }
+
+    fetchSuggestions()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isOpen, isHostOrAdmin, scheduleSuggestions.length, cleaningWindowSuggestions.length])
 
   const handleScheduleSuggestionClick = useCallback(
     async (scheduleSuggestion: CleaningScheduleSuggestion) => {
@@ -661,8 +697,8 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
         role: 'assistant',
         content: `Cleaning time window: ${windowSuggestion.checkoutDateFormatted} → ${windowSuggestion.nextCheckinDateFormatted}`,
         cleaningSchedule: {
-          sameDayCheckouts: [],
-          dateSuggestions: [windowSuggestion],
+            sameDayCheckouts: [],
+            dateSuggestions: [windowSuggestion],
         },
       }
 
@@ -2335,7 +2371,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
             >
               {(scheduleSuggestions.length > 0 ||
                 cleaningWindowSuggestions.length > 0 ||
-                (currentContext?.context === 'post-article' && dateSuggestions.length > 0)) && (
+                (currentContext?.context === 'post-article' && !isHostOrAdmin && dateSuggestions.length > 0)) && (
                 <PromptInputHeader className="pb-2 space-y-2">
                   {scheduleSuggestions.length > 0 && (
                     <div>
@@ -2354,20 +2390,23 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                   )}
                   {cleaningWindowSuggestions.length > 0 && (
                     <div>
-                      <p className="text-xs text-muted-foreground mb-1">Cleaning time windows</p>
+                      <p className="text-xs text-muted-foreground mb-1">Try these date ranges</p>
                       <Suggestions>
-                        {cleaningWindowSuggestions.map((suggestion, idx) => (
-                          <Suggestion
-                            key={`${suggestion.checkoutDate}-${idx}`}
-                            suggestion={`${suggestion.checkoutDateFormatted} → ${suggestion.nextCheckinDateFormatted}`}
-                            className="text-xs"
-                            onClick={() => handleCleaningWindowSuggestionClick(suggestion)}
-                          />
-                        ))}
+                        {cleaningWindowSuggestions.map((suggestion, idx) => {
+                          const label = `${suggestion.checkoutDateFormatted} → ${suggestion.nextCheckinDateFormatted} (${suggestion.timeWindowLabel})`
+                          return (
+                            <Suggestion
+                              key={`${suggestion.checkoutDate}-${suggestion.nextCheckinDate}-${idx}`}
+                              suggestion={label}
+                              className="text-xs"
+                              onClick={() => handleCleaningWindowSuggestionClick(suggestion)}
+                            />
+                          )
+                        })}
                       </Suggestions>
                     </div>
                   )}
-                  {currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
+                  {!isHostOrAdmin && currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Stay date ideas</p>
                       <Suggestions>
