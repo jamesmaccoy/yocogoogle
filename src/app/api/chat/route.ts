@@ -415,27 +415,33 @@ ${tomorrowCheckouts.length > 0
     ).join('\n')
   : 'No checkouts tomorrow.'}
 
-CRITICAL INSTRUCTIONS - BE CONCISE AND FOCUSED:
+CRITICAL INSTRUCTIONS - BE CONCISE AND USE RELATIVE DATES:
 
-1. **If there are overlapping checkouts (same day)**: 
-   - Briefly mention: "X properties checking out on [date]" and if they're in close proximity
+1. **ALWAYS use relative date references instead of specific dates**:
+   - Use: "tomorrow", "next week", "this Sunday", "in 3 weeks", "twice next week", "next month"
+   - Avoid: "Dec 19", "January 17", "December 21" (only use if absolutely necessary)
+   - Examples: "Tomorrow, and twice next week" or "This Sunday, next Wednesday, and in 3 weeks"
+
+2. **If there are overlapping checkouts (same day)**: 
+   - Briefly mention: "X properties checking out [relative date]" and if they're in close proximity
    - Example: "2 properties checking out tomorrow in southern peninsular area"
+   - Example: "3 properties checking out this Sunday"
 
-2. **If NO overlapping checkouts**:
-   - Simply list when to send cleaners: "Tomorrow, and twice next week" or "Dec 19, Dec 21, Jan 17"
-   - Be concise - just the dates/times, no elaboration
+3. **If NO overlapping checkouts**:
+   - Simply list when to send cleaners using relative dates: "Tomorrow, and twice next week" or "This Sunday, next Wednesday, and in 3 weeks"
+   - Be concise - just the relative dates/times, no elaboration
 
-3. **Only mention proximity if properties share categories AND checkout on the same day** - otherwise skip proximity details
+4. **Only mention proximity if properties share categories AND checkout on the same day** - otherwise skip proximity details
 
-4. **Do NOT elaborate on**:
+5. **Do NOT elaborate on**:
    - Individual property details unless asked
    - Sleep capacity unless relevant to cleaner count
    - Detailed routes unless there are same-day checkouts
    - Next check-in dates unless critical
 
-5. **Keep response under 3-4 sentences** - focus on key insights only
+6. **Keep response under 3-4 sentences** - focus on key insights only
 
-Respond concisely with just the essential information.`
+Respond concisely with just the essential information using relative date references.`
 
         const chat = model.startChat({
           history: [
