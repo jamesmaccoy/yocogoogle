@@ -85,6 +85,42 @@ export default async function BookingConfirmationPage({
             })
           }
 
+          // Link addon transactions to bookings
+          if (transaction.intent === 'product' && transaction.metadata && typeof transaction.metadata === 'object') {
+            const metadata = transaction.metadata as Record<string, unknown>
+            const bookingId = metadata.bookingId as string | undefined
+            
+            if (bookingId) {
+              try {
+                // Find the booking
+                const booking = await payload.findByID({
+                  collection: 'bookings',
+                  id: bookingId,
+                })
+                
+                if (booking) {
+                  // Add this transaction to the booking's addonTransactions
+                  const existingAddons = Array.isArray(booking.addonTransactions) 
+                    ? booking.addonTransactions.map((t: any) => typeof t === 'string' ? t : t.id)
+                    : []
+                  
+                  if (!existingAddons.includes(transactionId)) {
+                    await payload.update({
+                      collection: 'bookings',
+                      id: bookingId,
+                      data: {
+                        addonTransactions: [...existingAddons, transactionId],
+                      },
+                    })
+                    console.log(`✅ Linked addon transaction ${transactionId} to booking ${bookingId}`)
+                  }
+                }
+              } catch (error) {
+                console.error('Error linking addon transaction to booking:', error)
+              }
+            }
+          }
+
           if (transaction.intent === 'subscription') {
             // Map transaction plan/entitlement to valid user plan types (pro, free, basic, enterprise)
             const transactionPlan = transaction.plan || (transaction.entitlement === 'pro' ? 'pro' : 'free')

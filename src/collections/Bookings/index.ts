@@ -642,5 +642,47 @@ export const Booking: CollectionConfig = {
         position: 'sidebar',
       },
     },
+    {
+      name: 'cleaningSchedule',
+      label: 'Cleaning Schedule',
+      type: 'json',
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Stored cleaning schedule plan for this booking',
+      },
+    },
+    {
+      name: 'cleaningSource',
+      label: 'Cleaning Source',
+      type: 'select',
+      required: false,
+      options: [
+        {
+          label: 'Included in Booking',
+          value: 'included',
+        },
+        {
+          label: 'Addon Purchase',
+          value: 'addon',
+        },
+      ],
+      admin: {
+        position: 'sidebar',
+        description: 'Whether cleaning was included in the booking or purchased as an addon',
+      },
+    },
+    {
+      name: 'addonTransactions',
+      label: 'Addon Transactions',
+      type: 'relationship',
+      relationTo: 'yoco-transactions',
+      hasMany: true,
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Transactions for addons purchased for this booking',
+      },
+    },
   ],
 }

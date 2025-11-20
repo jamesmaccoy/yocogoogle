@@ -1,6 +1,7 @@
 type BookingMetadata = {
   estimateId?: string
   postId?: string
+  bookingId?: string
   duration?: number
   startDate?: string
   endDate?: string

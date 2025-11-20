@@ -22,9 +22,42 @@ export async function GET(request: NextRequest) {
       },
       sort: '-createdAt',
       limit,
+      depth: 2, // Include relationships
     })
 
-    return NextResponse.json({ transactions: transactions.docs })
+    // For each transaction, find bookings that reference it as an addon
+    const transactionsWithBookings = await Promise.all(
+      transactions.docs.map(async (transaction) => {
+        // Find bookings that have this transaction in their addonTransactions
+        const bookingsWithThisAddon = await payload.find({
+          collection: 'bookings',
+          where: {
+            addonTransactions: {
+              contains: transaction.id,
+            },
+          },
+          limit: 10,
+          depth: 1,
+        })
+
+        return {
+          ...transaction,
+          linkedBookings: bookingsWithThisAddon.docs.map((booking) => ({
+            id: booking.id,
+            title: booking.title,
+            fromDate: booking.fromDate,
+            toDate: booking.toDate,
+            post: typeof booking.post === 'object' ? {
+              id: booking.post.id,
+              title: booking.post.title,
+              slug: booking.post.slug,
+            } : null,
+          })),
+        }
+      })
+    )
+
+    return NextResponse.json({ transactions: transactionsWithBookings })
   } catch (error) {
     console.error('Error fetching Yoco transactions:', error)
     return NextResponse.json(

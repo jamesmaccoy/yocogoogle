@@ -177,6 +177,26 @@ export interface Booking {
   fromDate: string;
   toDate: string;
   packageType?: string | null;
+  /**
+   * Stored cleaning schedule plan for this booking
+   */
+  cleaningSchedule?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Whether cleaning was included in the booking or purchased as an addon
+   */
+  cleaningSource?: ('included' | 'addon') | null;
+  /**
+   * Transactions for addons purchased for this booking
+   */
+  addonTransactions?: (string | YocoTransaction)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -856,6 +876,38 @@ export interface Form {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "yoco-transactions".
+ */
+export interface YocoTransaction {
+  id: string;
+  user: string | User;
+  intent: 'booking' | 'subscription' | 'product';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  productId?: string | null;
+  packageName: string;
+  amount: number;
+  currency?: string | null;
+  paymentLinkId?: string | null;
+  paymentUrl?: string | null;
+  entitlement?: ('none' | 'standard' | 'pro') | null;
+  plan?: ('free' | 'standard' | 'pro') | null;
+  periodDays?: number | null;
+  expiresAt?: string | null;
+  completedAt?: string | null;
+  metadata?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "estimates".
  */
 export interface Estimate {
@@ -901,38 +953,6 @@ export interface AuthRequest {
   email: string;
   code: string;
   expiresAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "yoco-transactions".
- */
-export interface YocoTransaction {
-  id: string;
-  user: string | User;
-  intent: 'booking' | 'subscription' | 'product';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  productId?: string | null;
-  packageName: string;
-  amount: number;
-  currency?: string | null;
-  paymentLinkId?: string | null;
-  paymentUrl?: string | null;
-  entitlement?: ('none' | 'standard' | 'pro') | null;
-  plan?: ('free' | 'standard' | 'pro') | null;
-  periodDays?: number | null;
-  expiresAt?: string | null;
-  completedAt?: string | null;
-  metadata?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1248,6 +1268,9 @@ export interface BookingsSelect<T extends boolean = true> {
   fromDate?: T;
   toDate?: T;
   packageType?: T;
+  cleaningSchedule?: T;
+  cleaningSource?: T;
+  addonTransactions?: T;
   updatedAt?: T;
   createdAt?: T;
 }

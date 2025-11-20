@@ -556,7 +556,109 @@ Respond concisely with just the essential information using relative date refere
             }
           })
         
-        // Create date suggestions showing time windows for cleaning
+        // Create date suggestions showing checkout schedules grouped by date
+        // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
+        const checkoutScheduleSuggestions = Object.entries(bookingsByCheckoutDate)
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([dateISO, bookings]) => {
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })
+            
+            // Get next checkout dates for properties in this group
+            const nextCheckouts = bookings
+              .map(b => {
+                const nextBooking = propertyNextBookings[b.id]
+                if (!nextBooking) return null
+                return {
+                  checkoutDate: nextBooking.checkoutDateISO,
+                  checkoutDateFormatted: new Date(nextBooking.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  }),
+                  propertyTitle: b.propertyTitle,
+                }
+              })
+              .filter((nc): nc is { checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string } => nc !== null)
+            
+            // Group next checkouts by date
+            const nextCheckoutsByDate: Record<string, Array<{ checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string }>> = {}
+            nextCheckouts.forEach(nc => {
+              if (!nextCheckoutsByDate[nc.checkoutDate]) {
+                nextCheckoutsByDate[nc.checkoutDate] = []
+              }
+              const dateGroup = nextCheckoutsByDate[nc.checkoutDate]
+              if (dateGroup) {
+                dateGroup.push(nc)
+              }
+            })
+            
+            return {
+              checkoutDate: dateISO,
+              checkoutDateFormatted: dateFormatted,
+              propertyCount: bookings.length,
+              properties: bookings.map(b => ({
+                id: b.id,
+                propertyTitle: b.propertyTitle,
+                propertySlug: b.propertySlug,
+                checkoutDate: b.checkoutDate,
+                checkinDate: b.checkinDate,
+                sleepCapacity: b.sleepCapacity,
+                proximityCategories: b.proximityCategories,
+                isGuestBooking: b.isGuestBooking,
+                currentPackageName: b.currentPackageName,
+                nextCheckin: propertyNextBookings[b.id] ? {
+                  date: propertyNextBookings[b.id]!.checkinDate,
+                  checkoutDate: propertyNextBookings[b.id]!.checkoutDateISO,
+                  checkoutDateFormatted: new Date(propertyNextBookings[b.id]!.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  }),
+                  propertyTitle: propertyNextBookings[b.id]!.propertyTitle,
+                  timeWindowHours: propertyNextBookings[b.id]!.timeWindowHours,
+                  timeWindowDays: propertyNextBookings[b.id]!.timeWindowDays,
+                  packageName: propertyNextBookings[b.id]!.nextPackageName,
+                } : null,
+              })),
+              nextCheckoutsByDate: Object.entries(nextCheckoutsByDate)
+                .map(([nextDateISO, props]) => {
+                  const firstProp = props[0]
+                  if (!firstProp) return null
+                  return {
+                    checkoutDate: nextDateISO,
+                    checkoutDateFormatted: firstProp.checkoutDateFormatted,
+                    propertyCount: props.length,
+                  }
+                })
+                .filter((item): item is { checkoutDate: string; checkoutDateFormatted: string; propertyCount: number } => item !== null),
+            }
+          })
+        
+        // Create schedule suggestions showing date ranges with property counts
+        // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
+        const scheduleSuggestions = checkoutScheduleSuggestions
+          .filter(schedule => schedule.nextCheckoutsByDate.length > 0)
+          .flatMap(schedule => 
+            schedule.nextCheckoutsByDate.map(nextCheckout => ({
+              label: `${schedule.checkoutDateFormatted} (${schedule.propertyCount} ${schedule.propertyCount === 1 ? 'property' : 'properties'}) - ${nextCheckout.checkoutDateFormatted} (${nextCheckout.propertyCount} ${nextCheckout.propertyCount === 1 ? 'property' : 'properties'})`,
+              fromCheckoutDate: schedule.checkoutDate,
+              fromCheckoutDateFormatted: schedule.checkoutDateFormatted,
+              fromPropertyCount: schedule.propertyCount,
+              toCheckoutDate: nextCheckout.checkoutDate,
+              toCheckoutDateFormatted: nextCheckout.checkoutDateFormatted,
+              toPropertyCount: nextCheckout.propertyCount,
+              properties: schedule.properties,
+            }))
+          )
+        
+        // Also keep the time window suggestions for the existing display
         const dateSuggestions = cleaningBookingsInfo
           .filter(b => propertyNextBookings[b.id]) // Only bookings with next check-ins
           .map(b => {
@@ -595,6 +697,7 @@ Respond concisely with just the essential information using relative date refere
           cleaningSchedule: {
             sameDayCheckouts: sameDayCheckoutsByDate,
             dateSuggestions: dateSuggestions,
+            scheduleSuggestions: scheduleSuggestions,
           },
         })
       } catch (error) {

@@ -270,6 +270,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
           total,
           {
             postId,
+            bookingId: data.id, // Link addon transaction to this booking
             intent: 'product',
           },
         )

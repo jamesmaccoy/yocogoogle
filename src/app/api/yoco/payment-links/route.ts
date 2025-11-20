@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       productId,
       estimateId,
       postId,
+      bookingId,
       duration,
       startDate,
       endDate,
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
     const metadata = {
       estimateId,
       postId,
+      bookingId,
       duration,
       startDate,
       endDate,

@@ -127,6 +127,35 @@ interface Message {
       nextPackageName: string
       isGuestBooking: boolean
     }>
+    scheduleSuggestions?: Array<{
+      label: string
+      fromCheckoutDate: string
+      fromCheckoutDateFormatted: string
+      fromPropertyCount: number
+      toCheckoutDate: string
+      toCheckoutDateFormatted: string
+      toPropertyCount: number
+      properties: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkoutDate: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
+        nextCheckin: {
+          date: string
+          checkoutDate: string
+          checkoutDateFormatted: string
+          propertyTitle: string
+          timeWindowHours?: number
+          timeWindowDays?: number
+          packageName?: string
+        } | null
+      }>
+    }>
   }
 }
 
@@ -2055,6 +2084,96 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                       ))}
                                     </div>
                                   </div>
+                                ))}
+                              </div>
+                            </PlanContent>
+                          </Plan>
+                        </div>
+                      )}
+                      {message.cleaningSchedule.scheduleSuggestions && message.cleaningSchedule.scheduleSuggestions.length > 0 && (
+                        <div className="mb-4">
+                          <Plan defaultOpen={false}>
+                            <PlanHeader>
+                              <PlanTitle>Suggested Checkout Schedules</PlanTitle>
+                              <PlanDescription>
+                                {`Click a schedule to view the cleaning plan`}
+                              </PlanDescription>
+                            </PlanHeader>
+                            <PlanTrigger>View Checkout Schedules</PlanTrigger>
+                            <PlanContent>
+                              <div className="space-y-2">
+                                {message.cleaningSchedule.scheduleSuggestions.map((suggestion, idx) => (
+                                  <Button
+                                    key={idx}
+                                    variant="outline"
+                                    className="w-full justify-start text-left h-auto py-3"
+                                    onClick={async () => {
+                                      // Create a plan component for this schedule
+                                      const threadId = activeThreadRef.current
+                                      const schedulePlan: Message = {
+                                        role: 'assistant',
+                                        content: `Cleaning schedule: ${suggestion.label}`,
+                                        cleaningSchedule: {
+                                          sameDayCheckouts: [{
+                                            date: suggestion.fromCheckoutDateFormatted,
+                                            dateISO: suggestion.fromCheckoutDate,
+                                            properties: suggestion.properties.filter(p => {
+                                              // Only include properties that checkout on the from date
+                                              return p.nextCheckin?.checkoutDate === suggestion.toCheckoutDate
+                                            }),
+                                          }],
+                                        },
+                                      }
+                                      appendMessageToThread(threadId, schedulePlan)
+                                      
+                                      // Attach cleaning schedule to relevant bookings
+                                      try {
+                                        const bookingIds = suggestion.properties
+                                          .filter(p => p.id)
+                                          .map(p => p.id)
+                                        
+                                        // Attach schedule to each booking
+                                        for (const bookingId of bookingIds) {
+                                          try {
+                                            const response = await fetch(`/api/bookings/${bookingId}/cleaning-schedule`, {
+                                              method: 'POST',
+                                              headers: {
+                                                'Content-Type': 'application/json',
+                                              },
+                                              credentials: 'include',
+                                              body: JSON.stringify({
+                                                cleaningSchedule: schedulePlan.cleaningSchedule,
+                                                cleaningSource: 'included', // Default to included, can be changed to 'addon' if purchased separately
+                                              }),
+                                            })
+                                            
+                                            if (!response.ok) {
+                                              console.error(`Failed to attach schedule to booking ${bookingId}:`, await response.text())
+                                            }
+                                          } catch (error) {
+                                            console.error(`Error attaching schedule to booking ${bookingId}:`, error)
+                                          }
+                                        }
+                                      } catch (error) {
+                                        console.error('Error attaching cleaning schedules to bookings:', error)
+                                      }
+                                      
+                                      // Scroll to the new message
+                                      setTimeout(() => {
+                                        const conversationElement = document.querySelector('[data-conversation]')
+                                        if (conversationElement) {
+                                          conversationElement.scrollTop = conversationElement.scrollHeight
+                                        }
+                                      }, 100)
+                                    }}
+                                  >
+                                    <div className="flex flex-col items-start gap-1">
+                                      <span className="font-medium text-sm">{suggestion.label}</span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {suggestion.properties.length} {suggestion.properties.length === 1 ? 'property' : 'properties'} checking out
+                                      </span>
+                                    </div>
+                                  </Button>
                                 ))}
                               </div>
                             </PlanContent>
