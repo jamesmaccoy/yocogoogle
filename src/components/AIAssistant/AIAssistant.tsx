@@ -104,11 +104,28 @@ interface Message {
         checkinDate: string
         sleepCapacity: string
         proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
         nextCheckin: {
           date: string
           propertyTitle: string
+          timeWindowHours?: number
+          timeWindowDays?: number
+          packageName?: string
         } | null
       }>
+    }>
+    dateSuggestions?: Array<{
+      checkoutDate: string
+      checkoutDateFormatted: string
+      nextCheckinDate: string
+      nextCheckinDateFormatted: string
+      propertyTitle: string
+      timeWindowHours: number
+      timeWindowDays: number
+      timeWindowLabel: string
+      nextPackageName: string
+      isGuestBooking: boolean
     }>
   }
 }
@@ -1952,68 +1969,144 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       </Plan>
                     </div>
                   )}
-                  {message.cleaningSchedule && message.cleaningSchedule.sameDayCheckouts.length > 0 && (
-                    <div className="mb-4">
-                      <Plan defaultOpen={true}>
-                        <PlanHeader>
-                          <PlanTitle>Same Day Checkout Schedule</PlanTitle>
-                          <PlanDescription>
-                            {`Properties checking out grouped by date`}
-                          </PlanDescription>
-                        </PlanHeader>
-                        <PlanTrigger>View Checkout Schedule</PlanTrigger>
-                        <PlanContent>
-                          <div className="space-y-6">
-                            {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
-                              <div key={groupIdx} className="border-b pb-4 last:border-0 last:pb-0">
-                                <h4 className="font-semibold mb-3 text-base">
-                                  {checkoutGroup.date} ({checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
-                                </h4>
-                                <div className="space-y-3">
-                                  {checkoutGroup.properties.map((property, propIdx) => (
-                                    <div key={property.id} className="pl-4 border-l-2 border-muted">
-                                      <div className="font-medium text-sm mb-1">
-                                        {property.propertySlug ? (
-                                          <a 
-                                            href={`/posts/${property.propertySlug}`}
-                                            className="text-primary hover:underline"
-                                          >
-                                            {property.propertyTitle}
-                                          </a>
-                                        ) : (
-                                          property.propertyTitle
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground space-y-1">
-                                        <div>
-                                          <span className="font-medium">Checkout:</span> {property.checkoutDate}
-                                        </div>
-                                        <div>
-                                          <span className="font-medium">Check-in:</span> {property.checkinDate}
-                                        </div>
-                                        {property.nextCheckin && (
-                                          <div className="text-primary">
-                                            <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on {property.nextCheckin.date}
+                  {message.cleaningSchedule && (
+                    <>
+                      {message.cleaningSchedule.sameDayCheckouts.length > 0 && (
+                        <div className="mb-4">
+                          <Plan defaultOpen={true}>
+                            <PlanHeader>
+                              <PlanTitle>Same Day Checkout Schedule</PlanTitle>
+                              <PlanDescription>
+                                {`Properties checking out grouped by date`}
+                              </PlanDescription>
+                            </PlanHeader>
+                            <PlanTrigger>View Checkout Schedule</PlanTrigger>
+                            <PlanContent>
+                              <div className="space-y-6">
+                                {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                                  <div key={groupIdx} className="border-b pb-4 last:border-0 last:pb-0">
+                                    <h4 className="font-semibold mb-3 text-base">
+                                      {checkoutGroup.date} ({checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
+                                    </h4>
+                                    <div className="space-y-3">
+                                      {checkoutGroup.properties.map((property, propIdx) => (
+                                        <div key={property.id} className="pl-4 border-l-2 border-muted">
+                                          <div className="font-medium text-sm mb-1">
+                                            {property.propertySlug ? (
+                                              <a 
+                                                href={`/posts/${property.propertySlug}`}
+                                                className="text-primary hover:underline"
+                                              >
+                                                {property.propertyTitle}
+                                              </a>
+                                            ) : (
+                                              property.propertyTitle
+                                            )}
                                           </div>
-                                        )}
-                                        <div>
-                                          <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
-                                        </div>
-                                        {property.proximityCategories.length > 0 && (
-                                          <div>
-                                            <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
+                                          <div className="text-xs text-muted-foreground space-y-1">
+                                            <div>
+                                              <span className="font-medium">Checkout:</span> {property.checkoutDate}
+                                            </div>
+                                            <div>
+                                              <span className="font-medium">Check-in:</span> {property.checkinDate}
+                                            </div>
+                                            {property.nextCheckin && (
+                                              <>
+                                                <div className="text-primary">
+                                                  <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on {property.nextCheckin.date}
+                                                </div>
+                                                {property.nextCheckin.timeWindowHours !== undefined && (
+                                                  <div className="text-primary font-medium">
+                                                    <span className="font-medium">Cleaning window:</span> {property.nextCheckin.timeWindowHours < 24 
+                                                      ? `${property.nextCheckin.timeWindowHours} hour${property.nextCheckin.timeWindowHours !== 1 ? 's' : ''}`
+                                                      : property.nextCheckin.timeWindowDays === 1
+                                                      ? '1 day'
+                                                      : `${property.nextCheckin.timeWindowDays} days`
+                                                    }
+                                                  </div>
+                                                )}
+                                                {property.nextCheckin.packageName && (
+                                                  <div className="text-xs">
+                                                    <span className="font-medium">Next package:</span> {property.nextCheckin.packageName}
+                                                  </div>
+                                                )}
+                                              </>
+                                            )}
+                                            {property.currentPackageName && (
+                                              <div className="text-xs">
+                                                <span className="font-medium">Current package:</span> {property.currentPackageName}
+                                              </div>
+                                            )}
+                                            {property.isGuestBooking && (
+                                              <div className="text-xs text-green-600">
+                                                <span className="font-medium">Guest booking</span>
+                                              </div>
+                                            )}
+                                            <div>
+                                              <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
+                                            </div>
+                                            {property.proximityCategories.length > 0 && (
+                                              <div>
+                                                <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
+                                              </div>
+                                            )}
                                           </div>
-                                        )}
-                                      </div>
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
-                                </div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </PlanContent>
-                      </Plan>
-                    </div>
+                            </PlanContent>
+                          </Plan>
+                        </div>
+                      )}
+                      {message.cleaningSchedule.dateSuggestions && message.cleaningSchedule.dateSuggestions.length > 0 && (
+                        <div className="mb-4">
+                          <Plan defaultOpen={false}>
+                            <PlanHeader>
+                              <PlanTitle>Cleaning Time Windows</PlanTitle>
+                              <PlanDescription>
+                                {`Time available for cleaning between bookings`}
+                              </PlanDescription>
+                            </PlanHeader>
+                            <PlanTrigger>View Time Windows</PlanTrigger>
+                            <PlanContent>
+                              <div className="space-y-3">
+                                {message.cleaningSchedule.dateSuggestions.map((suggestion, idx) => (
+                                  <div key={idx} className="border-b pb-3 last:border-0 last:pb-0">
+                                    <div className="font-medium text-sm mb-1">
+                                      {suggestion.propertyTitle}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground space-y-1">
+                                      <div>
+                                        <span className="font-medium">Checkout:</span> {suggestion.checkoutDateFormatted}
+                                      </div>
+                                      <div>
+                                        <span className="font-medium">Next check-in:</span> {suggestion.nextCheckinDateFormatted}
+                                      </div>
+                                      <div className="text-primary font-medium">
+                                        <span className="font-medium">Cleaning window:</span> {suggestion.timeWindowLabel}
+                                      </div>
+                                      {suggestion.nextPackageName && (
+                                        <div>
+                                          <span className="font-medium">Next package:</span> {suggestion.nextPackageName}
+                                        </div>
+                                      )}
+                                      {suggestion.isGuestBooking && (
+                                        <div className="text-green-600">
+                                          <span className="font-medium">Guest booking</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </PlanContent>
+                          </Plan>
+                        </div>
+                      )}
+                    </>
                   )}
                 </React.Fragment>
               ))}

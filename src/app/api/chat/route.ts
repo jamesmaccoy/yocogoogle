@@ -250,6 +250,27 @@ Respond with clear, specific suggestions for updating the package.`
           limit: 200, // Get upcoming bookings
         })
 
+        // Check for guest transactions (bookings paid by guests)
+        const customerIds = allBookings.docs
+          .map((b: any) => typeof b.customer === 'object' ? b.customer?.id : b.customer)
+          .filter(Boolean) as string[]
+        
+        const guestTransactions = customerIds.length > 0 ? await payload.find({
+          collection: 'yoco-transactions',
+          where: {
+            user: { in: customerIds },
+            intent: { equals: 'booking' },
+            status: { equals: 'completed' },
+          },
+          limit: 1000,
+        }) : { docs: [] }
+        
+        const guestTransactionUserIds = new Set(
+          guestTransactions.docs.map((t: any) => 
+            typeof t.user === 'object' ? t.user?.id : t.user
+          ).filter(Boolean) as string[]
+        )
+
         // Format bookings with full property details including sleep capacity
         const cleaningBookingsInfo = allBookings.docs.map((booking: any) => {
           const post = typeof booking.post === 'object' && booking.post ? booking.post : null
@@ -281,6 +302,16 @@ Respond with clear, specific suggestions for updating the package.`
 
           const checkoutDateISO = booking.toDate.split('T')[0] // YYYY-MM-DD format
           const checkinDateISO = booking.fromDate.split('T')[0] // YYYY-MM-DD format
+          
+          // Check if booking was paid by a guest (has completed transaction)
+          const customerId = typeof booking.customer === 'object' ? booking.customer?.id : booking.customer
+          const isGuestBooking = customerId && guestTransactionUserIds.has(customerId)
+          
+          // Get package info for current booking
+          const currentPackage = booking.selectedPackage?.package
+          const currentPackageName = typeof currentPackage === 'object' && currentPackage
+            ? (currentPackage.name || booking.selectedPackage?.customName || 'Unknown Package')
+            : (booking.selectedPackage?.customName || 'Unknown Package')
 
           return {
             id: booking.id,
@@ -306,11 +337,19 @@ Respond with clear, specific suggestions for updating the package.`
             status: booking.paymentStatus || 'unknown',
             proximityCategories: categories,
             sleepCapacity: sleepCapacity,
+            isGuestBooking: isGuestBooking,
+            currentPackageName: currentPackageName,
           }
         })
 
         // Find next bookings for each property to determine cleaning needs before check-in
-        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] | null> = {}
+        // Also calculate time windows between checkout and next check-in
+        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] & { 
+          timeWindowHours: number
+          timeWindowDays: number
+          nextPackageName: string
+        } | null> = {}
+        
         cleaningBookingsInfo.forEach((booking) => {
           const propertyId = booking.propertyId
           if (!propertyId) return
@@ -321,7 +360,19 @@ Respond with clear, specific suggestions for updating the package.`
             .sort((a, b) => a.checkinDateISO.localeCompare(b.checkinDateISO))[0]
           
           if (nextBooking) {
-            propertyNextBookings[booking.id] = nextBooking
+            // Calculate time window between checkout and next check-in
+            const checkoutDate = new Date(booking.toDate)
+            const nextCheckinDate = new Date(nextBooking.fromDate)
+            const timeWindowMs = nextCheckinDate.getTime() - checkoutDate.getTime()
+            const timeWindowHours = Math.floor(timeWindowMs / (1000 * 60 * 60))
+            const timeWindowDays = Math.floor(timeWindowMs / (1000 * 60 * 60 * 24))
+            
+            propertyNextBookings[booking.id] = {
+              ...nextBooking,
+              timeWindowHours,
+              timeWindowDays,
+              nextPackageName: nextBooking.currentPackageName,
+            }
           }
         })
 
@@ -343,7 +394,10 @@ Respond with clear, specific suggestions for updating the package.`
           if (!bookingsByCheckoutDate[booking.checkoutDateISO]) {
             bookingsByCheckoutDate[booking.checkoutDateISO] = []
           }
-          bookingsByCheckoutDate[booking.checkoutDateISO].push(booking)
+          const dateGroup = bookingsByCheckoutDate[booking.checkoutDateISO]
+          if (dateGroup) {
+            dateGroup.push(booking)
+          }
         })
 
         // Build detailed booking info with next booking context
@@ -355,6 +409,9 @@ Respond with clear, specific suggestions for updating the package.`
               date: nextBooking.checkinDate,
               dateISO: nextBooking.checkinDateISO,
               propertyTitle: nextBooking.propertyTitle,
+              timeWindowHours: nextBooking.timeWindowHours,
+              timeWindowDays: nextBooking.timeWindowDays,
+              packageName: nextBooking.nextPackageName,
             } : null,
           }
         })
@@ -462,6 +519,7 @@ Respond concisely with just the essential information using relative date refere
         const usage = serializeUsageMetadata(response.usageMetadata)
 
         // Structure same-day checkouts by date for the Plan component
+        // Also create date suggestions showing time windows
         const sameDayCheckoutsByDate = Object.entries(bookingsByCheckoutDate)
           .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
           .map(([dateISO, bookings]) => {
@@ -474,27 +532,69 @@ Respond concisely with just the essential information using relative date refere
             return {
               date: dateFormatted,
               dateISO: dateISO,
-              properties: bookings.map(b => ({
-                id: b.id,
-                propertyTitle: b.propertyTitle,
-                propertySlug: b.propertySlug,
-                checkoutDate: b.checkoutDate,
-                checkinDate: b.checkinDate,
-                sleepCapacity: b.sleepCapacity,
-                proximityCategories: b.proximityCategories,
-                nextCheckin: propertyNextBookings[b.id] ? {
-                  date: propertyNextBookings[b.id]!.checkinDate,
-                  propertyTitle: propertyNextBookings[b.id]!.propertyTitle,
-                } : null,
-              })),
+              properties: bookings.map(b => {
+                const nextBooking = propertyNextBookings[b.id]
+                return {
+                  id: b.id,
+                  propertyTitle: b.propertyTitle,
+                  propertySlug: b.propertySlug,
+                  checkoutDate: b.checkoutDate,
+                  checkinDate: b.checkinDate,
+                  sleepCapacity: b.sleepCapacity,
+                  proximityCategories: b.proximityCategories,
+                  isGuestBooking: b.isGuestBooking,
+                  currentPackageName: b.currentPackageName,
+                  nextCheckin: nextBooking ? {
+                    date: nextBooking.checkinDate,
+                    propertyTitle: nextBooking.propertyTitle,
+                    timeWindowHours: nextBooking.timeWindowHours,
+                    timeWindowDays: nextBooking.timeWindowDays,
+                    packageName: nextBooking.nextPackageName,
+                  } : null,
+                }
+              }),
             }
           })
+        
+        // Create date suggestions showing time windows for cleaning
+        const dateSuggestions = cleaningBookingsInfo
+          .filter(b => propertyNextBookings[b.id]) // Only bookings with next check-ins
+          .map(b => {
+            const nextBooking = propertyNextBookings[b.id]!
+            const checkoutDate = new Date(b.toDate)
+            const nextCheckinDate = new Date(nextBooking.fromDate)
+            
+            // Format time window
+            let timeWindowLabel = ''
+            if (nextBooking.timeWindowHours < 24) {
+              timeWindowLabel = `${nextBooking.timeWindowHours} hour${nextBooking.timeWindowHours !== 1 ? 's' : ''}`
+            } else if (nextBooking.timeWindowDays === 1) {
+              timeWindowLabel = '1 day'
+            } else {
+              timeWindowLabel = `${nextBooking.timeWindowDays} days`
+            }
+            
+            return {
+              checkoutDate: b.checkoutDateISO,
+              checkoutDateFormatted: b.checkoutDate,
+              nextCheckinDate: nextBooking.checkinDateISO,
+              nextCheckinDateFormatted: nextBooking.checkinDate,
+              propertyTitle: b.propertyTitle,
+              timeWindowHours: nextBooking.timeWindowHours,
+              timeWindowDays: nextBooking.timeWindowDays,
+              timeWindowLabel: timeWindowLabel,
+              nextPackageName: nextBooking.nextPackageName,
+              isGuestBooking: b.isGuestBooking,
+            }
+          })
+          .sort((a, b) => a.checkoutDate.localeCompare(b.checkoutDate))
 
         return NextResponse.json({ 
           response: text, 
           usage,
           cleaningSchedule: {
             sameDayCheckouts: sameDayCheckoutsByDate,
+            dateSuggestions: dateSuggestions,
           },
         })
       } catch (error) {
