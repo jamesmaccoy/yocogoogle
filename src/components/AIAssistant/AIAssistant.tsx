@@ -272,9 +272,6 @@ const [dateSuggestions, setDateSuggestions] = useState<
   Array<{ startDate: Date; endDate: Date; label: string }>
 >([])
 const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleSuggestion[]>([])
-const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
-  CleaningTimeWindowSuggestion[]
->([])
   const [currentContext, setCurrentContext] = useState<any>(null)
   const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -568,14 +565,11 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
     if (latestCleaningMessage?.cleaningSchedule?.scheduleSuggestions) {
       setScheduleSuggestions(latestCleaningMessage.cleaningSchedule.scheduleSuggestions)
     }
-    if (latestCleaningMessage?.cleaningSchedule?.dateSuggestions) {
-      setCleaningWindowSuggestions(latestCleaningMessage.cleaningSchedule.dateSuggestions)
-    }
   }, [messages])
 
   useEffect(() => {
     if (!isOpen || !isHostOrAdmin) return
-    if (scheduleSuggestions.length > 0 || cleaningWindowSuggestions.length > 0) return
+    if (scheduleSuggestions.length > 0) return
 
     let isCancelled = false
 
@@ -596,10 +590,6 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
         if (Array.isArray(data?.scheduleSuggestions) && data.scheduleSuggestions.length > 0) {
           setScheduleSuggestions(data.scheduleSuggestions)
         }
-
-        if (Array.isArray(data?.dateSuggestions) && data.dateSuggestions.length > 0) {
-          setCleaningWindowSuggestions(data.dateSuggestions)
-        }
       } catch (error) {
         if (!isCancelled) {
           console.error('Error fetching cleaning schedule suggestions:', error)
@@ -612,7 +602,7 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
     return () => {
       isCancelled = true
     }
-  }, [isOpen, isHostOrAdmin, scheduleSuggestions.length, cleaningWindowSuggestions.length])
+  }, [isOpen, isHostOrAdmin, scheduleSuggestions.length])
 
   const handleScheduleSuggestionClick = useCallback(
     async (scheduleSuggestion: CleaningScheduleSuggestion) => {
@@ -690,22 +680,6 @@ const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
     [appendMessageToThread],
   )
 
-  const handleCleaningWindowSuggestionClick = useCallback(
-    (windowSuggestion: CleaningTimeWindowSuggestion) => {
-      const threadId = activeThreadRef.current
-      const cleaningWindowPlan: Message = {
-        role: 'assistant',
-        content: `Cleaning time window: ${windowSuggestion.checkoutDateFormatted} → ${windowSuggestion.nextCheckinDateFormatted}`,
-        cleaningSchedule: {
-            sameDayCheckouts: [],
-            dateSuggestions: [windowSuggestion],
-        },
-      }
-
-      appendMessageToThread(threadId, cleaningWindowPlan)
-    },
-    [appendMessageToThread],
-  )
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (
@@ -2370,36 +2344,23 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               className="mt-2"
             >
               {(scheduleSuggestions.length > 0 ||
-                cleaningWindowSuggestions.length > 0 ||
                 (currentContext?.context === 'post-article' && !isHostOrAdmin && dateSuggestions.length > 0)) && (
                 <PromptInputHeader className="pb-2 space-y-2">
                   {scheduleSuggestions.length > 0 && (
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Suggested checkout schedules</p>
                       <Suggestions>
-                        {scheduleSuggestions.map((suggestion, idx) => (
-                          <Suggestion
-                            key={`${suggestion.label}-${idx}`}
-                            suggestion={suggestion.label}
-                            className="text-xs"
-                            onClick={() => handleScheduleSuggestionClick(suggestion)}
-                          />
-                        ))}
-                      </Suggestions>
-                    </div>
-                  )}
-                  {cleaningWindowSuggestions.length > 0 && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Try these date ranges</p>
-                      <Suggestions>
-                        {cleaningWindowSuggestions.map((suggestion, idx) => {
-                          const label = `${suggestion.checkoutDateFormatted} → ${suggestion.nextCheckinDateFormatted} (${suggestion.timeWindowLabel})`
+                        {scheduleSuggestions.map((suggestion, idx) => {
+                          // Format as day abbreviations like "Tues-Fri" for cleaner display
+                          const fromDay = format(new Date(suggestion.fromCheckoutDate + 'T00:00:00Z'), 'EEE')
+                          const toDay = format(new Date(suggestion.toCheckoutDate + 'T00:00:00Z'), 'EEE')
+                          const label = `${fromDay}-${toDay}`
                           return (
                             <Suggestion
-                              key={`${suggestion.checkoutDate}-${suggestion.nextCheckinDate}-${idx}`}
+                              key={`${suggestion.label}-${idx}`}
                               suggestion={label}
                               className="text-xs"
-                              onClick={() => handleCleaningWindowSuggestionClick(suggestion)}
+                              onClick={() => handleScheduleSuggestionClick(suggestion)}
                             />
                           )
                         })}
