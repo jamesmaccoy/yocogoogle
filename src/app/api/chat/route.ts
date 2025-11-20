@@ -238,36 +238,125 @@ Respond with clear, specific suggestions for updating the package.`
     // Handle cleaning schedule optimization for hosts/admins
     if (context === 'cleaning-schedule') {
       try {
+        // Fetch ALL bookings (not just user's bookings) for cleaning schedule
+        // Hosts need to see all bookings across all properties
+        const allBookings = await payload.find({
+          collection: 'bookings',
+          where: {
+            paymentStatus: { equals: 'paid' }, // Only paid bookings
+          },
+          depth: 2,
+          sort: 'toDate',
+          limit: 200, // Get upcoming bookings
+        })
+
+        // Format bookings with full property details including sleep capacity
+        const cleaningBookingsInfo = allBookings.docs.map((booking: any) => {
+          const post = typeof booking.post === 'object' && booking.post ? booking.post : null
+          const categories = Array.isArray(post?.categories)
+            ? post.categories.map((c: any) =>
+                typeof c === 'object'
+                  ? (c.title || c.slug || c.id || '').toString()
+                  : String(c)
+              ).filter(Boolean)
+            : []
+          
+          // Extract sleep capacity from post meta description or content
+          let sleepCapacity = 'Unknown'
+          if (post?.meta?.description) {
+            const desc = post.meta.description
+            const match1 = desc.match(/(?:sleeps?|accommodates?|fits?)\s+(\d+)/i)?.[1]
+            const match2 = desc.match(/(\d+)\s+(?:person|people|guest|bedroom)/i)?.[1]
+            const match3 = desc.match(/(?:couple|double|single|twin)/i) ? '2' : null
+            sleepCapacity = match1 || match2 || match3 || 'Unknown'
+          }
+          
+          // Also try to extract from post content if it's a string (simple text)
+          if (sleepCapacity === 'Unknown' && post?.content && typeof post.content === 'string') {
+            const content = post.content
+            const match1 = content.match(/(?:sleeps?|accommodates?|fits?)\s+(\d+)/i)?.[1]
+            const match2 = content.match(/(\d+)\s+(?:person|people|guest|bedroom)/i)?.[1]
+            sleepCapacity = match1 || match2 || sleepCapacity
+          }
+
+          return {
+            id: booking.id,
+            propertyTitle: post?.title || booking.title || 'Unknown Property',
+            propertySlug: post?.slug || '',
+            fromDate: booking.fromDate,
+            toDate: booking.toDate,
+            checkoutDate: new Date(booking.toDate).toLocaleDateString('en-US', { 
+              weekday: 'short', 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            }),
+            checkoutDateISO: booking.toDate.split('T')[0], // YYYY-MM-DD format for comparison
+            status: booking.paymentStatus || 'unknown',
+            proximityCategories: categories,
+            sleepCapacity: sleepCapacity,
+          }
+        })
+
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const todayISO = today.toISOString().split('T')[0]
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomorrowISO = tomorrow.toISOString().split('T')[0]
+
+        // Filter bookings checking out today and tomorrow
+        const todayCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === todayISO)
+        const tomorrowCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === tomorrowISO)
+
         const systemPrompt = `You are an expert operations assistant helping a host plan cleaner routes.
 
 HOST CONTEXT:
 - User ID: ${user.id}
 - Email: ${user.email}
+- Today's date: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
-UPCOMING BOOKINGS FOR THIS USER (as customer or host test bookings):
-${bookingsInfo
-  .map(
-    (b) =>
-      `- Booking ${b.id}: ${b.propertyTitle || b.title} from ${b.fromDate} to ${b.toDate} (status: ${
-        b.status
-      })${b.proximityCategories && b.proximityCategories.length ? ` • Categories: ${b.proximityCategories.join(', ')}` : ''}`
-  )
-  .join('\n')}
+ALL UPCOMING BOOKINGS (checking out):
+${cleaningBookingsInfo.length > 0 
+  ? cleaningBookingsInfo.map(
+      (b) =>
+        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+    ).join('\n')
+  : 'No upcoming bookings found.'}
 
-INTERPRETATION NOTES:
-- Categories often encode proximity or region, for example 'southern peninsular', 'cape-town', 'wifi', or similar tags.
-- Properties that share regional categories are likely close together and good to group in one cleaner route.
-- Assume cleaners should be scheduled on CHECK-OUT DATES (the 'toDate' of each booking), with flexible arrival time windows (e.g. 10:00–12:00, 12:00–14:00).
+TODAY'S CHECKOUTS (${todayCheckouts.length}):
+${todayCheckouts.length > 0
+  ? todayCheckouts.map(
+      (b) =>
+        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+    ).join('\n')
+  : 'No checkouts today.'}
 
-INSTRUCTIONS:
-1. Look for bookings that check out on the same day.
-2. Group those bookings by proximity using their categories (e.g. same area/region tags) to minimize travel time.
-3. For each date, propose one or more cleaner routes:
-   - Route name (e.g. 'South Peninsula run', 'City & surrounds run').
-   - Time window for the route and approximate cleaning times per property.
-4. Explicitly call out when only 1 cleaner is needed instead of 2, based on number of properties and reasonable workload.
-5. If the user mentions specific dates or properties in their question, prioritise those in your plan.
-6. Respond with a concise, markdown-formatted cleaning plan that a human coordinator can follow directly.`
+TOMORROW'S CHECKOUTS (${tomorrowCheckouts.length}):
+${tomorrowCheckouts.length > 0
+  ? tomorrowCheckouts.map(
+      (b) =>
+        `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+    ).join('\n')
+  : 'No checkouts tomorrow.'}
+
+CRITICAL INSTRUCTIONS:
+1. **ALWAYS start with today's checkouts first**. If there are no checkouts today, mention that clearly and move to tomorrow.
+2. **Use categories as proximity data** - Properties sharing categories like 'southern peninsular', 'cape-town', etc. are close together. Group them into routes.
+3. **Use sleep capacity to estimate cleaning time**:
+   - Properties sleeping 1-2: ~1-2 hours cleaning
+   - Properties sleeping 3-4: ~2-3 hours cleaning  
+   - Properties sleeping 5+: ~3-4 hours cleaning
+4. **Create optimized routes**:
+   - Group properties by shared categories (proximity)
+   - Name routes by area (e.g. "South Peninsula Route", "City Route")
+   - Suggest time windows (e.g. 10:00-14:00)
+   - Calculate if 1 cleaner can handle the route or if 2 are needed
+5. **Be direct and actionable** - Create the plan immediately using the data provided. Do NOT ask for more information.
+6. **Format as a clear cleaning schedule** with dates, routes, properties, and cleaner assignments.
+
+Create the cleaning plan now using the available data.`
 
         const chat = model.startChat({
           history: [
