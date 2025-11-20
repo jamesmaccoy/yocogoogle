@@ -1773,6 +1773,26 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                         Tell me about this booking
                       </Button>
                     )}
+                    {isHostOrAdmin && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          const today = new Date()
+                          const todayStr = today.toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                          const msg = `Plan same-day checkout cleaning routes for cleaners.\n\nFocus on bookings checking out today (${todayStr}). Group properties by proximity/area and tell me when to send a cleaner, and whether to send 1 cleaner instead of 2.\n\nThis is about my cleaners, not guests.`
+                          setInput(msg)
+                          handleSubmit(new Event('submit') as any)
+                        }}
+                      >
+                        Same-day checkout cleaning
+                      </Button>
+                    )}
                     {currentContext?.context === 'post-article' && hasStandardOrPro && (
                       <Button
                         size="sm"

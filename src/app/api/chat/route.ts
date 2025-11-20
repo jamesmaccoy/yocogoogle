@@ -75,13 +75,27 @@ export async function POST(req: Request) {
     }
 
     // Format bookings and estimates data for the AI
-    const bookingsInfo = bookings.docs.map((booking) => ({
-      id: booking.id,
-      title: booking.title,
-      fromDate: new Date(booking.fromDate).toLocaleDateString(),
-      toDate: new Date(booking.toDate).toLocaleDateString(),
-      status: booking.paymentStatus || 'unknown',
-    }))
+    const bookingsInfo = bookings.docs.map((booking: any) => {
+      const post = typeof booking.post === 'object' && booking.post ? booking.post : null
+      const categories = Array.isArray(post?.categories)
+        ? post.categories.map((c: any) =>
+            typeof c === 'object'
+              ? (c.title || c.slug || c.id || '').toString()
+              : String(c)
+          ).filter(Boolean)
+        : []
+
+      return {
+        id: booking.id,
+        title: booking.title,
+        fromDate: new Date(booking.fromDate).toLocaleDateString(),
+        toDate: new Date(booking.toDate).toLocaleDateString(),
+        status: booking.paymentStatus || 'unknown',
+        propertyTitle: post?.title || '',
+        propertySlug: post?.slug || '',
+        proximityCategories: categories,
+      }
+    })
 
     const estimatesInfo = estimates.docs.map((estimate) => ({
       id: estimate.id,
@@ -218,6 +232,68 @@ Respond with clear, specific suggestions for updating the package.`
       } catch (error) {
         console.error('Error in package update:', error)
         return NextResponse.json({ response: 'Sorry, I encountered an error while updating the package. Please try again.' })
+      }
+    }
+
+    // Handle cleaning schedule optimization for hosts/admins
+    if (context === 'cleaning-schedule') {
+      try {
+        const systemPrompt = `You are an expert operations assistant helping a host plan cleaner routes.
+
+HOST CONTEXT:
+- User ID: ${user.id}
+- Email: ${user.email}
+
+UPCOMING BOOKINGS FOR THIS USER (as customer or host test bookings):
+${bookingsInfo
+  .map(
+    (b) =>
+      `- Booking ${b.id}: ${b.propertyTitle || b.title} from ${b.fromDate} to ${b.toDate} (status: ${
+        b.status
+      })${b.proximityCategories && b.proximityCategories.length ? ` • Categories: ${b.proximityCategories.join(', ')}` : ''}`
+  )
+  .join('\n')}
+
+INTERPRETATION NOTES:
+- Categories often encode proximity or region, for example 'southern peninsular', 'cape-town', 'wifi', or similar tags.
+- Properties that share regional categories are likely close together and good to group in one cleaner route.
+- Assume cleaners should be scheduled on CHECK-OUT DATES (the 'toDate' of each booking), with flexible arrival time windows (e.g. 10:00–12:00, 12:00–14:00).
+
+INSTRUCTIONS:
+1. Look for bookings that check out on the same day.
+2. Group those bookings by proximity using their categories (e.g. same area/region tags) to minimize travel time.
+3. For each date, propose one or more cleaner routes:
+   - Route name (e.g. 'South Peninsula run', 'City & surrounds run').
+   - Time window for the route and approximate cleaning times per property.
+4. Explicitly call out when only 1 cleaner is needed instead of 2, based on number of properties and reasonable workload.
+5. If the user mentions specific dates or properties in their question, prioritise those in your plan.
+6. Respond with a concise, markdown-formatted cleaning plan that a human coordinator can follow directly.`
+
+        const chat = model.startChat({
+          history: [
+            {
+              role: 'user',
+              parts: [{ text: systemPrompt }],
+            },
+            {
+              role: 'model',
+              parts: [{ text: "I understand. I'm ready to help you plan cleaner schedules and routes." }],
+            },
+          ],
+        })
+
+        const result = await chat.sendMessage(message)
+        const response = await result.response
+        const text = response.text()
+        const usage = serializeUsageMetadata(response.usageMetadata)
+
+        return NextResponse.json({ response: text, usage })
+      } catch (error) {
+        console.error('Error in cleaning-schedule context:', error)
+        return NextResponse.json({
+          response:
+            'Sorry, I encountered an error while planning the cleaning schedule. Please try again in a moment.',
+        })
       }
     }
 
