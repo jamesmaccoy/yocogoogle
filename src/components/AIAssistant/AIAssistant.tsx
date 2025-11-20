@@ -140,6 +140,16 @@ interface Message {
           packageName?: string
         } | null
       }>
+      sameDayCheckins?: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
+      }>
     }>
     dateSuggestions?: Array<{
       checkoutDate: string
@@ -2155,15 +2165,25 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                   {message.cleaningSchedule &&
                     (() => {
                       const overlappingGroups = message.cleaningSchedule.sameDayCheckouts.filter(
-                        (group) => group.properties.length > 1,
+                        (group) => group.properties.length > 1 || (group.sameDayCheckins && group.sameDayCheckins.length > 0),
                       )
                       const reasoningLines =
                         overlappingGroups.length > 0
-                          ? overlappingGroups.map((group) => {
-                              const propertyList = group.properties
-                                .map((p) => p.propertyTitle)
-                                .join(', ')
-                              return `${group.properties.length} properties check out on ${group.date}: ${propertyList}`
+                          ? overlappingGroups.flatMap((group) => {
+                              const lines: string[] = []
+                              if (group.properties.length > 1) {
+                                const propertyList = group.properties
+                                  .map((p) => p.propertyTitle)
+                                  .join(', ')
+                                lines.push(`${group.properties.length} properties check out on ${group.date}: ${propertyList}`)
+                              }
+                              if (group.sameDayCheckins && group.sameDayCheckins.length > 0) {
+                                const checkinList = group.sameDayCheckins
+                                  .map((c) => c.propertyTitle)
+                                  .join(', ')
+                                lines.push(`⚠️ Critical: ${group.sameDayCheckins.length} ${group.sameDayCheckins.length === 1 ? 'property' : 'properties'} checking in on ${group.date}: ${checkinList}. Clean checkout properties before check-in time.`)
+                              }
+                              return lines
                             })
                           : ['No overlapping same-day checkouts detected. Cleaners can move sequentially.']
 
@@ -2187,16 +2207,27 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                     </ReasoningContent>
                                   </Reasoning>
                                   <Queue className="mb-4">
-                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => {
+                                      const totalCount = checkoutGroup.properties.length + (checkoutGroup.sameDayCheckins?.length || 0)
+                                      const hasOverlap = (checkoutGroup.sameDayCheckins?.length || 0) > 0
+                                      
+                                      return (
                                       <QueueSection key={checkoutGroup.date} defaultOpen={groupIdx === 0}>
                                         <QueueSectionTrigger>
                                           <QueueSectionLabel
                                             label={checkoutGroup.date}
-                                            count={checkoutGroup.properties.length}
+                                            count={totalCount}
                                             icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
                                           />
                                         </QueueSectionTrigger>
                                         <QueueSectionContent>
+                                          {hasOverlap && (
+                                            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800">
+                                              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                                ⚠️ Critical: {checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'} checking out, {checkoutGroup.sameDayCheckins?.length} {checkoutGroup.sameDayCheckins?.length === 1 ? 'property' : 'properties'} checking in on the same day
+                                              </p>
+                                            </div>
+                                          )}
                                           <QueueList>
                                             {checkoutGroup.properties.map((property, propIdx) => {
                                               const windowLabel =
@@ -2259,10 +2290,51 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                                 </QueueItem>
                                               )
                                             })}
+                                            {checkoutGroup.sameDayCheckins && checkoutGroup.sameDayCheckins.map((checkin, checkinIdx) => (
+                                              <QueueItem key={checkin.id ?? `checkin-${checkoutGroup.date}-${checkinIdx}`}>
+                                                <QueueItemIndicator completed={false} />
+                                                <div className="flex-1">
+                                                  <QueueItemContent>
+                                                    {checkin.propertyTitle} <span className="text-xs text-muted-foreground">(Check-in)</span>
+                                                  </QueueItemContent>
+                                                  <QueueItemDescription>
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                      <span className="inline-flex items-center gap-1">
+                                                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                                        Check-in {checkin.checkinDate}
+                                                      </span>
+                                                      {checkin.proximityCategories.length > 0 && (
+                                                        <span className="inline-flex items-center gap-1">
+                                                          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                                          {checkin.proximityCategories.join(', ')}
+                                                        </span>
+                                                      )}
+                                                      <span className="inline-flex items-center gap-1">
+                                                        Sleeps {checkin.sleepCapacity}
+                                                      </span>
+                                                    </div>
+                                                  </QueueItemDescription>
+                                                </div>
+                                                {checkin.propertySlug && (
+                                                  <QueueItemActions>
+                                                    <QueueItemAction asChild>
+                                                      <a
+                                                        href={`/posts/${checkin.propertySlug}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                      >
+                                                        Open
+                                                      </a>
+                                                    </QueueItemAction>
+                                                  </QueueItemActions>
+                                                )}
+                                              </QueueItem>
+                                            ))}
                                           </QueueList>
                                         </QueueSectionContent>
                                       </QueueSection>
-                                    ))}
+                                      )
+                                    })}
                                   </Queue>
                                   <div className="space-y-6">
                                     {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (

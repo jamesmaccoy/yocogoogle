@@ -400,6 +400,18 @@ Respond with clear, specific suggestions for updating the package.`
           }
         })
 
+        // Group bookings by checkin date to detect same-day checkout/checkin overlaps
+        const bookingsByCheckinDate: Record<string, typeof cleaningBookingsInfo> = {}
+        cleaningBookingsInfo.forEach((booking) => {
+          if (!bookingsByCheckinDate[booking.checkinDateISO]) {
+            bookingsByCheckinDate[booking.checkinDateISO] = []
+          }
+          const dateGroup = bookingsByCheckinDate[booking.checkinDateISO]
+          if (dateGroup) {
+            dateGroup.push(booking)
+          }
+        })
+
         // Build detailed booking info with next booking context
         const detailedBookingsInfo = cleaningBookingsInfo.map((b) => {
           const nextBooking = propertyNextBookings[b.id]
@@ -445,7 +457,11 @@ ${Object.entries(bookingsByCheckoutDate)
       month: 'long', 
       day: 'numeric' 
     })
-    return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}`
+    const sameDayCheckins = bookingsByCheckinDate[date] || []
+    const checkinsText = sameDayCheckins.length > 0
+      ? `\n  ⚠️ CRITICAL: ${sameDayCheckins.length} ${sameDayCheckins.length === 1 ? 'property' : 'properties'} checking IN on this same date:\n${sameDayCheckins.map(c => `    - ${c.propertyTitle} (sleeps ${c.sleepCapacity}) • Categories: ${c.proximityCategories.join(', ') || 'None'}`).join('\n')}`
+      : ''
+    return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}${checkinsText}`
   }).join('\n')}
 
 TODAY'S CHECKOUTS (${todayCheckouts.length}):
@@ -483,6 +499,7 @@ CRITICAL INSTRUCTIONS - BE CONCISE AND USE RELATIVE DATES:
    - Briefly mention: "X properties checking out [relative date]" and if they're in close proximity
    - Example: "2 properties checking out tomorrow in southern peninsular area"
    - Example: "3 properties checking out this Sunday"
+   - **CRITICAL**: If properties are checking IN on the same date as checkouts, explicitly call this out as it requires immediate cleaning before check-in time
 
 3. **If NO overlapping checkouts**:
    - Simply list when to send cleaners using relative dates: "Tomorrow, and twice next week" or "This Sunday, next Wednesday, and in 3 weeks"
@@ -519,7 +536,7 @@ Respond concisely with just the essential information using relative date refere
         const usage = serializeUsageMetadata(response.usageMetadata)
 
         // Structure same-day checkouts by date for the Plan component
-        // Also create date suggestions showing time windows
+        // Also include checkins on the same date (critical cleaning insight)
         const sameDayCheckoutsByDate = Object.entries(bookingsByCheckoutDate)
           .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
           .map(([dateISO, bookings]) => {
@@ -529,6 +546,10 @@ Respond concisely with just the essential information using relative date refere
               month: 'long', 
               day: 'numeric' 
             })
+            
+            // Find checkins happening on the same date (different properties)
+            const sameDayCheckins = bookingsByCheckinDate[dateISO] || []
+            
             return {
               date: dateFormatted,
               dateISO: dateISO,
@@ -553,6 +574,21 @@ Respond concisely with just the essential information using relative date refere
                   } : null,
                 }
               }),
+              // Include checkins on the same date (for cleaning insight)
+              sameDayCheckins: sameDayCheckins
+                .filter(checkin => !bookings.some(checkout => checkout.id === checkin.id)) // Exclude if it's the same booking
+                .map(checkin => {
+                  return {
+                    id: checkin.id,
+                    propertyTitle: checkin.propertyTitle,
+                    propertySlug: checkin.propertySlug,
+                    checkinDate: checkin.checkinDate,
+                    sleepCapacity: checkin.sleepCapacity,
+                    proximityCategories: checkin.proximityCategories,
+                    isGuestBooking: checkin.isGuestBooking,
+                    currentPackageName: checkin.currentPackageName,
+                  }
+                }),
             }
           })
         
