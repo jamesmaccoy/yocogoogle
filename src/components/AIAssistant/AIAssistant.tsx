@@ -159,6 +159,14 @@ interface Message {
   }
 }
 
+type CleaningScheduleSuggestion = NonNullable<
+  NonNullable<Message['cleaningSchedule']>['scheduleSuggestions']
+>[number]
+
+type CleaningTimeWindowSuggestion = NonNullable<
+  NonNullable<Message['cleaningSchedule']>['dateSuggestions']
+>[number]
+
 interface PackageSuggestion {
   revenueCatId: string
   suggestedName: string
@@ -260,7 +268,13 @@ export const AIAssistant = () => {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
-  const [dateSuggestions, setDateSuggestions] = useState<Array<{ startDate: Date; endDate: Date; label: string }>>([])
+const [dateSuggestions, setDateSuggestions] = useState<
+  Array<{ startDate: Date; endDate: Date; label: string }>
+>([])
+const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleSuggestion[]>([])
+const [cleaningWindowSuggestions, setCleaningWindowSuggestions] = useState<
+  CleaningTimeWindowSuggestion[]
+>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
   const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -547,6 +561,114 @@ export const AIAssistant = () => {
       }
     },
     [setMessages],
+  )
+
+  useEffect(() => {
+    const latestCleaningMessage = [...messages].reverse().find((msg) => msg.cleaningSchedule)
+    if (latestCleaningMessage?.cleaningSchedule?.scheduleSuggestions) {
+      setScheduleSuggestions(latestCleaningMessage.cleaningSchedule.scheduleSuggestions)
+    } else {
+      setScheduleSuggestions([])
+    }
+
+    if (latestCleaningMessage?.cleaningSchedule?.dateSuggestions) {
+      setCleaningWindowSuggestions(latestCleaningMessage.cleaningSchedule.dateSuggestions)
+    } else {
+      setCleaningWindowSuggestions([])
+    }
+  }, [messages])
+
+  const handleScheduleSuggestionClick = useCallback(
+    async (scheduleSuggestion: CleaningScheduleSuggestion) => {
+      const threadId = activeThreadRef.current
+      const fromDate = new Date(`${scheduleSuggestion.fromCheckoutDate}T00:00:00Z`)
+      const toDate = new Date(`${scheduleSuggestion.toCheckoutDate}T00:00:00Z`)
+      const diffMs = Math.max(0, toDate.getTime() - fromDate.getTime())
+      const diffDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)))
+      const timeWindowLabel =
+        diffDays === 1 ? '1 day between schedules' : `${diffDays} days between schedules`
+
+      const schedulePlan: Message = {
+        role: 'assistant',
+        content: `Cleaning schedule: ${scheduleSuggestion.label}`,
+        cleaningSchedule: {
+          sameDayCheckouts: [
+            {
+              date: scheduleSuggestion.fromCheckoutDateFormatted,
+              dateISO: scheduleSuggestion.fromCheckoutDate,
+              properties: scheduleSuggestion.properties,
+            },
+          ],
+          dateSuggestions: [
+            {
+              checkoutDate: scheduleSuggestion.fromCheckoutDate,
+              checkoutDateFormatted: scheduleSuggestion.fromCheckoutDateFormatted,
+              nextCheckinDate: scheduleSuggestion.toCheckoutDate,
+              nextCheckinDateFormatted: scheduleSuggestion.toCheckoutDateFormatted,
+              propertyTitle: scheduleSuggestion.label,
+              timeWindowHours: diffDays * 24,
+              timeWindowDays: diffDays,
+              timeWindowLabel,
+              nextPackageName: '',
+              isGuestBooking: false,
+            },
+          ],
+        },
+      }
+
+      appendMessageToThread(threadId, schedulePlan)
+
+      try {
+        const bookingIds = scheduleSuggestion.properties
+          .map((property) => property.id)
+          .filter((id): id is string => Boolean(id))
+
+        for (const bookingId of bookingIds) {
+          try {
+            const response = await fetch(`/api/bookings/${bookingId}/cleaning-schedule`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                cleaningSchedule: schedulePlan.cleaningSchedule,
+                cleaningSource: 'included',
+              }),
+            })
+
+            if (!response.ok) {
+              console.error(
+                `Failed to attach schedule to booking ${bookingId}:`,
+                await response.text(),
+              )
+            }
+          } catch (error) {
+            console.error(`Error attaching schedule to booking ${bookingId}:`, error)
+          }
+        }
+      } catch (error) {
+        console.error('Error attaching cleaning schedules to bookings:', error)
+      }
+    },
+    [appendMessageToThread],
+  )
+
+  const handleCleaningWindowSuggestionClick = useCallback(
+    (windowSuggestion: CleaningTimeWindowSuggestion) => {
+      const threadId = activeThreadRef.current
+      const cleaningWindowPlan: Message = {
+        role: 'assistant',
+        content: `Cleaning time window: ${windowSuggestion.checkoutDateFormatted} → ${windowSuggestion.nextCheckinDateFormatted}`,
+        cleaningSchedule: {
+          sameDayCheckouts: [],
+          dateSuggestions: [windowSuggestion],
+        },
+      }
+
+      appendMessageToThread(threadId, cleaningWindowPlan)
+    },
+    [appendMessageToThread],
   )
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2090,96 +2212,6 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                           </Plan>
                         </div>
                       )}
-                      {message.cleaningSchedule.scheduleSuggestions && message.cleaningSchedule.scheduleSuggestions.length > 0 && (
-                        <div className="mb-4">
-                          <Plan defaultOpen={false}>
-                            <PlanHeader>
-                              <PlanTitle>Suggested Checkout Schedules</PlanTitle>
-                              <PlanDescription>
-                                {`Click a schedule to view the cleaning plan`}
-                              </PlanDescription>
-                            </PlanHeader>
-                            <PlanTrigger>View Checkout Schedules</PlanTrigger>
-                            <PlanContent>
-                              <div className="space-y-2">
-                                {message.cleaningSchedule.scheduleSuggestions.map((suggestion, idx) => (
-                                  <Button
-                                    key={idx}
-                                    variant="outline"
-                                    className="w-full justify-start text-left h-auto py-3"
-                                    onClick={async () => {
-                                      // Create a plan component for this schedule
-                                      const threadId = activeThreadRef.current
-                                      const schedulePlan: Message = {
-                                        role: 'assistant',
-                                        content: `Cleaning schedule: ${suggestion.label}`,
-                                        cleaningSchedule: {
-                                          sameDayCheckouts: [{
-                                            date: suggestion.fromCheckoutDateFormatted,
-                                            dateISO: suggestion.fromCheckoutDate,
-                                            properties: suggestion.properties.filter(p => {
-                                              // Only include properties that checkout on the from date
-                                              return p.nextCheckin?.checkoutDate === suggestion.toCheckoutDate
-                                            }),
-                                          }],
-                                        },
-                                      }
-                                      appendMessageToThread(threadId, schedulePlan)
-                                      
-                                      // Attach cleaning schedule to relevant bookings
-                                      try {
-                                        const bookingIds = suggestion.properties
-                                          .filter(p => p.id)
-                                          .map(p => p.id)
-                                        
-                                        // Attach schedule to each booking
-                                        for (const bookingId of bookingIds) {
-                                          try {
-                                            const response = await fetch(`/api/bookings/${bookingId}/cleaning-schedule`, {
-                                              method: 'POST',
-                                              headers: {
-                                                'Content-Type': 'application/json',
-                                              },
-                                              credentials: 'include',
-                                              body: JSON.stringify({
-                                                cleaningSchedule: schedulePlan.cleaningSchedule,
-                                                cleaningSource: 'included', // Default to included, can be changed to 'addon' if purchased separately
-                                              }),
-                                            })
-                                            
-                                            if (!response.ok) {
-                                              console.error(`Failed to attach schedule to booking ${bookingId}:`, await response.text())
-                                            }
-                                          } catch (error) {
-                                            console.error(`Error attaching schedule to booking ${bookingId}:`, error)
-                                          }
-                                        }
-                                      } catch (error) {
-                                        console.error('Error attaching cleaning schedules to bookings:', error)
-                                      }
-                                      
-                                      // Scroll to the new message
-                                      setTimeout(() => {
-                                        const conversationElement = document.querySelector('[data-conversation]')
-                                        if (conversationElement) {
-                                          conversationElement.scrollTop = conversationElement.scrollHeight
-                                        }
-                                      }, 100)
-                                    }}
-                                  >
-                                    <div className="flex flex-col items-start gap-1">
-                                      <span className="font-medium text-sm">{suggestion.label}</span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {suggestion.properties.length} {suggestion.properties.length === 1 ? 'property' : 'properties'} checking out
-                                      </span>
-                                    </div>
-                                  </Button>
-                                ))}
-                              </div>
-                            </PlanContent>
-                          </Plan>
-                        </div>
-                      )}
                       {message.cleaningSchedule.dateSuggestions && message.cleaningSchedule.dateSuggestions.length > 0 && (
                         <div className="mb-4">
                           <Plan defaultOpen={false}>
@@ -2301,23 +2333,64 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               onSubmit={handlePromptSubmit} 
               className="mt-2"
             >
-              {currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
-                <PromptInputHeader className="pb-2">
-                  <Suggestions>
-                    {dateSuggestions.map((suggestion, idx) => (
-                      <Suggestion
-                        key={idx}
-                        suggestion={suggestion.label}
-                        onClick={(label) => {
-                          const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
-                          const toStr = format(suggestion.endDate, 'MMM d, yyyy')
-                          const nights = Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000))
-                          setInput(`Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`)
-                        }}
-                        className="text-xs"
-                      />
-                    ))}
-                  </Suggestions>
+              {(scheduleSuggestions.length > 0 ||
+                cleaningWindowSuggestions.length > 0 ||
+                (currentContext?.context === 'post-article' && dateSuggestions.length > 0)) && (
+                <PromptInputHeader className="pb-2 space-y-2">
+                  {scheduleSuggestions.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Suggested checkout schedules</p>
+                      <Suggestions>
+                        {scheduleSuggestions.map((suggestion, idx) => (
+                          <Suggestion
+                            key={`${suggestion.label}-${idx}`}
+                            suggestion={suggestion.label}
+                            className="text-xs"
+                            onClick={() => handleScheduleSuggestionClick(suggestion)}
+                          />
+                        ))}
+                      </Suggestions>
+                    </div>
+                  )}
+                  {cleaningWindowSuggestions.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Cleaning time windows</p>
+                      <Suggestions>
+                        {cleaningWindowSuggestions.map((suggestion, idx) => (
+                          <Suggestion
+                            key={`${suggestion.checkoutDate}-${idx}`}
+                            suggestion={`${suggestion.checkoutDateFormatted} → ${suggestion.nextCheckinDateFormatted}`}
+                            className="text-xs"
+                            onClick={() => handleCleaningWindowSuggestionClick(suggestion)}
+                          />
+                        ))}
+                      </Suggestions>
+                    </div>
+                  )}
+                  {currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Stay date ideas</p>
+                      <Suggestions>
+                        {dateSuggestions.map((suggestion, idx) => (
+                          <Suggestion
+                            key={idx}
+                            suggestion={suggestion.label}
+                            onClick={(label) => {
+                              const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
+                              const toStr = format(suggestion.endDate, 'MMM d, yyyy')
+                              const nights = Math.ceil(
+                                (suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000),
+                              )
+                              setInput(
+                                `Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`,
+                              )
+                            }}
+                            className="text-xs"
+                          />
+                        ))}
+                      </Suggestions>
+                    </div>
+                  )}
                 </PromptInputHeader>
               )}
               <PromptInputBody>
