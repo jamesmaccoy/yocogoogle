@@ -34,6 +34,180 @@ type Props = {
   user: User
 }
 
+// Helper function to generate MD5 hash (required for Gravatar)
+const md5 = (str: string): string => {
+  // Simple MD5 implementation for client-side use
+  // This is a basic implementation - for production, consider using crypto-js
+  const rotateLeft = (value: number, amount: number): number => {
+    return (value << amount) | (value >>> (32 - amount))
+  }
+  
+  const addUnsigned = (x: number, y: number): number => {
+    const lsw = (x & 0xFFFF) + (y & 0xFFFF)
+    const msw = (x >> 16) + (y >> 16) + (lsw >> 16)
+    return (msw << 16) | (lsw & 0xFFFF)
+  }
+  
+  const md5cmn = (q: number, a: number, b: number, x: number, s: number, t: number): number => {
+    a = addUnsigned(a, addUnsigned(addUnsigned((b & q) | ((~b) & x), t), s))
+    return addUnsigned(rotateLeft(a, s), b)
+  }
+  
+  const md5ff = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn((b & c) | ((~b) & d), a, b, x, s, t)
+  }
+  
+  const md5gg = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn((b & d) | (c & (~d)), a, b, x, s, t)
+  }
+  
+  const md5hh = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn(b ^ c ^ d, a, b, x, s, t)
+  }
+  
+  const md5ii = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn(c ^ (b | (~d)), a, b, x, s, t)
+  }
+  
+  const convertToWordArray = (str: string): number[] => {
+    let wordCount: number
+    const messageLength = str.length
+    const numberOfWords_temp1 = messageLength + 8
+    const numberOfWords_temp2 = (numberOfWords_temp1 - (numberOfWords_temp1 % 64)) / 64
+    const numberOfWords = (numberOfWords_temp2 + 1) * 16
+    const wordArray: number[] = Array(numberOfWords - 1)
+    let bytePosition = 0
+    let byteCount = 0
+    
+    while (byteCount < messageLength) {
+      wordCount = (byteCount - (byteCount % 4)) / 4
+      bytePosition = (byteCount % 4) * 8
+      wordArray[wordCount] = (wordArray[wordCount] | (str.charCodeAt(byteCount) << bytePosition))
+      byteCount++
+    }
+    
+    wordCount = (byteCount - (byteCount % 4)) / 4
+    bytePosition = (byteCount % 4) * 8
+    wordArray[wordCount] = wordArray[wordCount] | (0x80 << bytePosition)
+    wordArray[numberOfWords - 2] = messageLength << 3
+    wordArray[numberOfWords - 1] = messageLength >>> 29
+    
+    return wordArray
+  }
+  
+  const wordToHex = (lValue: number): string => {
+    let wordToHexValue = '', wordToHexValue_temp = '', lByte: number, lCount: number
+    for (lCount = 0; lCount <= 3; lCount++) {
+      lByte = (lValue >>> (lCount * 8)) & 255
+      wordToHexValue_temp = '0' + lByte.toString(16)
+      wordToHexValue = wordToHexValue + wordToHexValue_temp.substr(wordToHexValue_temp.length - 2, 2)
+    }
+    return wordToHexValue
+  }
+  
+  let x: number[] = []
+  let k: number, AA: number, BB: number, CC: number, DD: number, a: number, b: number, c: number, d: number
+  const S11 = 7, S12 = 12, S13 = 17, S14 = 22
+  const S21 = 5, S22 = 9, S23 = 14, S24 = 20
+  const S31 = 4, S32 = 11, S33 = 16, S34 = 23
+  const S41 = 6, S42 = 10, S43 = 15, S44 = 21
+  
+  str = unescape(encodeURIComponent(str))
+  x = convertToWordArray(str)
+  a = 0x67452301
+  b = 0xEFCDAB89
+  c = 0x98BADCFE
+  d = 0x10325476
+  
+  for (k = 0; k < x.length; k += 16) {
+    AA = a
+    BB = b
+    CC = c
+    DD = d
+    a = md5ff(a, b, c, d, x[k + 0] ?? 0, S11, 0xD76AA478)
+    d = md5ff(d, a, b, c, x[k + 1] ?? 0, S12, 0xE8C7B756)
+    c = md5ff(c, d, a, b, x[k + 2] ?? 0, S13, 0x242070DB)
+    b = md5ff(b, c, d, a, x[k + 3] ?? 0, S14, 0xC1BDCEEE)
+    a = md5ff(a, b, c, d, x[k + 4] ?? 0, S11, 0xF57C0FAF)
+    d = md5ff(d, a, b, c, x[k + 5] ?? 0, S12, 0x4787C62A)
+    c = md5ff(c, d, a, b, x[k + 6] ?? 0, S13, 0xA8304613)
+    b = md5ff(b, c, d, a, x[k + 7] ?? 0, S14, 0xFD469501)
+    a = md5ff(a, b, c, d, x[k + 8] ?? 0, S11, 0x698098D8)
+    d = md5ff(d, a, b, c, x[k + 9] ?? 0, S12, 0x8B44F7AF)
+    c = md5ff(c, d, a, b, x[k + 10] ?? 0, S13, 0xFFFF5BB1)
+    b = md5ff(b, c, d, a, x[k + 11] ?? 0, S14, 0x895CD7BE)
+    a = md5ff(a, b, c, d, x[k + 12] ?? 0, S11, 0x6B901122)
+    d = md5ff(d, a, b, c, x[k + 13] ?? 0, S12, 0xFD987193)
+    c = md5ff(c, d, a, b, x[k + 14] ?? 0, S13, 0xA679438E)
+    b = md5ff(b, c, d, a, x[k + 15] ?? 0, S14, 0x49B40821)
+    a = md5gg(a, b, c, d, x[k + 1] ?? 0, S21, 0xF61E2562)
+    d = md5gg(d, a, b, c, x[k + 6] ?? 0, S22, 0xC040B340)
+    c = md5gg(c, d, a, b, x[k + 11] ?? 0, S23, 0x265E5A51)
+    b = md5gg(b, c, d, a, x[k + 0] ?? 0, S24, 0xE9B6C7AA)
+    a = md5gg(a, b, c, d, x[k + 5] ?? 0, S21, 0xD62F105D)
+    d = md5gg(d, a, b, c, x[k + 10] ?? 0, S22, 0x2441453)
+    c = md5gg(c, d, a, b, x[k + 15] ?? 0, S23, 0xD8A1E681)
+    b = md5gg(b, c, d, a, x[k + 4] ?? 0, S24, 0xE7D3FBC8)
+    a = md5gg(a, b, c, d, x[k + 9] ?? 0, S21, 0x21E1CDE6)
+    d = md5gg(d, a, b, c, x[k + 14] ?? 0, S22, 0xC33707D6)
+    c = md5gg(c, d, a, b, x[k + 3] ?? 0, S23, 0xF4D50D87)
+    b = md5gg(b, c, d, a, x[k + 8] ?? 0, S24, 0x455A14ED)
+    a = md5gg(a, b, c, d, x[k + 13] ?? 0, S21, 0xA9E3E905)
+    d = md5gg(d, a, b, c, x[k + 2] ?? 0, S22, 0xFCEFA3F8)
+    c = md5gg(c, d, a, b, x[k + 7] ?? 0, S23, 0x676F02D9)
+    b = md5gg(b, c, d, a, x[k + 12] ?? 0, S24, 0x8D2A4C8A)
+    a = md5hh(a, b, c, d, x[k + 5] ?? 0, S31, 0xFFFA3942)
+    d = md5hh(d, a, b, c, x[k + 8] ?? 0, S32, 0x8771F681)
+    c = md5hh(c, d, a, b, x[k + 11] ?? 0, S33, 0x6D9D6122)
+    b = md5hh(b, c, d, a, x[k + 14] ?? 0, S34, 0xFDE5380C)
+    a = md5hh(a, b, c, d, x[k + 1] ?? 0, S31, 0xA4BEEA44)
+    d = md5hh(d, a, b, c, x[k + 4] ?? 0, S32, 0x4BDECFA9)
+    c = md5hh(c, d, a, b, x[k + 7] ?? 0, S33, 0xF6BB4B60)
+    b = md5hh(b, c, d, a, x[k + 10] ?? 0, S34, 0xBEBFBC70)
+    a = md5hh(a, b, c, d, x[k + 13] ?? 0, S31, 0x289B7EC6)
+    d = md5hh(d, a, b, c, x[k + 0] ?? 0, S32, 0xEAA127FA)
+    c = md5hh(c, d, a, b, x[k + 3] ?? 0, S33, 0xD4EF3085)
+    b = md5hh(b, c, d, a, x[k + 6] ?? 0, S34, 0x4881D05)
+    a = md5hh(a, b, c, d, x[k + 9] ?? 0, S31, 0xD9D4D039)
+    d = md5hh(d, a, b, c, x[k + 12] ?? 0, S32, 0xE6DB99E5)
+    c = md5hh(c, d, a, b, x[k + 15] ?? 0, S33, 0x1FA27CF8)
+    b = md5hh(b, c, d, a, x[k + 2] ?? 0, S34, 0xC4AC5665)
+    a = md5ii(a, b, c, d, x[k + 0] ?? 0, S41, 0xF4292244)
+    d = md5ii(d, a, b, c, x[k + 7] ?? 0, S42, 0x432AFF97)
+    c = md5ii(c, d, a, b, x[k + 14] ?? 0, S43, 0xAB9423A7)
+    b = md5ii(b, c, d, a, x[k + 5] ?? 0, S44, 0xFC93A039)
+    a = md5ii(a, b, c, d, x[k + 12] ?? 0, S41, 0x655B59C3)
+    d = md5ii(d, a, b, c, x[k + 3] ?? 0, S42, 0x8F0CCC92)
+    c = md5ii(c, d, a, b, x[k + 10] ?? 0, S43, 0xFFEFF47D)
+    b = md5ii(b, c, d, a, x[k + 1] ?? 0, S44, 0x85845DD1)
+    a = md5ii(a, b, c, d, x[k + 8] ?? 0, S41, 0x6FA87E4F)
+    d = md5ii(d, a, b, c, x[k + 15] ?? 0, S42, 0xFE2CE6E0)
+    c = md5ii(c, d, a, b, x[k + 6] ?? 0, S43, 0xA3014314)
+    b = md5ii(b, c, d, a, x[k + 13] ?? 0, S44, 0x4E0811A1)
+    a = md5ii(a, b, c, d, x[k + 4] ?? 0, S41, 0xF7537E82)
+    d = md5ii(d, a, b, c, x[k + 11] ?? 0, S42, 0xBD3AF235)
+    c = md5ii(c, d, a, b, x[k + 2] ?? 0, S43, 0x2AD7D2BB)
+    b = md5ii(b, c, d, a, x[k + 9] ?? 0, S44, 0xEB86D391)
+    a = addUnsigned(a, AA)
+    b = addUnsigned(b, BB)
+    c = addUnsigned(c, CC)
+    d = addUnsigned(d, DD)
+  }
+  
+  return (wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d)).toLowerCase()
+}
+
+// Helper function to generate Gravatar URL from email
+const getGravatarUrl = (email: string | null | undefined, size: number = 40): string | null => {
+  if (!email) return null
+  
+  // Normalize email (lowercase and trim) - Gravatar requires lowercase
+  const normalizedEmail = email.trim().toLowerCase()
+  const hash = md5(normalizedEmail)
+  
+  return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=mp&r=pg`
+}
+
 interface AddonPackage {
   id: string
   name: string
@@ -417,6 +591,36 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     return Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)))
   }, [data?.fromDate, data?.toDate])
 
+  // Calculate days until booking starts
+  const daysUntilBooking = React.useMemo(() => {
+    if (!data?.fromDate) return null
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const fromDate = new Date(data.fromDate)
+    fromDate.setHours(0, 0, 0, 0)
+
+    const diffTime = fromDate.getTime() - today.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+
+    return diffDays
+  }, [data?.fromDate])
+
+  // Format countdown text
+  const countdownText = React.useMemo(() => {
+    if (daysUntilBooking === null) return null
+    
+    if (daysUntilBooking > 0) {
+      return `${daysUntilBooking} ${daysUntilBooking === 1 ? 'day' : 'days'} until check-in`
+    } else if (daysUntilBooking === 0) {
+      return 'Check-in today!'
+    } else {
+      // Booking has already started
+      const daysAgo = Math.abs(daysUntilBooking)
+      return `Started ${daysAgo} ${daysAgo === 1 ? 'day' : 'days'} ago`
+    }
+  }, [daysUntilBooking])
+
   const currentPackageTotal = React.useMemo(() => {
     if (data?.total && !isNaN(Number(data.total))) {
       return Number(data.total)
@@ -548,7 +752,14 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                           <CardHeader className="bg-muted/50">
                             <div className="flex items-center gap-2">
                               <Package className="h-5 w-5 text-primary" />
-                              <CardTitle>Your Package</CardTitle>
+                              <CardTitle>
+                               
+                                {countdownText && (
+                                  <span className="ml-2">
+                                    {countdownText}
+                                  </span>
+                                )}
+                              </CardTitle>
                             </div>
                             <CardDescription>
                               {data?.selectedPackage &&
@@ -627,24 +838,18 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                               <CardTitle>Booking Dates</CardTitle>
                             </div>
                           </CardHeader>
-                          <CardContent>
+                          <CardContent className="w-fit">
                             <Calendar
                               mode="range"
+                              defaultMonth={data?.fromDate ? new Date(data.fromDate) : undefined}
                               selected={{
                                 from: data?.fromDate ? new Date(data.fromDate) : undefined,
                                 to: data?.toDate ? new Date(data.toDate) : undefined,
                               }}
                               numberOfMonths={2}
-                              className="rounded-md border"
+                              className="rounded-lg border shadow-sm"
                               disabled={() => true}
                             />
-                            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                              <p className="text-sm font-medium">
-                                {data?.fromDate && data?.toDate
-                                  ? `${formatDateTime(data.fromDate)} → ${formatDateTime(data.toDate)}`
-                                  : 'Select dates'}
-                              </p>
-                            </div>
                           </CardContent>
                         </Card>
 
@@ -673,9 +878,22 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                           </CardHeader>
                           <CardContent className="space-y-3">
                             <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border-2 border-primary/20">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                                <UserIcon className="h-5 w-5" />
-                              </div>
+                              {(() => {
+                                const customerEmail = typeof data.customer === 'object' ? data.customer?.email : null
+                                const gravatarUrl = getGravatarUrl(customerEmail, 40)
+                                
+                                return gravatarUrl ? (
+                                  <img 
+                                    src={gravatarUrl} 
+                                    alt={typeof data.customer === 'string' ? 'Customer' : data.customer?.name || 'Customer'}
+                                    className="h-10 w-10 rounded-full object-cover border-2 border-primary"
+                                  />
+                                ) : (
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                    <UserIcon className="h-5 w-5" />
+                                  </div>
+                                )
+                              })()}
                               <div className="flex-1">
                                 <div className="font-medium">
                                   {typeof data.customer === 'string' ? 'Customer' : data.customer?.name}
@@ -701,9 +919,22 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     key={guest.id}
                                     className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border hover:border-primary/50 transition-colors"
                                   >
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted border">
-                                      <UserIcon className="h-5 w-5 text-muted-foreground" />
-                                    </div>
+                                    {(() => {
+                                      const guestEmail = guest.email
+                                      const gravatarUrl = getGravatarUrl(guestEmail, 40)
+                                      
+                                      return gravatarUrl ? (
+                                        <img 
+                                          src={gravatarUrl} 
+                                          alt={guest.name || 'Guest'}
+                                          className="h-10 w-10 rounded-full object-cover border border-muted"
+                                        />
+                                      ) : (
+                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted border">
+                                          <UserIcon className="h-5 w-5 text-muted-foreground" />
+                                        </div>
+                                      )
+                                    })()}
                                     <div className="flex-1">
                                       <div className="font-medium">{guest.name}</div>
                                       <Badge variant="outline" className="text-xs">
@@ -770,7 +1001,19 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                   Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
                                 )
 
-                                const baseRate = typeof data?.post === 'object' ? data.post.baseRate || 150 : 150
+                                // Get package cost or post base rate
+                                // Use packageSnapshot's baseRate which already handles the logic correctly
+                                const baseRate = packageSnapshot?.baseRate ?? 
+                                  (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0
+                                    ? Number(data.post.baseRate)
+                                    : 150)
+                                
+                                // Check if booking has a selected package with baseRate for total calculation
+                                const selectedPackage = data?.selectedPackage
+                                const packageBaseRate = 
+                                  selectedPackage && typeof selectedPackage.package === 'object' && selectedPackage.package?.baseRate != null && Number(selectedPackage.package.baseRate) > 0
+                                    ? Number(selectedPackage.package.baseRate)
+                                    : null
 
                                 const packagesResponse = await fetch(`/api/packages/post/${postId}`)
                                 const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
@@ -780,6 +1023,11 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                 if (!firstPackage) {
                                   throw new Error('No packages available for this property')
                                 }
+
+                                // Calculate total: if package has baseRate, use it directly; otherwise calculate from baseRate
+                                const total = packageBaseRate 
+                                  ? packageBaseRate 
+                                  : calculateTotal(baseRate, duration, firstPackage.multiplier || 1)
 
                                 const resp = await fetch('/api/estimates', {
                                   method: 'POST',
@@ -791,7 +1039,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     guests: [],
                                     title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
                                     packageType: firstPackage.id,
-                                    total: calculateTotal(baseRate, duration, 1),
+                                    total,
                                   }),
                                 })
 
