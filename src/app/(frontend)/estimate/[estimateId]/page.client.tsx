@@ -307,7 +307,13 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
           ? _bookingDuration
           : Math.max(selectedPackage.minNights ?? selectedPackage.maxNights ?? 1, 1)
 
-      const perNightRate = effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate
+      // Check if this is a 1-night package (should not be divided)
+      const isOneNightPackage = selectedPackage.minNights === 1 && selectedPackage.maxNights === 1
+      
+      // For 1-night packages, use baseRate directly; otherwise divide by duration
+      const perNightRate = isOneNightPackage 
+        ? packageBaseRate 
+        : (effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate)
 
       setPackagePrice(perNightRate)
       setPackageTotal(packageBaseRate)
@@ -488,6 +494,27 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                         const isDurationMatch = _bookingDuration >= pkg.minNights && _bookingDuration <= pkg.maxNights
                         const canAccommodate = pkg.maxNights >= _bookingDuration || pkg.maxNights === 1
                         
+                        // Calculate per-night rate for this package
+                        const hasFixedPackageRate = Boolean(pkg.baseRate && pkg.baseRate > 0)
+                        const effectiveDuration = _bookingDuration > 0 
+                          ? _bookingDuration 
+                          : Math.max(pkg.minNights ?? pkg.maxNights ?? 1, 1)
+                        
+                        // Check if this is a 1-night package (should not be divided)
+                        const isOneNightPackage = pkg.minNights === 1 && pkg.maxNights === 1
+                        
+                        // For 1-night packages, use baseRate directly; otherwise divide by duration for fixed packages
+                        const perNightRate = isOneNightPackage && hasFixedPackageRate
+                          ? (pkg.baseRate ?? 0)
+                          : hasFixedPackageRate
+                          ? (effectiveDuration > 0 ? (pkg.baseRate ?? 0) / effectiveDuration : pkg.baseRate ?? 0)
+                          : _postBaseRate * (pkg.multiplier || 1)
+                        
+                        // Calculate total for this package
+                        const packageTotal = hasFixedPackageRate
+                          ? (pkg.baseRate ?? 0)
+                          : perNightRate * effectiveDuration
+                        
                         return (
                           <Card
                             key={pkg.id}
@@ -529,13 +556,9 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                                 </div>
                                 <div className="text-right">
                                   <div className="text-lg font-bold">
-                                    {pkg.baseRate && pkg.baseRate > 0
-                                      ? `R${pkg.baseRate.toFixed(0)}/night`
-                                      : pkg.multiplier === 1
-                                      ? 'Base rate'
-                                      : pkg.multiplier > 1
-                                      ? `+${((pkg.multiplier - 1) * 100).toFixed(0)}%`
-                                      : `-${((1 - pkg.multiplier) * 100).toFixed(0)}%`}
+                                    {isOneNightPackage && hasFixedPackageRate
+                                      ? formatPrice(perNightRate)
+                                      : `${formatPrice(perNightRate)}/night`}
                                   </div>
                                   {pkg.baseRate && pkg.baseRate > 0 && pkg.multiplier !== 1 && (
                                     <div className="text-xs text-muted-foreground">
@@ -560,7 +583,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                             {selectedPackage?.id === pkg.id && (
                               <CardFooter>
                                 <span className="text-2xl font-bold text-primary">
-                                  {formatPrice(packagePrice)}
+                                  Total: {formatPrice(packageTotal)}
                                 </span>
                               </CardFooter>
                             )}
