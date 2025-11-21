@@ -444,7 +444,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                       />
                     </div>
                   )}
-                  <div className="flex flex-col text-white">
+                  <div className="flex flex-col">
                     <span className="font-medium">
                       Date Estimated: {formatDateTime(data?.createdAt)}
                     </span>
