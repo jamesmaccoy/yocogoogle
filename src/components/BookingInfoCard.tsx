@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -10,6 +10,8 @@ import { Calendar as CalendarIcon, Clock, Users, MapPin } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { format } from 'date-fns'
 import { Media } from '@/components/Media'
+import { hasUnavailableDateBetween } from '@/utilities/hasUnavailableDateBetween'
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 
 interface BookingInfoCardProps {
   postImage?: any
@@ -23,6 +25,8 @@ interface BookingInfoCardProps {
   postId?: string
   postTitle?: string
   baseRate?: number
+  packageMinNights?: number | null
+  packageMaxNights?: number | null
 }
 
 export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
@@ -36,9 +40,17 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
   estimateError,
   postTitle,
   baseRate,
+  postId,
+  packageMinNights,
+  packageMaxNights,
 }) => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [unavailableDates, setUnavailableDates] = useState<string[]>([])
+  const [isLoadingUnavailableDates, setIsLoadingUnavailableDates] = useState(false)
+  const [suggestedDates, setSuggestedDates] = useState<Array<{ startDate: string; endDate: string; duration: number }>>([])
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
 
   const guestCount = useMemo(() => {
     if (!Array.isArray(guests)) return 0
@@ -52,12 +64,197 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
     return format(date, 'PPP')
   }, [createdAt])
 
-  const canSubmit = !!dateRange?.from && !!dateRange?.to && !!onEstimateRequest && !isSubmittingEstimate
+  // Generate initial suggested dates based on package duration constraints
+  const generateInitialSuggestedDates = useCallback((unavailableDatesList: string[]) => {
+    const unavailableSet = new Set(unavailableDatesList.map(d => d.split('T')[0]))
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const suggestions: Array<{ startDate: string; endDate: string; duration: number }> = []
+    
+    // Use package duration constraints if available, otherwise use common durations
+    let durations: number[] = []
+    if (packageMinNights !== null && packageMinNights !== undefined && packageMaxNights !== null && packageMaxNights !== undefined) {
+      // Generate durations within the package's min/max range
+      const min = Math.max(1, packageMinNights)
+      const max = packageMaxNights
+      // Generate a few durations within the range (prefer min, mid, and max)
+      if (min === max) {
+        durations = [min]
+      } else {
+        const mid = Math.round((min + max) / 2)
+        durations = [min, mid, max].filter((d, i, arr) => arr.indexOf(d) === i) // Remove duplicates
+      }
+    } else if (packageMinNights !== null && packageMinNights !== undefined) {
+      // Only minNights specified - use min and a few increments
+      durations = [packageMinNights, packageMinNights + 2, packageMinNights + 4].filter(d => d > 0)
+    } else {
+      // No package constraints - use common durations
+      durations = [3, 5, 7]
+    }
+    
+    // Helper to normalize dates to midnight UTC
+    const normalizeDate = (date: Date): Date => {
+      const normalized = new Date(date)
+      normalized.setUTCHours(0, 0, 0, 0)
+      return normalized
+    }
+    
+    // Helper to check if a date range conflicts with unavailable dates
+    const hasConflict = (testStart: Date, testEnd: Date): boolean => {
+      const checkDate = new Date(testStart)
+      while (checkDate < testEnd) {
+        const dateStr = checkDate.toISOString().split('T')[0]
+        if (unavailableSet.has(dateStr)) {
+          return true
+        }
+        checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+      }
+      return false
+    }
+    
+    // Generate suggestions for different start dates: 1 week, 2 weeks, 1 month from now
+    const startOffsets = [7, 14, 30]
+    
+    for (const offset of startOffsets) {
+      for (const duration of durations) {
+        const startDate = normalizeDate(new Date(today))
+        startDate.setUTCDate(startDate.getUTCDate() + offset)
+        
+        const endDate = normalizeDate(new Date(startDate))
+        endDate.setUTCDate(endDate.getUTCDate() + duration)
+        
+        // Only add if no conflicts and we don't have too many suggestions yet
+        if (!hasConflict(startDate, endDate) && suggestions.length < 6) {
+          suggestions.push({
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            duration,
+          })
+        }
+      }
+    }
+    
+    // Sort by start date and limit to 6 suggestions
+    suggestions.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+    setSuggestedDates(suggestions.slice(0, 6))
+  }, [packageMinNights, packageMaxNights])
+
+  // Load unavailable dates and generate initial suggested dates
+  useEffect(() => {
+    if (!postId) return
+
+    const loadUnavailableDates = async () => {
+      setIsLoadingUnavailableDates(true)
+      try {
+        const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`, {
+          credentials: 'include',
+        })
+        if (response.ok) {
+          const data = await response.json()
+          const dates = data.unavailableDates || []
+          setUnavailableDates(dates)
+          
+          // Generate initial suggested dates based on unavailable dates
+          generateInitialSuggestedDates(dates)
+        } else if (response.status === 401) {
+          // User not authenticated - unavailable dates require subscription
+          console.log('Unavailable dates require authentication/subscription')
+        }
+      } catch (error) {
+        console.error('Error loading unavailable dates:', error)
+      } finally {
+        setIsLoadingUnavailableDates(false)
+      }
+    }
+
+    loadUnavailableDates()
+  }, [postId, generateInitialSuggestedDates])
+
+  // Helper to normalize date to string for comparison
+  const normalizeDateToString = useCallback((date: Date | string): string => {
+    if (typeof date === 'string') {
+      const datePart = date.split('T')[0]
+      return datePart || ''
+    }
+    const isoString = date.toISOString()
+    return isoString.split('T')[0] || ''
+  }, [])
+
+  // Check availability when dates are selected
+  const checkAvailability = useCallback(async (fromDate: Date, toDate: Date) => {
+    if (!postId) return true
+
+    setIsCheckingAvailability(true)
+    setAvailabilityError(null)
+    setSuggestedDates([])
+
+    try {
+      const params = new URLSearchParams({
+        postId,
+        startDate: fromDate.toISOString(),
+        endDate: toDate.toISOString(),
+      })
+
+      const response = await fetch(`/api/bookings/check-availability?${params.toString()}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        const suggestedDatesFromAPI = data.suggestedDates || []
+        
+        if (!data.isAvailable) {
+          // Store suggested dates if available
+          if (suggestedDatesFromAPI.length > 0) {
+            setSuggestedDates(suggestedDatesFromAPI)
+            setAvailabilityError('The selected dates are not available. Please see suggested dates below.')
+          } else {
+            setAvailabilityError('The selected dates are not available. Please choose different dates.')
+          }
+          return false
+        }
+        
+        // Clear suggested dates if dates are available
+        setSuggestedDates([])
+        setAvailabilityError(null)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Error checking availability:', error)
+      setAvailabilityError('Failed to check availability. Please try again.')
+      return false
+    } finally {
+      setIsCheckingAvailability(false)
+    }
+  }, [postId])
+
+  // Handle date selection changes
+  const handleDateRangeChange = useCallback(async (range: DateRange | undefined) => {
+    setDateRange(range)
+    setAvailabilityError(null)
+    setSuggestedDates([])
+    
+    // Validate when both dates are selected
+    if (range?.from && range?.to) {
+      await checkAvailability(range.from, range.to)
+    }
+  }, [checkAvailability])
+
+  const canSubmit = !!dateRange?.from && !!dateRange?.to && !!onEstimateRequest && !isSubmittingEstimate && !isCheckingAvailability && !availabilityError
 
   const handleSubmit = async () => {
     if (!canSubmit || !dateRange?.from || !dateRange?.to || !onEstimateRequest) return
+    
+    // Final availability check before submitting
+    const isAvailable = await checkAvailability(dateRange.from, dateRange.to)
+    if (!isAvailable) {
+      return
+    }
+    
     await onEstimateRequest({ from: dateRange.from, to: dateRange.to })
     setIsCalendarOpen(false)
+    setDateRange(undefined)
+    setSuggestedDates([])
   }
 
   const selectedLabel = dateRange?.from && dateRange?.to
@@ -121,6 +318,40 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
 
         <div className="space-y-3">
           <div className="text-sm font-medium">Request a new estimate</div>
+          {/* Show suggested dates when unavailable */}
+          {suggestedDates.length > 0 && (
+            <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Suggested available dates:</p>
+              <Suggestions>
+                {suggestedDates.map((suggestion, idx) => {
+                  const suggestionStart = new Date(suggestion.startDate)
+                  const suggestionEnd = new Date(suggestion.endDate)
+                  
+                  if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
+                    return null
+                  }
+                  
+                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'})`
+                  
+                  return (
+                    <Suggestion
+                      key={idx}
+                      suggestion={suggestionText}
+                      onClick={() => {
+                        setDateRange({
+                          from: suggestionStart,
+                          to: suggestionEnd,
+                        })
+                        setIsCalendarOpen(false) // Close calendar when suggestion is selected
+                        // Validate the new dates
+                        checkAvailability(suggestionStart, suggestionEnd)
+                      }}
+                    />
+                  )
+                })}
+              </Suggestions>
+            </div>
+          )}
           <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="lg" className="justify-start gap-2 text-left font-normal">
@@ -129,23 +360,69 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="range"
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                initialFocus
-              />
+              <div className="p-4">
+                <Calendar
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={handleDateRangeChange}
+                  numberOfMonths={2}
+                  initialFocus
+                  disabled={(date) => {
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    const checkDate = new Date(date)
+                    checkDate.setHours(0, 0, 0, 0)
+
+                    // Disable past dates
+                    if (checkDate < today) return true
+
+                    // Normalize date to YYYY-MM-DD format for comparison
+                    const dateStr = normalizeDateToString(checkDate)
+
+                    // Always check if this date itself is unavailable
+                    const isUnavailable = unavailableDates.some((unavailableDateStr) => {
+                      const unavailableDatePart = normalizeDateToString(unavailableDateStr)
+                      return unavailableDatePart === dateStr
+                    })
+
+                    if (isUnavailable) return true
+
+                    // If selecting start date (no from date yet), allow all non-unavailable future dates
+                    if (!dateRange?.from) {
+                      return false
+                    }
+
+                    // If we have a start date, we're selecting end date
+                    const startDateOnly = new Date(dateRange.from)
+                    startDateOnly.setHours(0, 0, 0, 0)
+                    
+                    // Disable dates before or equal to start date
+                    if (checkDate <= startDateOnly) return true
+
+                    // Disable if there are unavailable dates between startDate and this date
+                    if (hasUnavailableDateBetween(unavailableDates, dateRange.from, date)) {
+                      return true
+                    }
+
+                    return false
+                  }}
+                />
+              </div>
             </PopoverContent>
           </Popover>
           <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full">
-            {isSubmittingEstimate ? 'Preparing estimate…' : 'Create New Estimate'}
+            {isSubmittingEstimate ? 'Preparing estimate…' : isCheckingAvailability ? 'Checking availability…' : 'Create New Estimate'}
           </Button>
-          {estimateError ? (
+          {availabilityError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {availabilityError}
+            </div>
+          )}
+          {estimateError && (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
               {estimateError}
             </div>
-          ) : null}
+          )}
         </div>
       </CardContent>
     </Card>

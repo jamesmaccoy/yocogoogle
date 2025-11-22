@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Estimate, User } from '@/payload-types'
 import { Button } from '@/components/ui/button'
 import { useYoco } from '@/providers/Yoco'
@@ -29,6 +29,7 @@ import {
   type CustomerEntitlement,
 } from '@/utils/packageSuggestions'
 import { useSubscription } from '@/hooks/useSubscription'
+import { useRouter } from 'next/navigation'
 
 // Helper function to generate MD5 hash (required for Gravatar)
 const md5 = (str: string): string => {
@@ -283,6 +284,7 @@ type Props = {
 
 export default function EstimateDetailsClientPage({ data, user }: Props) {
   const { createPaymentLinkFromDatabase } = useYoco()
+  const router = useRouter()
 
   // Helper function to get display name from either package type
   const getPackageDisplayName = (pkg: PostPackage | null): string => {
@@ -334,7 +336,66 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
 
   const subscriptionStatus = useSubscription()
+  const { isSubscribed, isLoading: isSubscriptionLoading, entitlements } = subscriptionStatus
   const [areDatesAvailable, setAreDatesAvailable] = useState(true)
+  const [subscriptionProductId, setSubscriptionProductId] = useState<string | null>(null)
+  
+  // Fetch subscription transaction to get productId
+  useEffect(() => {
+    if (!isSubscribed || !user?.id) {
+      setSubscriptionProductId(null)
+      return
+    }
+    
+    const fetchSubscriptionDetails = async () => {
+      try {
+        const response = await fetch('/api/check-subscription', {
+          credentials: 'include',
+        })
+        if (response.ok) {
+          const data = await response.json()
+          // Get the active transaction's productId
+          const activeTransaction = data.transactions?.find((tx: any) => {
+            if (!tx || tx.status !== 'completed' || tx.intent !== 'subscription') return false
+            if (!tx.expiresAt) return true
+            return new Date(tx.expiresAt) > new Date()
+          })
+          if (activeTransaction?.productId) {
+            setSubscriptionProductId(activeTransaction.productId)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching subscription details:', error)
+      }
+    }
+    
+    fetchSubscriptionDetails()
+  }, [isSubscribed, user?.id])
+  
+  // Check if the selected package matches the user's subscription
+  const isPackageIncludedInSubscription = useMemo(() => {
+    if (!isSubscribed || !selectedPackage || !subscriptionProductId) {
+      return false
+    }
+    
+    // Get all possible package identifiers
+    const packageIds = [
+      selectedPackage.revenueCatId,
+      selectedPackage.yocoId,
+      selectedPackage.id,
+    ].filter(Boolean) as string[]
+    
+    // Check if any package identifier matches the subscription productId
+    return packageIds.some(packageId => {
+      // Direct match
+      if (packageId === subscriptionProductId) return true
+      // Case-insensitive match
+      if (packageId.toLowerCase() === subscriptionProductId.toLowerCase()) return true
+      // Partial match (for cases where productId might be a prefix/suffix)
+      if (packageId.includes(subscriptionProductId) || subscriptionProductId.includes(packageId)) return true
+      return false
+    })
+  }, [isSubscribed, selectedPackage, subscriptionProductId])
   const [removedGuests, setRemovedGuests] = useState<string[]>([])
 
   // Remove guest handler for estimates
@@ -532,6 +593,55 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
         throw new Error('This package requires a pro subscription. Please upgrade your account.')
       }
 
+      // If user has active subscription AND the selected package matches their subscription, create booking directly without payment
+      if (isSubscribed && isPackageIncludedInSubscription) {
+        const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+        if (!postId || !user?.id) {
+          throw new Error('Missing required information to create booking.')
+        }
+
+        const bookingData: any = {
+          title: typeof data?.post === 'object' ? data.post.title : 'Booking',
+          post: postId,
+          fromDate: data.fromDate ? new Date(data.fromDate).toISOString() : undefined,
+          toDate: data.toDate ? new Date(data.toDate).toISOString() : undefined,
+          total: bookingTotal,
+          paymentStatus: 'paid', // Mark as paid for subscribers
+          customer: user.id,
+        }
+
+        // Include package information
+        if (selectedPackage) {
+          bookingData.packageType = selectedPackage.yocoId || selectedPackage.id
+          bookingData.selectedPackage = {
+            package: selectedPackage.id,
+            customName: selectedPackage.name,
+            enabled: true,
+          }
+        }
+
+        const bookingResponse = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(bookingData),
+        })
+
+        if (!bookingResponse.ok) {
+          const errorData = await bookingResponse.json()
+          throw new Error(errorData.error || 'Failed to create booking')
+        }
+
+        const booking = await bookingResponse.json()
+        setPaymentSuccess(true)
+        
+        // Redirect to booking confirmation page
+        router.push(`/booking-confirmation?total=${bookingTotal}&duration=${_bookingDuration}&transactionId=subscription-${Date.now()}&success=true&estimateId=${data.id}&bookingId=${booking.id}`)
+        return
+      }
+
+      // For non-subscribers, proceed with normal payment flow
       const metadata = {
         estimateId: data.id,
         postId: _postId,
@@ -839,7 +949,14 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   </div>
                   <div className="flex justify-between items-center mb-6">
                     <span className="text-muted-foreground">Total:</span>
-                    <span className="text-2xl font-bold">{formatPrice(bookingTotal)}</span>
+                    {isSubscribed && isPackageIncludedInSubscription ? (
+                      <div className="flex flex-col items-end">
+                        <span className="text-2xl font-bold text-green-600">Paid</span>
+                        <span className="text-xs text-muted-foreground line-through">{formatPrice(bookingTotal)}</span>
+                      </div>
+                    ) : (
+                      <span className="text-2xl font-bold">{formatPrice(bookingTotal)}</span>
+                    )}
                   </div>
                 </>
               )}
@@ -849,13 +966,13 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                 onClick={handleEstimate}
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={
-                  paymentLoading || paymentSuccess || !_postId || !selectedPackage || !areDatesAvailable
+                  paymentLoading || paymentSuccess || !_postId || !selectedPackage || !areDatesAvailable || isSubscriptionLoading
                 }
               >
                 {paymentLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
+                    {isSubscribed ? 'Creating Booking...' : 'Processing...'}
                   </>
                 ) : paymentSuccess ? (
                   'Estimate Confirmed!'
@@ -865,6 +982,10 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   'Please Select a Package'
                 ) : !areDatesAvailable ? (
                   'Dates Not Available'
+                ) : isSubscriptionLoading ? (
+                  'Checking Subscription...'
+                ) : isSubscribed && isPackageIncludedInSubscription ? (
+                  'Confirm Booking (Included)'
                 ) : (
                   `Complete Estimate - ${formatPrice(bookingTotal)}`
                 )}

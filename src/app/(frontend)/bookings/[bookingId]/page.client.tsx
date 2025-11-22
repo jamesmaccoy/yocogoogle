@@ -266,6 +266,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   >([])
   const historyKey = React.useMemo(() => (data?.id ? `ai:bookingHistory:${data.id}` : null), [data?.id])
 
+
   useEffect(() => {
     if (typeof window === 'undefined' || !historyKey) return
 
@@ -698,6 +699,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
     loadPackages()
   }, [data?.post])
 
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-muted/30 to-background">
       <div className="container max-w-6xl mx-auto px-4 py-8 md:py-12">
@@ -970,6 +972,11 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             createdAt={data?.createdAt}
                             variant="booking"
                             postUrl={typeof data?.post === 'object' ? `/posts/${data.post.slug}` : undefined}
+                            postId={typeof data?.post === 'string' ? data.post : data?.post?.id}
+                            postTitle={typeof data?.post === 'object' ? data.post.title : undefined}
+                            baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0 ? Number(data.post.baseRate) : 150)}
+                            packageMinNights={packageSnapshot?.minNights ?? null}
+                            packageMaxNights={packageSnapshot?.maxNights ?? null}
                             onEstimateRequest={async (dates) => {
                               setIsSubmittingEstimate(true)
                               setEstimateError(null)
@@ -1061,9 +1068,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             }}
                             isSubmittingEstimate={isSubmittingEstimate}
                             estimateError={estimateError}
-                            postId={typeof data?.post === 'string' ? data.post : data?.post?.id}
-                            postTitle={typeof data?.post === 'object' ? data.post.title : 'Property'}
-                            baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post?.baseRate ? Number(data.post.baseRate) : undefined)}
                           />
                         </div>
                       </div>
