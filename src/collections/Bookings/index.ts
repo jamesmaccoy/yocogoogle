@@ -622,7 +622,7 @@ export const Booking: CollectionConfig = {
     {
       name: 'toDate',
       type: 'date',
-      required: true,
+      required: false,
       label: 'Check-out Date',
       admin: {
         position: 'sidebar',

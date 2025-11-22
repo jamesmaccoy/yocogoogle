@@ -175,7 +175,7 @@ export interface Booking {
   post: string | Post;
   paymentStatus?: ('paid' | 'unpaid') | null;
   fromDate: string;
-  toDate: string;
+  toDate?: string | null;
   packageType?: string | null;
   /**
    * Stored cleaning schedule plan for this booking

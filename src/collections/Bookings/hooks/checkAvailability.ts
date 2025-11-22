@@ -11,14 +11,20 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     return data
   }
 
-  if (!('fromDate' in data && 'toDate' in data && 'post' in data)) {
-    throw new APIError('Start date, end date, and post are required.', 400, undefined, true)
+  if (!('fromDate' in data && 'post' in data)) {
+    throw new APIError('Start date and post are required.', 400, undefined, true)
   }
 
   const { fromDate, toDate } = data
 
-  if (fromDate >= toDate) {
+  // Only validate date range if both dates are present
+  if (toDate && fromDate >= toDate) {
     throw new APIError('Start date must be before end date.', 400, undefined, true)
+  }
+
+  // Skip availability check if toDate is not provided
+  if (!toDate) {
+    return data
   }
 
   // Normalize dates to ISO strings for consistent database comparison

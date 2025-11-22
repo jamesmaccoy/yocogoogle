@@ -847,7 +847,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                 to: data?.toDate ? new Date(data.toDate) : undefined,
                               }}
                               numberOfMonths={2}
-                              className="rounded-lg border shadow-sm"
+                              className="rounded-lg border shadow-sm [--cell-size:1.5rem] p-2"
                               disabled={() => true}
                             />
                           </CardContent>
@@ -967,7 +967,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                           <BookingInfoCard
                             postImage={data?.post.meta?.image}
                             guests={data?.guests || []}
-                            createdAt={data?.post.createdAt}
+                            createdAt={data?.createdAt}
                             variant="booking"
                             postUrl={typeof data?.post === 'object' ? `/posts/${data.post.slug}` : undefined}
                             onEstimateRequest={async (dates) => {
@@ -1063,7 +1063,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             estimateError={estimateError}
                             postId={typeof data?.post === 'string' ? data.post : data?.post?.id}
                             postTitle={typeof data?.post === 'object' ? data.post.title : 'Property'}
-                            baseRate={typeof data?.post === 'object' ? data.post.baseRate || 150 : 150}
+                            baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post?.baseRate ? Number(data.post.baseRate) : undefined)}
                           />
                         </div>
                       </div>
