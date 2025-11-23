@@ -658,6 +658,20 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
         endDate: data.toDate ? new Date(data.toDate).toISOString() : undefined,
       }
 
+      console.log('[Estimate Page] Creating payment link:', {
+        selectedPackage: {
+          id: selectedPackage.id,
+          name: selectedPackage.name,
+          baseRate: selectedPackage.baseRate,
+          yocoId: selectedPackage.yocoId,
+          revenueCatId: selectedPackage.revenueCatId,
+        },
+        bookingTotal,
+        packageTotal,
+        packagePrice,
+        _bookingTotal
+      })
+      
       const paymentLink = await createPaymentLinkFromDatabase?.(
         {
           id: selectedPackage.id,

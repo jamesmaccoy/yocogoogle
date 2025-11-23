@@ -99,6 +99,14 @@ export async function POST(request: NextRequest) {
       transactionAmount = Number(total)
       transactionPackageName = packageData.name
       transactionProductId = packageData.revenueCatId || packageData.id
+      
+      console.log('[Payment Link API] Creating payment link for database package:', {
+        packageData,
+        total,
+        transactionAmount,
+        packageBaseRate: packageData.baseRate
+      })
+      
       paymentLink = await yocoService.createPaymentLinkFromDatabasePackage(
         packageData,
         customerId,
