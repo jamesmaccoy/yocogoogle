@@ -315,16 +315,10 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     : 150 // Default fallback
   
   // Use the estimate total if it's valid, otherwise calculate from baseRate
-  // NOTE: estimate.total may be stored in cents, so convert if suspiciously large
-  const rawEstimateTotal = data?.total && !isNaN(Number(data.total)) && Number(data.total) > 0
+  // Use values directly from Payload CMS as stored (no conversion)
+  const _bookingTotal = data?.total && !isNaN(Number(data.total)) && Number(data.total) > 0
     ? Number(data.total)
     : _postBaseRate * _bookingDuration
-  
-  // Convert from cents to rands if the value is suspiciously large (> 10000)
-  // This handles cases where estimate.total was stored in cents (e.g., 85000 = R850.00)
-  const _bookingTotal = rawEstimateTotal > 10000 
-    ? rawEstimateTotal / 100 
-    : rawEstimateTotal
   
   const _postId = typeof data?.post === 'object' && data?.post?.id ? data.post.id : ''
   const { packages, loading, error } = usePackages(_postId)
@@ -542,11 +536,8 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     const hasFixedPackageRate = Boolean(selectedPackage.baseRate && selectedPackage.baseRate > 0)
 
     if (hasFixedPackageRate) {
-      // Convert baseRate from cents to rands
-      // NOTE: Package baseRate is stored in cents (e.g., 85000 = R850.00)
-      // We convert to rands for calculations, then Yoco service converts back to cents
-      const packageBaseRateInCents = selectedPackage.baseRate ?? 0
-      const packageBaseRateInRands = packageBaseRateInCents / 100
+      // Use baseRate directly from Payload CMS (stored as-is, no conversion)
+      const packageBaseRate = selectedPackage.baseRate ?? 0
       
       const effectiveDuration =
         _bookingDuration > 0
@@ -558,11 +549,11 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
       
       // For 1-night packages, use baseRate directly; otherwise divide by duration
       const perNightRate = isOneNightPackage 
-        ? packageBaseRateInRands 
-        : (effectiveDuration > 0 ? packageBaseRateInRands / effectiveDuration : packageBaseRateInRands)
+        ? packageBaseRate 
+        : (effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate)
 
       setPackagePrice(perNightRate)
-      setPackageTotal(packageBaseRateInRands)
+      setPackageTotal(packageBaseRate)
       return
     }
 
@@ -571,47 +562,22 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     setPackageTotal(perNightRate * _bookingDuration)
   }, [selectedPackage, _postBaseRate, _bookingDuration])
 
+  // Format price for display: use value directly from Payload CMS (stored in rands)
   const formatPrice = (price: number | null) => {
     if (price === null) return 'N/A'
     return `R${price.toFixed(2)}`
   }
 
-  // Ensure bookingTotal is always in rands (not cents)
-  // If packageTotal exists, use it (already converted to rands)
-  // Otherwise calculate from packagePrice or fallback to _bookingTotal
+  // Use values directly from Payload CMS (stored in rands)
   const bookingTotal = useMemo(() => {
     if (packageTotal !== null) {
-      // packageTotal is already in rands from the useEffect conversion
       return packageTotal
     }
     if (packagePrice !== null) {
       return packagePrice * _bookingDuration
     }
-    // Fallback: if _bookingTotal seems to be in cents (very large number), convert it
-    // This handles cases where estimate.total might be stored in cents
-    const fallbackTotal = _bookingTotal
-    // If the value is suspiciously large (> 10000), it's likely in cents
-    if (fallbackTotal > 10000 && selectedPackage?.baseRate) {
-      console.warn('[Price Conversion] Converting fallback total from cents to rands:', fallbackTotal)
-      return fallbackTotal / 100
-    }
-    return fallbackTotal
-  }, [packageTotal, packagePrice, _bookingDuration, _bookingTotal, selectedPackage?.baseRate])
-
-  // Debug logging to verify conversion
-  useEffect(() => {
-    if (selectedPackage?.baseRate) {
-      console.log('[Price Debug]', {
-        rawBaseRate: selectedPackage.baseRate,
-        rawBaseRateInRands: selectedPackage.baseRate / 100,
-        packageTotal,
-        bookingTotal,
-        packagePrice,
-        _bookingTotal,
-        isLargeValue: bookingTotal > 10000
-      })
-    }
-  }, [selectedPackage?.baseRate, packageTotal, bookingTotal, packagePrice, _bookingTotal])
+    return _bookingTotal
+  }, [packageTotal, packagePrice, _bookingDuration, _bookingTotal])
 
   const isFixedPricePackage = Boolean(selectedPackage?.baseRate && selectedPackage.baseRate > 0)
   const effectiveNightsForDisplay = isFixedPricePackage
@@ -828,21 +794,21 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                         // Check if this is a 1-night package (should not be divided)
                         const isOneNightPackage = pkg.minNights === 1 && pkg.maxNights === 1
                         
-                        // Convert baseRate from cents to rands (baseRate is stored in cents)
-                        const packageBaseRateInRands = hasFixedPackageRate 
-                          ? (pkg.baseRate ?? 0) / 100 
+                        // Use baseRate directly from Payload CMS (no conversion)
+                        const packageBaseRate = hasFixedPackageRate 
+                          ? (pkg.baseRate ?? 0)
                           : null
                         
                         // For 1-night packages, use baseRate directly; otherwise divide by duration for fixed packages
-                        const perNightRate = isOneNightPackage && hasFixedPackageRate && packageBaseRateInRands !== null
-                          ? packageBaseRateInRands
-                          : hasFixedPackageRate && packageBaseRateInRands !== null
-                          ? (effectiveDuration > 0 ? packageBaseRateInRands / effectiveDuration : packageBaseRateInRands)
+                        const perNightRate = isOneNightPackage && hasFixedPackageRate && packageBaseRate !== null
+                          ? packageBaseRate
+                          : hasFixedPackageRate && packageBaseRate !== null
+                          ? (effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate)
                           : _postBaseRate * (pkg.multiplier || 1)
                         
                         // Calculate total for this package
-                        const packageTotal = hasFixedPackageRate && packageBaseRateInRands !== null
-                          ? packageBaseRateInRands
+                        const packageTotal = hasFixedPackageRate && packageBaseRate !== null
+                          ? packageBaseRate
                           : perNightRate * effectiveDuration
                         
                         return (
@@ -988,7 +954,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   )}
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-muted-foreground">Property base rate:</span>
-                    <span className="font-medium">R{_postBaseRate.toFixed(0)}/night</span>
+                    <span className="font-medium">{formatPrice(_postBaseRate)}/night</span>
                   </div>
                   <div className="flex justify-between items-center mb-4">
                     <span className="text-muted-foreground">Duration:</span>
