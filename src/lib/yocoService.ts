@@ -439,8 +439,20 @@ class YocoService {
 
       // Create checkout via Yoco Checkout API
       // Note: The Checkout API creates a checkout session, not a direct payment link
+      // Convert total from rands to cents
+      // If total is suspiciously large (> 10000), it might already be in cents, so don't multiply
+      const amountInCents = total > 10000 
+        ? Math.round(total) // Already in cents, just round
+        : Math.round(total * 100) // Convert from rands to cents
+      
+      console.log('[Yoco Payment] Amount conversion:', {
+        totalReceived: total,
+        amountInCents,
+        assumedFormat: total > 10000 ? 'cents' : 'rands'
+      })
+      
       const requestBody = {
-        amount: Math.round(total * 100), // Amount in cents
+        amount: amountInCents, // Amount in cents
         currency: 'ZAR',
         successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
         cancelUrl: `${baseUrl}/estimate?cancelled=true`,
