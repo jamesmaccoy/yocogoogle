@@ -47,7 +47,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const body = await request.json()
+    // Handle both JSON and form data requests
+    const contentType = request.headers.get('content-type') || ''
+    let body: any = {}
+    
+    if (contentType.includes('application/json')) {
+      try {
+        const bodyText = await request.text()
+        if (!bodyText || bodyText.trim() === '' || bodyText === '-') {
+          return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+        }
+        body = JSON.parse(bodyText)
+      } catch (error) {
+        console.error('JSON parse error:', error)
+        return NextResponse.json(
+          { error: 'Invalid JSON in request body', details: error instanceof Error ? error.message : 'Unknown error' },
+          { status: 400 }
+        )
+      }
+    } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+      // Handle form data requests
+      try {
+        const formData = await request.formData()
+        
+        // Convert FormData to regular object
+        for (const [key, value] of formData.entries()) {
+          if (key.includes('[') && key.includes(']')) {
+            // Handle nested form fields like "meta[title]"
+            const match = key.match(/^(\w+)\[(\w+)\]$/)
+            if (match && match.length >= 3) {
+              const parentKey = match[1]
+              const childKey = match[2]
+              if (parentKey && childKey) {
+                if (!body[parentKey]) body[parentKey] = {}
+                body[parentKey][childKey] = value
+              }
+            } else {
+              body[key] = value
+            }
+          } else {
+            body[key] = value
+          }
+        }
+      } catch (error) {
+        console.error('Form data parse error:', error)
+        return NextResponse.json(
+          { error: 'Invalid form data in request body', details: error instanceof Error ? error.message : 'Unknown error' },
+          { status: 400 }
+        )
+      }
+    } else {
+      // Try to parse as JSON as fallback
+      try {
+        const bodyText = await request.text()
+        if (bodyText && bodyText.trim() !== '' && bodyText !== '-') {
+          body = JSON.parse(bodyText)
+        }
+      } catch (error) {
+        console.error('Fallback JSON parse error:', error)
+        return NextResponse.json(
+          { error: 'Invalid request body format', details: error instanceof Error ? error.message : 'Unknown error' },
+          { status: 400 }
+        )
+      }
+    }
     
     const packageDoc = await payload.create({
       collection: 'packages',
@@ -59,7 +122,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating package:', error)
     return NextResponse.json(
-      { error: 'Failed to create package' },
+      { error: 'Failed to create package', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     )
   }

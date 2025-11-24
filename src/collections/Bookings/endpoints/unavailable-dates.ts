@@ -5,7 +5,7 @@ export const unavailableDates: Endpoint = {
   method: 'get',
   path: '/unavailable-dates',
   handler: async (req) => {
-    const { slug, postId } = req.query
+    const { slug, postId, excludeBookingId } = req.query
 
     if (!slug && !postId) {
       return Response.json({ message: 'Post slug or ID is required' }, { status: 400 })
@@ -48,14 +48,23 @@ export const unavailableDates: Endpoint = {
         resolvedPostId = posts.docs[0]?.id
       }
 
+      // Build where clause to exclude current booking if provided
+      const whereClause: any = {
+        post: {
+          equals: resolvedPostId,
+        },
+      }
+
+      if (excludeBookingId) {
+        whereClause.id = {
+          not_equals: excludeBookingId,
+        }
+      }
+
       // Find all bookings for this post
       const bookings = await req.payload.find({
         collection: 'bookings',
-        where: {
-          post: {
-            equals: resolvedPostId,
-          },
-        },
+        where: whereClause,
         limit: 1000,
         select: {
           fromDate: true,
@@ -68,6 +77,9 @@ export const unavailableDates: Endpoint = {
       const unavailableDates: string[] = []
 
       bookings.docs.forEach((booking) => {
+        // Skip bookings without both dates
+        if (!booking.fromDate || !booking.toDate) return
+        
         // Parse dates and normalize to midnight UTC to avoid timezone issues
         const fromDate = new Date(booking.fromDate)
         const toDate = new Date(booking.toDate)

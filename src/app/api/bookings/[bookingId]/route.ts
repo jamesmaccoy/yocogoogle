@@ -15,7 +15,20 @@ export async function PATCH(
     }
 
     const { bookingId } = await params
-    const body = await request.json()
+    let body
+    try {
+      const bodyText = await request.text()
+      if (!bodyText || bodyText.trim() === '' || bodyText === '-') {
+        return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+      }
+      body = JSON.parse(bodyText)
+    } catch (error) {
+      console.error('JSON parse error:', error)
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body', details: error instanceof Error ? error.message : 'Unknown error' },
+        { status: 400 }
+      )
+    }
     const { fromDate, toDate } = body
 
     if (!fromDate) {

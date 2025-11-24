@@ -1,16 +1,105 @@
 import { format } from 'date-fns'
 import { APIError, CollectionBeforeChangeHook } from 'payload'
 
+// Helper function to get unavailable dates for a post
+async function getUnavailableDates(
+  postId: string | { id: string } | undefined,
+  currentBookingId: string | undefined,
+  payload: any,
+  req: any,
+): Promise<string[]> {
+  if (!postId) return []
+
+  const resolvedPostId = typeof postId === 'string' ? postId : postId?.id
+  if (!resolvedPostId) return []
+
+  try {
+    // Find all bookings for this post (excluding current booking if updating)
+    const whereClause: any = {
+      post: { equals: resolvedPostId },
+    }
+
+    // Exclude current booking if updating
+    if (currentBookingId) {
+      whereClause.id = { not_equals: currentBookingId }
+    }
+
+    const bookings = await payload.find({
+      collection: 'bookings',
+      where: whereClause,
+      limit: 1000,
+      select: {
+        fromDate: true,
+        toDate: true,
+      },
+      depth: 0,
+      req,
+    })
+
+    const unavailableDates: string[] = []
+
+    bookings.docs.forEach((booking: any) => {
+      if (!booking.fromDate || !booking.toDate) return
+
+      // Parse dates and normalize to midnight UTC
+      const fromDate = new Date(booking.fromDate)
+      const toDate = new Date(booking.toDate)
+
+      const fromDateStr = fromDate.toISOString().split('T')[0]
+      const toDateStr = toDate.toISOString().split('T')[0]
+
+      const normalizedFromDate = new Date(fromDateStr + 'T00:00:00.000Z')
+      const normalizedToDate = new Date(toDateStr + 'T00:00:00.000Z')
+
+      // Generate array of all dates in the range (excluding check-out date)
+      const currentDate = new Date(normalizedFromDate)
+
+      while (currentDate.getTime() < normalizedToDate.getTime()) {
+        unavailableDates.push(currentDate.toISOString().split('T')[0])
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+      }
+    })
+
+    return [...new Set(unavailableDates)]
+  } catch (error) {
+    console.error('Error fetching unavailable dates:', error)
+    return []
+  }
+}
+
+// Helper function to check if a date range contains unavailable dates
+function hasUnavailableDateInRange(
+  unavailableDates: string[],
+  fromDate: string,
+  toDate: string,
+): boolean {
+  if (!fromDate || !toDate) return false
+
+  const fromDateStr = new Date(fromDate).toISOString().split('T')[0]
+  const toDateStr = new Date(toDate).toISOString().split('T')[0]
+
+  const from = new Date(fromDateStr + 'T00:00:00.000Z')
+  const to = new Date(toDateStr + 'T00:00:00.000Z')
+
+  const checkDate = new Date(from)
+  while (checkDate.getTime() < to.getTime()) {
+    const dateStr = checkDate.toISOString().split('T')[0]
+    if (unavailableDates.includes(dateStr)) {
+      return true
+    }
+    checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+  }
+
+  return false
+}
+
 export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   data,
   req: { payload },
   req,
   operation,
+  id, // Current booking ID (for updates)
 }) => {
-  if (operation === 'update') {
-    return data
-  }
-
   if (!('fromDate' in data && 'post' in data)) {
     throw new APIError('Start date and post are required.', 400, undefined, true)
   }
@@ -22,7 +111,33 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     throw new APIError('Start date must be before end date.', 400, undefined, true)
   }
 
-  // Skip availability check if toDate is not provided
+  // Get unavailable dates for this post
+  const unavailableDates = await getUnavailableDates(
+    data.post,
+    operation === 'update' ? id : undefined,
+    payload,
+    req,
+  )
+
+  // Check if selected dates contain unavailable dates
+  if (toDate && hasUnavailableDateInRange(unavailableDates, fromDate, toDate)) {
+    const formattedFromDate = format(new Date(fromDate), 'yyyy-MM-dd')
+    const formattedToDate = format(new Date(toDate), 'yyyy-MM-dd')
+    
+    throw new APIError(
+      `The selected date range (${formattedFromDate} to ${formattedToDate}) contains dates that are already booked. Please choose different dates.`,
+      400,
+      [
+        {
+          message: 'Selected dates overlap with existing bookings.',
+          unavailableDates: unavailableDates.slice(0, 10), // Show first 10 unavailable dates
+        },
+      ],
+      true,
+    )
+  }
+
+  // Skip overlap check if toDate is not provided
   if (!toDate) {
     return data
   }
@@ -81,15 +196,22 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
 
   // Check if the booking overlaps with existing bookings
   // Use ISO date strings for proper comparison with database ISO timestamps
+  const whereClause: any = {
+    and: [
+      { post: { equals: data.post } },
+      { fromDate: { less_than: toDateISO } },
+      { toDate: { greater_than: fromDateISO } },
+    ],
+  }
+
+  // Exclude current booking if updating
+  if (operation === 'update' && id) {
+    whereClause.and.push({ id: { not_equals: id } })
+  }
+
   const bookings = await payload.find({
     collection: 'bookings',
-    where: {
-      and: [
-        { post: { equals: data.post } },
-        { fromDate: { less_than: toDateISO } },
-        { toDate: { greater_than: fromDateISO } },
-      ],
-    },
+    where: whereClause,
     limit: 10, // Get more bookings for debugging
     select: {
       slug: true,

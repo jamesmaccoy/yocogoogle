@@ -486,6 +486,15 @@ export const Booking: CollectionConfig = {
     beforeChange: [checkAvailabilityHook],
     afterChange: [sendBookingConfirmationHook],
   },
+  admin: {
+    components: {
+      beforeList: [
+        () => {
+          return null // Can add custom component here if needed
+        },
+      ],
+    },
+  },
   fields: [
     {
       name: 'title',
@@ -614,6 +623,62 @@ export const Booking: CollectionConfig = {
         date: {
           pickerAppearance: 'dayAndTime',
         },
+        description: 'Select a check-in date. Dates that are already booked will be prevented.',
+        components: {
+          Field: {
+            path: '@/collections/Bookings/admin/DateFieldWithAvailability#DateFieldWithAvailability',
+          },
+        },
+      },
+      validate: async (value, { data, req }) => {
+        if (!value || !data?.post) return true
+
+        const postId = typeof data.post === 'string' ? data.post : data.post?.id
+        if (!postId) return true
+
+        try {
+          // Get unavailable dates for this post
+          const bookings = await req.payload.find({
+            collection: 'bookings',
+            where: {
+              and: [
+                { post: { equals: postId } },
+                // Exclude current booking if updating
+                ...(data?.id ? [{ id: { not_equals: data.id } }] : []),
+              ],
+            },
+            limit: 1000,
+            select: {
+              fromDate: true,
+              toDate: true,
+            },
+            depth: 0,
+            req,
+          })
+
+          const unavailableDates: string[] = []
+          bookings.docs.forEach((booking: any) => {
+            if (!booking.fromDate || !booking.toDate) return
+            const from = new Date(booking.fromDate).toISOString().split('T')[0]
+            const to = new Date(booking.toDate).toISOString().split('T')[0]
+            const fromDate = new Date(from + 'T00:00:00.000Z')
+            const toDate = new Date(to + 'T00:00:00.000Z')
+            const currentDate = new Date(fromDate)
+            while (currentDate.getTime() < toDate.getTime()) {
+              unavailableDates.push(currentDate.toISOString().split('T')[0])
+              currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+            }
+          })
+
+          const selectedDateStr = new Date(value).toISOString().split('T')[0]
+          if (unavailableDates.includes(selectedDateStr)) {
+            return `This date (${selectedDateStr}) is already booked. Please choose a different date.`
+          }
+        } catch (error) {
+          console.error('Error validating fromDate:', error)
+        }
+
+        return true
       },
       access: {
         update: isAdminField,
@@ -629,6 +694,72 @@ export const Booking: CollectionConfig = {
         date: {
           pickerAppearance: 'dayAndTime',
         },
+        description: 'Select a check-out date. The date range must not overlap with existing bookings.',
+        components: {
+          Field: {
+            path: '@/collections/Bookings/admin/DateFieldWithAvailability#DateFieldWithAvailability',
+          },
+        },
+      },
+      validate: async (value, { data, req }) => {
+        if (!value || !data?.fromDate || !data?.post) return true
+
+        const postId = typeof data.post === 'string' ? data.post : data.post?.id
+        if (!postId) return true
+
+        try {
+          // Get unavailable dates for this post
+          const bookings = await req.payload.find({
+            collection: 'bookings',
+            where: {
+              and: [
+                { post: { equals: postId } },
+                // Exclude current booking if updating
+                ...(data?.id ? [{ id: { not_equals: data.id } }] : []),
+              ],
+            },
+            limit: 1000,
+            select: {
+              fromDate: true,
+              toDate: true,
+            },
+            depth: 0,
+            req,
+          })
+
+          const unavailableDates: string[] = []
+          bookings.docs.forEach((booking: any) => {
+            if (!booking.fromDate || !booking.toDate) return
+            const from = new Date(booking.fromDate).toISOString().split('T')[0]
+            const to = new Date(booking.toDate).toISOString().split('T')[0]
+            const fromDate = new Date(from + 'T00:00:00.000Z')
+            const toDate = new Date(to + 'T00:00:00.000Z')
+            const currentDate = new Date(fromDate)
+            while (currentDate.getTime() < toDate.getTime()) {
+              unavailableDates.push(currentDate.toISOString().split('T')[0])
+              currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+            }
+          })
+
+          // Check if the date range contains any unavailable dates
+          const fromDateStr = new Date(data.fromDate).toISOString().split('T')[0]
+          const toDateStr = new Date(value).toISOString().split('T')[0]
+          const from = new Date(fromDateStr + 'T00:00:00.000Z')
+          const to = new Date(toDateStr + 'T00:00:00.000Z')
+          const checkDate = new Date(from)
+          
+          while (checkDate.getTime() < to.getTime()) {
+            const dateStr = checkDate.toISOString().split('T')[0]
+            if (unavailableDates.includes(dateStr)) {
+              return `The selected date range contains booked dates (e.g., ${dateStr}). Please choose different dates.`
+            }
+            checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+          }
+        } catch (error) {
+          console.error('Error validating toDate:', error)
+        }
+
+        return true
       },
       access: {
         update: isAdminField,

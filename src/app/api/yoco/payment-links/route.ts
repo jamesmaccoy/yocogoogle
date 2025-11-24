@@ -39,6 +39,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`API Route: Using Yoco API version: ${version || 'default'}`)
+    console.log('[Payment Link API] Request body:', {
+      hasPackageData: !!packageData,
+      packageData: packageData ? { id: packageData.id, name: packageData.name, baseRate: packageData.baseRate } : null,
+      hasProductId: !!productId,
+      productId,
+      total,
+      intent: intentFromBody
+    })
 
     let paymentLink = null
     let transactionRecord = null
@@ -88,7 +96,21 @@ export async function POST(request: NextRequest) {
       transactionId,
     }
 
-    if (packageData) {
+    console.log('[Payment Link API] Route decision:', {
+      hasPackageData: !!packageData,
+      packageDataKeys: packageData ? Object.keys(packageData) : [],
+      packageDataId: packageData?.id,
+      packageDataName: packageData?.name,
+      packageDataBaseRate: packageData?.baseRate,
+      hasProductId: !!productId,
+      productId,
+      total,
+      willUsePackageData: !!packageData,
+      willUseProductId: !packageData && !!productId
+    })
+
+    // ALWAYS prioritize packageData over productId if both are present
+    if (packageData && packageData.id && packageData.name) {
       // Create payment link for database package
       if (!total || Number(total) <= 0) {
         return NextResponse.json({ error: 'Total amount is required for database packages' }, { status: 400 })
@@ -100,11 +122,13 @@ export async function POST(request: NextRequest) {
       transactionPackageName = packageData.name
       transactionProductId = packageData.revenueCatId || packageData.id
       
-      console.log('[Payment Link API] Creating payment link for database package:', {
-        packageData,
+      console.log('[Payment Link API] ✅ Using DATABASE PACKAGE path:', {
+        packageId: packageData.id,
+        packageName: packageData.name,
+        packageBaseRate: packageData.baseRate,
         total,
         transactionAmount,
-        packageBaseRate: packageData.baseRate
+        willCall: 'createPaymentLinkFromDatabasePackage'
       })
       
       paymentLink = await yocoService.createPaymentLinkFromDatabasePackage(
@@ -116,6 +140,10 @@ export async function POST(request: NextRequest) {
         metadataWithId,
       )
     } else if (productId) {
+      console.log('[Payment Link API] ⚠️ Using YOCO PRODUCT path (this should not happen for database packages):', {
+        productId,
+        willCall: 'createPaymentLink'
+      })
       // Create payment link for Yoco product
       const products = await yocoService.getProducts()
       const product = products.find(p => p.id === productId)

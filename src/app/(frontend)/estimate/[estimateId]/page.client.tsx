@@ -679,6 +679,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
           description: selectedPackage.description,
           baseRate: selectedPackage.baseRate,
           revenueCatId: selectedPackage.revenueCatId,
+          yocoId: selectedPackage.yocoId, // Include yocoId but don't use it as productId
         },
         user?.name || 'Guest',
         bookingTotal,

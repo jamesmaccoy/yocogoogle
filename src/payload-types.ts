@@ -174,7 +174,13 @@ export interface Booking {
   slugLock?: boolean | null;
   post: string | Post;
   paymentStatus?: ('paid' | 'unpaid') | null;
+  /**
+   * Select a check-in date. Dates that are already booked will be prevented.
+   */
   fromDate: string;
+  /**
+   * Select a check-out date. The date range must not overlap with existing bookings.
+   */
   toDate?: string | null;
   packageType?: string | null;
   /**
