@@ -8,7 +8,6 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { CalendarIcon, Clock } from 'lucide-react'
-import { hasUnavailableDateBetween } from '@/utilities/hasUnavailableDateBetween'
 
 type DateFieldWithAvailabilityProps = DateFieldClientProps & {
   fieldName?: 'fromDate' | 'toDate'
@@ -23,12 +22,37 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
   // Ensure we have valid field and path
   const fieldPath = path || field?.name
   if (!field || !fieldPath) {
-    return null
+    // Return a simple fallback instead of null to avoid rendering issues
+    return (
+      <div className="field-type date">
+        <FieldLabel label={field?.label || 'Date'} required={field?.required} />
+        <div style={{ padding: '0.5rem', color: '#999', fontSize: '0.875rem' }}>
+          Date field not configured properly
+        </div>
+      </div>
+    )
   }
 
-  const { value, setValue } = useField<Date | string>({ 
-    path: fieldPath
-  })
+  let value: Date | string | undefined
+  let setValue: ((value: any) => void) | undefined
+
+  try {
+    const fieldResult = useField<Date | string>({ 
+      path: fieldPath
+    })
+    value = fieldResult.value
+    setValue = fieldResult.setValue
+  } catch (error) {
+    console.error('Error initializing date field:', error)
+    return (
+      <div className="field-type date">
+        <FieldLabel label={field.label} required={field.required} />
+        <div style={{ padding: '0.5rem', color: '#dc2626', fontSize: '0.875rem' }}>
+          Error loading date field
+        </div>
+      </div>
+    )
+  }
   const [unavailableDates, setUnavailableDates] = useState<string[]>([])
   const [loadingUnavailableDates, setLoadingUnavailableDates] = useState(false)
   const [unavailableDateRanges, setUnavailableDateRanges] = useState<Array<{ from: string; to: string }>>([])
@@ -45,34 +69,42 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
   }, [value])
 
   // Get the post field value - access by path like the slug component does
-  const postFieldValue = useFormFields(([fields]) => {
-    if (!fields || typeof fields !== 'object') return null
-    try {
-      const postField = (fields as any)?.post
-      if (!postField) return null
-      const value = postField.value
-      if (!value) return null
-      return typeof value === 'string' ? value : (value as any)?.id || null
-    } catch {
-      return null
-    }
-  })
+  let postId: string | null = null
+  let currentBookingId: string | undefined = undefined
 
-  const postId = useMemo(() => {
-    if (!postFieldValue) return null
-    return postFieldValue
-  }, [postFieldValue])
+  try {
+    const postFieldValue = useFormFields(([fields]) => {
+      if (!fields || typeof fields !== 'object') return null
+      try {
+        const postField = (fields as any)?.post
+        if (!postField) return null
+        const fieldValue = postField.value
+        if (!fieldValue) return null
+        return typeof fieldValue === 'string' ? fieldValue : (fieldValue as any)?.id || null
+      } catch {
+        return null
+      }
+    })
 
-  // Get current booking ID (for updates) - access by path
-  const currentBookingId = useFormFields(([fields]) => {
-    if (!fields || typeof fields !== 'object') return undefined
-    try {
-      const idField = (fields as any)?.id
-      return idField?.value as string | undefined
-    } catch {
-      return undefined
-    }
-  })
+    postId = useMemo(() => {
+      if (!postFieldValue) return null
+      return postFieldValue
+    }, [postFieldValue]) as string | null
+
+    // Get current booking ID (for updates) - access by path
+    currentBookingId = useFormFields(([fields]) => {
+      if (!fields || typeof fields !== 'object') return undefined
+      try {
+        const idField = (fields as any)?.id
+        return idField?.value as string | undefined
+      } catch {
+        return undefined
+      }
+    }) as string | undefined
+  } catch (error) {
+    // Silently fail - form fields might not be available yet
+    console.debug('Form fields not available:', error)
+  }
 
   // Fetch unavailable dates when post is selected - only on client side
   useEffect(() => {
@@ -263,11 +295,72 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => {
+          <PopoverContent 
+            className="w-auto p-0" 
+            align="start"
+            style={{
+              backgroundColor: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            }}
+          >
+            {/* CSS override to ensure calendar visibility with proper contrast */}
+            <style dangerouslySetInnerHTML={{
+              __html: `
+                .booking-date-calendar-wrapper .rdp,
+                .booking-date-calendar-wrapper .rdp-months,
+                .booking-date-calendar-wrapper .rdp-month,
+                .booking-date-calendar-wrapper .rdp-table {
+                  background-color: #ffffff !important;
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-day {
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-day:hover:not(.rdp-day_disabled) {
+                  background-color: #f3f4f6 !important;
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-day_selected {
+                  background-color: #3b82f6 !important;
+                  color: #ffffff !important;
+                }
+                .booking-date-calendar-wrapper .rdp-day_disabled {
+                  color: #9ca3af !important;
+                  opacity: 0.5 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-head_cell {
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-caption_label {
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-button {
+                  color: #000000 !important;
+                }
+                .booking-date-calendar-wrapper .rdp-button:hover:not(:disabled) {
+                  color: #000000 !important;
+                }
+              `
+            }} />
+            <div 
+              className="booking-date-calendar-wrapper"
+              style={{ 
+                backgroundColor: '#ffffff', 
+                padding: '0.5rem',
+                borderRadius: '8px',
+              }}
+            >
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                style={{
+                  backgroundColor: '#ffffff',
+                }}
+                onSelect={(date) => {
+                if (!setValue) return
+                
                 if (date) {
                   // If time picker is enabled, preserve the time or set to current time
                   let dateWithTime = date
@@ -286,15 +379,15 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                   // Always set a valid ISO string
                   const isoString = dateWithTime.toISOString()
                   if (isoString && !isNaN(dateWithTime.getTime())) {
-                    setValue(isoString as any)
+                    setValue(isoString)
                   }
                 } else {
                   // Set undefined instead of empty string to avoid JSON parsing issues
-                  setValue(undefined as any)
+                  setValue(undefined)
                 }
                 setIsCalendarOpen(false)
-              }}
-              disabled={(date) => {
+                }}
+                disabled={(date) => {
                 // Disable past dates
                 const today = new Date()
                 today.setHours(0, 0, 0, 0)
@@ -311,23 +404,30 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                   })
                 }
                 return false
-              }}
-              initialFocus
-            />
+                }}
+                initialFocus
+              />
+            </div>
             {field.admin?.date?.pickerAppearance === 'dayAndTime' && selectedDate && (
-              <div style={{ padding: '0.75rem', borderTop: '1px solid #e5e7eb' }}>
+              <div style={{ 
+                padding: '0.75rem', 
+                borderTop: '1px solid #e5e7eb',
+                backgroundColor: '#ffffff !important',
+              }}>
                 <label style={{ display: 'block', fontSize: '0.875rem', marginBottom: '0.25rem' }}>Time:</label>
                 <input
                   type="time"
                   value={format(selectedDate, 'HH:mm')}
                   onChange={(e) => {
+                    if (!setValue || !selectedDate) return
+                    
                     if (e.target.value && selectedDate) {
                       const [hours, minutes] = e.target.value.split(':')
                       const newDate = new Date(selectedDate)
                       newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0)
                       const isoString = newDate.toISOString()
                       if (isoString && !isNaN(newDate.getTime())) {
-                        setValue(isoString as any)
+                        setValue(isoString)
                       }
                     }
                   }}

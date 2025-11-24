@@ -70,24 +70,52 @@ export async function POST(request: NextRequest) {
       try {
         const formData = await request.formData()
         
-        // Convert FormData to regular object
+        // Log all form data entries for debugging
+        const formEntries: Record<string, string> = {}
         for (const [key, value] of formData.entries()) {
-          if (key.includes('[') && key.includes(']')) {
-            // Handle nested form fields like "meta[title]"
-            const match = key.match(/^(\w+)\[(\w+)\]$/)
-            if (match && match.length >= 3) {
-              const parentKey = match[1]
-              const childKey = match[2]
-              if (parentKey && childKey) {
-                if (!body[parentKey]) body[parentKey] = {}
-                body[parentKey][childKey] = value
-              }
-            } else {
-              body[key] = value
-            }
-          } else {
-            body[key] = value
+          formEntries[key] = value.toString()
+        }
+        console.log('Form data received:', JSON.stringify(formEntries, null, 2))
+        
+        // Convert FormData to regular object
+        // Payload sends form data in URL-encoded format like: depth=0&post=ID&name=Name
+        for (const [key, value] of formData.entries()) {
+          const stringValue = value.toString()
+          
+          // Skip Payload internal fields
+          if (key === 'depth' || key === '_payload' || key.startsWith('_')) {
+            continue
           }
+          
+          // Handle empty strings - convert to undefined for optional fields, keep for required
+          if (stringValue === '' || stringValue.trim() === '') {
+            // Only skip if it's not a required field
+            if (key !== 'post' && key !== 'name') {
+              continue
+            }
+            // For required fields, keep empty string so validation can catch it
+          }
+          
+          // Direct field assignment - Payload sends flat field names
+          body[key] = stringValue.trim() || stringValue
+        }
+        
+        console.log('Parsed body:', JSON.stringify(body, null, 2))
+        
+        // Validate required fields
+        if (!body.post) {
+          console.error('Missing post field. Available fields:', Object.keys(body))
+          return NextResponse.json(
+            { error: 'Post field is required', receivedFields: Object.keys(body) },
+            { status: 400 }
+          )
+        }
+        if (!body.name || body.name.trim() === '') {
+          console.error('Missing or empty name field. Available fields:', Object.keys(body))
+          return NextResponse.json(
+            { error: 'Name field is required', receivedFields: Object.keys(body) },
+            { status: 400 }
+          )
         }
       } catch (error) {
         console.error('Form data parse error:', error)
