@@ -79,6 +79,9 @@ export async function GET(
     lines.push('PRODID:-//Simple Plek//Bookings//EN')
     lines.push('CALSCALE:GREGORIAN')
     lines.push('METHOD:PUBLISH')
+    // Add refresh interval hint (in minutes)
+    lines.push('REFRESH-INTERVAL;VALUE=DURATION:PT15M')
+    lines.push('X-PUBLISHED-TTL;VALUE=DURATION:PT15M')
     lines.push('BEGIN:VEVENT')
     lines.push(`UID:${uid}`)
     lines.push(`DTSTART:${formatICalDate(fromDate)}`)
@@ -92,18 +95,39 @@ export async function GET(
       lines.push(`LAST-MODIFIED:${formatICalDate(new Date(booking.updatedAt))}`)
     }
     lines.push('STATUS:CONFIRMED')
-    lines.push('SEQUENCE:0')
+    // Use sequence number based on update time to help detect changes
+    const sequence = booking.updatedAt && booking.createdAt && booking.updatedAt !== booking.createdAt ? 1 : 0
+    lines.push(`SEQUENCE:${sequence}`)
     lines.push('END:VEVENT')
     lines.push('END:VCALENDAR')
 
     const icalContent = lines.join('\r\n')
+
+    // Generate ETag based on booking update time
+    const updateTime = booking.updatedAt ? new Date(booking.updatedAt) : new Date(booking.createdAt || new Date())
+    const etag = `"${bookingId}-${updateTime.getTime()}"`
+
+    // Check if client has cached version (ETag)
+    const ifNoneMatch = request.headers.get('if-none-match')
+    if (ifNoneMatch === etag) {
+      return new NextResponse(null, {
+        status: 304, // Not Modified
+        headers: {
+          'ETag': etag,
+          'Cache-Control': 'no-cache, must-revalidate',
+        },
+      })
+    }
 
     return new NextResponse(icalContent, {
       status: 200,
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
         'Content-Disposition': `attachment; filename="booking-${bookingId}.ics"`,
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache, must-revalidate, max-age=0',
+        'ETag': etag,
+        'Last-Modified': updateTime.toUTCString(),
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   } catch (error) {

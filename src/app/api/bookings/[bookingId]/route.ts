@@ -15,17 +15,93 @@ export async function PATCH(
     }
 
     const { bookingId } = await params
-    let body
+    let body: any = {}
+    
     try {
-      const bodyText = await request.text()
-      if (!bodyText || bodyText.trim() === '' || bodyText === '-') {
-        return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+      const contentType = request.headers.get('content-type') || ''
+      console.log('PATCH booking Content-Type:', contentType)
+      
+      if (contentType.includes('application/json')) {
+        // Handle JSON requests
+        try {
+          body = await request.json()
+          console.log('Parsed JSON body:', body)
+        } catch (jsonError) {
+          console.error('JSON parse error:', jsonError)
+          return NextResponse.json(
+            { error: 'Invalid JSON in request body', details: jsonError instanceof Error ? jsonError.message : 'Unknown parse error' },
+            { status: 400 }
+          )
+        }
+      } else if (contentType.includes('multipart/form-data') || contentType.includes('application/x-www-form-urlencoded')) {
+        // Handle form data requests (Payload admin interface uses this)
+        try {
+          const formData = await request.formData()
+          body = {} as any
+          
+          // Convert FormData to regular object
+          for (const [key, value] of formData.entries()) {
+            // Handle _payload field (Payload admin sends JSON string here)
+            if (key === '_payload') {
+              try {
+                const payloadData = JSON.parse(value as string)
+                body = { ...body, ...payloadData }
+              } catch (parseError) {
+                console.error('Failed to parse _payload JSON:', parseError)
+                // Fall back to treating as regular field
+                body[key] = value
+              }
+            } else if (key.includes('[') && key.includes(']')) {
+              // Handle nested form fields like "meta[title]"
+              const match = key.match(/^(\w+)\[(\w+)\]$/)
+              if (match && match.length >= 3) {
+                const parentKey = match[1]
+                const childKey = match[2]
+                if (parentKey && childKey) {
+                  if (!body[parentKey]) body[parentKey] = {}
+                  body[parentKey][childKey] = value
+                }
+              } else {
+                body[key] = value
+              }
+            } else {
+              // Regular field
+              body[key] = value
+            }
+          }
+          
+          console.log('Parsed form data body:', body)
+        } catch (formError) {
+          console.error('Form data parse error:', formError)
+          return NextResponse.json(
+            { error: 'Failed to parse form data', details: formError instanceof Error ? formError.message : 'Unknown error' },
+            { status: 400 }
+          )
+        }
+      } else {
+        // Try to parse as JSON as fallback
+        try {
+          body = await request.json()
+        } catch (fallbackError) {
+          console.error('Failed to parse request body:', fallbackError)
+          return NextResponse.json(
+            { error: 'Unsupported content type or invalid request body', details: `Content-Type: ${contentType}` },
+            { status: 400 }
+          )
+        }
       }
-      body = JSON.parse(bodyText)
+      
+      // Validate parsed body is an object
+      if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+        return NextResponse.json(
+          { error: 'Invalid request body', details: 'Request body must be a JSON object' },
+          { status: 400 }
+        )
+      }
     } catch (error) {
-      console.error('JSON parse error:', error)
+      console.error('Error reading request body:', error)
       return NextResponse.json(
-        { error: 'Invalid JSON in request body', details: error instanceof Error ? error.message : 'Unknown error' },
+        { error: 'Failed to read request body', details: error instanceof Error ? error.message : 'Unknown error' },
         { status: 400 }
       )
     }

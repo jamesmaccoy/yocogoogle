@@ -33,22 +33,21 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
     )
   }
 
-  let value: Date | string | undefined
-  let setValue: ((value: any) => void) | undefined
-
-  try {
-    const fieldResult = useField<Date | string>({ 
-      path: fieldPath
-    })
-    value = fieldResult.value
-    setValue = fieldResult.setValue
-  } catch (error) {
-    console.error('Error initializing date field:', error)
+  // useField must be called unconditionally (React hook rules)
+  const fieldResult = useField<Date | string | undefined>({ 
+    path: fieldPath
+  })
+  
+  const value = fieldResult?.value ?? undefined
+  const setValue = fieldResult?.setValue
+  
+  // Validate that we have a valid setValue function
+  if (!setValue || typeof setValue !== 'function') {
     return (
       <div className="field-type date">
-        <FieldLabel label={field.label} required={field.required} />
+        <FieldLabel label={field?.label || 'Date'} required={field?.required} />
         <div style={{ padding: '0.5rem', color: '#dc2626', fontSize: '0.875rem' }}>
-          Error loading date field
+          Error: Date field setValue function not available
         </div>
       </div>
     )
@@ -69,42 +68,60 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
   }, [value])
 
   // Get the post field value - access by path like the slug component does
-  let postId: string | null = null
-  let currentBookingId: string | undefined = undefined
+  // useFormFields must be called unconditionally (React hook rules)
+  const postFieldValue = useFormFields(([fields]) => {
+    if (!fields || typeof fields !== 'object') return null
+    try {
+      const postField = (fields as any)?.post
+      if (!postField) return null
+      const fieldValue = postField?.value
+      if (fieldValue === null || fieldValue === undefined || fieldValue === '') return null
+      const resolvedValue = typeof fieldValue === 'string' ? fieldValue : (fieldValue as any)?.id
+      if (!resolvedValue || resolvedValue === null || resolvedValue === undefined) return null
+      return String(resolvedValue)
+    } catch {
+      return null
+    }
+  })
 
-  try {
-    const postFieldValue = useFormFields(([fields]) => {
-      if (!fields || typeof fields !== 'object') return null
-      try {
-        const postField = (fields as any)?.post
-        if (!postField) return null
-        const fieldValue = postField.value
-        if (!fieldValue) return null
-        return typeof fieldValue === 'string' ? fieldValue : (fieldValue as any)?.id || null
-      } catch {
-        return null
-      }
-    })
+  const postId = useMemo(() => {
+    if (!postFieldValue || postFieldValue === null || postFieldValue === undefined || postFieldValue === '') {
+      return null
+    }
+    try {
+      const result = String(postFieldValue)
+      return result && result !== 'null' && result !== 'undefined' ? result : null
+    } catch {
+      return null
+    }
+  }, [postFieldValue]) as string | null
 
-    postId = useMemo(() => {
-      if (!postFieldValue) return null
-      return postFieldValue
-    }, [postFieldValue]) as string | null
-
-    // Get current booking ID (for updates) - access by path
-    currentBookingId = useFormFields(([fields]) => {
-      if (!fields || typeof fields !== 'object') return undefined
-      try {
-        const idField = (fields as any)?.id
-        return idField?.value as string | undefined
-      } catch {
+  // Get current booking ID (for updates) - access by path
+  const idFieldValue = useFormFields(([fields]) => {
+    if (!fields || typeof fields !== 'object') return undefined
+    try {
+      const idField = (fields as any)?.id
+      if (!idField || !idField.value || idField.value === null || idField.value === undefined || idField.value === '') {
         return undefined
       }
-    }) as string | undefined
-  } catch (error) {
-    // Silently fail - form fields might not be available yet
-    console.debug('Form fields not available:', error)
-  }
+      const result = String(idField.value)
+      return result && result !== 'null' && result !== 'undefined' ? result : undefined
+    } catch {
+      return undefined
+    }
+  })
+  
+  const currentBookingId = useMemo(() => {
+    if (!idFieldValue || idFieldValue === null || idFieldValue === undefined || idFieldValue === '') {
+      return undefined
+    }
+    try {
+      const result = String(idFieldValue)
+      return result && result !== 'null' && result !== 'undefined' ? result : undefined
+    } catch {
+      return undefined
+    }
+  }, [idFieldValue]) as string | undefined
 
   // Fetch unavailable dates when post is selected - only on client side
   useEffect(() => {
@@ -279,7 +296,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
               }}
             >
               <CalendarIcon style={{ marginRight: '0.5rem', height: '1rem', width: '1rem' }} />
-              {selectedDate ? (
+              {selectedDate && !isNaN(selectedDate.getTime()) ? (
                 <>
                   {format(selectedDate, 'PPP')}
                   {field.admin?.date?.pickerAppearance === 'dayAndTime' && selectedDate && (
@@ -342,7 +359,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                 .booking-date-calendar-wrapper .rdp-button:hover:not(:disabled) {
                   color: #000000 !important;
                 }
-              `
+              ` || ''
             }} />
             <div 
               className="booking-date-calendar-wrapper"
@@ -377,9 +394,13 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                     }
                   }
                   // Always set a valid ISO string
-                  const isoString = dateWithTime.toISOString()
-                  if (isoString && !isNaN(dateWithTime.getTime())) {
-                    setValue(isoString)
+                  try {
+                    const isoString = dateWithTime.toISOString()
+                    if (isoString && typeof isoString === 'string' && !isNaN(dateWithTime.getTime())) {
+                      setValue(isoString)
+                    }
+                  } catch (dateError) {
+                    console.error('Error setting date value:', dateError)
                   }
                 } else {
                   // Set undefined instead of empty string to avoid JSON parsing issues
@@ -422,12 +443,16 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                     if (!setValue || !selectedDate) return
                     
                     if (e.target.value && selectedDate) {
-                      const [hours, minutes] = e.target.value.split(':')
-                      const newDate = new Date(selectedDate)
-                      newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0)
-                      const isoString = newDate.toISOString()
-                      if (isoString && !isNaN(newDate.getTime())) {
-                        setValue(isoString)
+                      try {
+                        const [hours, minutes] = e.target.value.split(':')
+                        const newDate = new Date(selectedDate)
+                        newDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0)
+                        const isoString = newDate.toISOString()
+                        if (isoString && typeof isoString === 'string' && !isNaN(newDate.getTime())) {
+                          setValue(isoString)
+                        }
+                      } catch (timeError) {
+                        console.error('Error setting time value:', timeError)
                       }
                     }
                   }}

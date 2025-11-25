@@ -33,6 +33,20 @@ export async function GET(request: NextRequest) {
       sort: 'fromDate',
     })
 
+    // Find the latest update time for ETag/Last-Modified
+    let latestUpdateTime = new Date()
+    bookings.docs.forEach((booking) => {
+      if (booking.updatedAt) {
+        const updateTime = new Date(booking.updatedAt)
+        if (updateTime > latestUpdateTime) {
+          latestUpdateTime = updateTime
+        }
+      }
+    })
+
+    // Generate ETag based on latest update time and count
+    const etag = `"${bookings.docs.length}-${latestUpdateTime.getTime()}"`
+
     // Generate iCal content
     const lines: string[] = []
     lines.push('BEGIN:VCALENDAR')
@@ -40,6 +54,9 @@ export async function GET(request: NextRequest) {
     lines.push('PRODID:-//Simple Plek//Bookings//EN')
     lines.push('CALSCALE:GREGORIAN')
     lines.push('METHOD:PUBLISH')
+    // Add refresh interval hint (in minutes) - Google Calendar may ignore this
+    lines.push('REFRESH-INTERVAL;VALUE=DURATION:PT15M')
+    lines.push('X-PUBLISHED-TTL;VALUE=DURATION:PT15M')
 
     for (const booking of bookings.docs) {
       if (!booking.fromDate) continue
@@ -103,7 +120,10 @@ export async function GET(request: NextRequest) {
         lines.push(`LAST-MODIFIED:${formatICalDate(new Date(booking.updatedAt))}`)
       }
       lines.push('STATUS:CONFIRMED')
-      lines.push('SEQUENCE:0')
+      // Use sequence number based on update time to help detect changes
+      // Increment sequence when booking is updated
+      const sequence = booking.updatedAt && booking.createdAt && booking.updatedAt !== booking.createdAt ? 1 : 0
+      lines.push(`SEQUENCE:${sequence}`)
       lines.push('END:VEVENT')
     }
 
@@ -111,12 +131,27 @@ export async function GET(request: NextRequest) {
 
     const icalContent = lines.join('\r\n')
 
+    // Check if client has cached version (ETag)
+    const ifNoneMatch = request.headers.get('if-none-match')
+    if (ifNoneMatch === etag) {
+      return new NextResponse(null, {
+        status: 304, // Not Modified
+        headers: {
+          'ETag': etag,
+          'Cache-Control': 'no-cache, must-revalidate',
+        },
+      })
+    }
+
     return new NextResponse(icalContent, {
       status: 200,
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
         'Content-Disposition': 'attachment; filename="bookings.ics"',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Cache-Control': 'no-cache, must-revalidate, max-age=0',
+        'ETag': etag,
+        'Last-Modified': latestUpdateTime.toUTCString(),
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   } catch (error) {
