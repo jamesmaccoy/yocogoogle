@@ -100,18 +100,8 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   operation,
   id, // Current booking ID (for updates)
 }) => {
-  // Skip availability check if dates aren't being updated
-  // This allows updating other fields (like guests) without triggering availability checks
-  const isUpdatingDates = 'fromDate' in data || 'toDate' in data || 'post' in data
-  
-  if (!isUpdatingDates) {
-    // Not updating dates, skip availability check
-    return data
-  }
-
-  // For updates, if dates aren't being changed, skip availability check
+  // For updates, always check if dates are actually being changed
   if (operation === 'update' && id) {
-    // Check if dates are actually being changed by comparing with existing booking
     try {
       const existingBooking = await payload.findByID({
         collection: 'bookings',
@@ -120,22 +110,32 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         req,
       })
       
+      if (!existingBooking) {
+        // Booking doesn't exist, let Payload handle the error
+        return data
+      }
+      
+      // Get existing values
       const existingFromDate = existingBooking.fromDate
       const existingToDate = existingBooking.toDate
       const existingPostId = typeof existingBooking.post === 'string' 
         ? existingBooking.post 
         : existingBooking.post?.id
       
+      // Get new values from data (use existing if not provided in update)
+      // Note: Payload may include existing fields in data even if not explicitly updated
       const newFromDate = 'fromDate' in data ? data.fromDate : existingFromDate
       const newToDate = 'toDate' in data ? data.toDate : existingToDate
       const newPostId = 'post' in data 
         ? (typeof data.post === 'string' ? data.post : (data.post as any)?.id)
         : existingPostId
       
-      // Normalize dates for comparison
+      // Normalize dates for comparison (compare as date strings)
       const normalizeDate = (date: any): string | null => {
         if (!date) return null
-        return new Date(date).toISOString().split('T')[0]
+        const d = new Date(date)
+        if (isNaN(d.getTime())) return null
+        return d.toISOString().split('T')[0]
       }
       
       const existingFromDateStr = normalizeDate(existingFromDate)
@@ -143,16 +143,26 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
       const newFromDateStr = normalizeDate(newFromDate)
       const newToDateStr = normalizeDate(newToDate)
       
-      // If dates and post haven't changed, skip availability check
-      if (
-        existingFromDateStr === newFromDateStr &&
-        existingToDateStr === newToDateStr &&
-        existingPostId === newPostId
-      ) {
+      // Compare post IDs (handle both string and object forms)
+      const existingPostIdStr = existingPostId ? String(existingPostId) : null
+      const newPostIdStr = newPostId ? String(newPostId) : null
+      
+      // If dates and post haven't changed, skip availability check entirely
+      // This allows updating other fields (like guests) without triggering availability checks
+      // Use strict equality and handle null/undefined cases explicitly
+      const fromDateUnchanged = existingFromDateStr === newFromDateStr || 
+        (existingFromDateStr === null && newFromDateStr === null)
+      const toDateUnchanged = existingToDateStr === newToDateStr || 
+        (existingToDateStr === null && newToDateStr === null)
+      const postUnchanged = existingPostIdStr === newPostIdStr || 
+        (existingPostIdStr === null && newPostIdStr === null)
+      
+      if (fromDateUnchanged && toDateUnchanged && postUnchanged) {
+        // Dates haven't changed, skip availability check
         return data
       }
       
-      // Dates are being changed, use the new dates for validation
+      // Dates are being changed, ensure we have the values for validation
       if (!('fromDate' in data)) {
         data.fromDate = existingFromDate
       }
@@ -163,8 +173,14 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         data.post = existingBooking.post
       }
     } catch (error) {
-      console.error('Error fetching existing booking:', error)
-      // Continue with validation if we can't fetch existing booking
+      console.error('Error fetching existing booking in checkAvailabilityHook:', error)
+      // If we can't fetch the existing booking during an update, skip validation
+      // to avoid false positives when only updating non-date fields (like guests)
+      // For creates, we'll validate below
+      if (operation === 'update') {
+        return data
+      }
+      // For creates, continue with validation (will fail below if required fields missing)
     }
   }
 
@@ -175,10 +191,20 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     }
   }
 
+  // Ensure we have fromDate and post for validation
+  if (!('fromDate' in data) || !('post' in data)) {
+    // If we're here and it's an update, something went wrong with fetching existing booking
+    // Skip validation to avoid false errors
+    if (operation === 'update') {
+      return data
+    }
+    throw new APIError('Start date and post are required.', 400, undefined, true)
+  }
+
   const { fromDate, toDate } = data
 
   // Only validate date range if both dates are present
-  if (toDate && fromDate >= toDate) {
+  if (toDate && fromDate && fromDate >= toDate) {
     throw new APIError('Start date must be before end date.', 400, undefined, true)
   }
 
