@@ -131,6 +131,16 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
 }) => {
   // For updates, always check if dates are actually being changed
   if (operation === 'update' && id) {
+    // First, check if date fields are even in the update data
+    // If they're not present, we're definitely not updating dates
+    const hasDateFieldsInUpdate = 'fromDate' in data || 'toDate' in data || 'post' in data
+    
+    if (!hasDateFieldsInUpdate) {
+      // No date fields in update - definitely only updating other fields (like guests)
+      // Skip validation entirely
+      return data
+    }
+    
     try {
       const existingBooking = await payload.findByID({
         collection: 'bookings',
@@ -175,18 +185,28 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
       // Compare dates and post - if they haven't changed, skip availability check
       // This is the key check: even if Payload includes existing fields in data,
       // if the values are the same, we're not actually changing dates
-      const fromDateSame = existingFromDateStr === newFromDateStr || 
-        (existingFromDateStr === null && newFromDateStr === null)
-      const toDateSame = existingToDateStr === newToDateStr || 
-        (existingToDateStr === null && newToDateStr === null)
-      const postSame = existingPostIdStr === newPostIdStr || 
-        (existingPostIdStr === null && newPostIdStr === null)
+      const fromDateSame = existingFromDateStr === newFromDateStr
+      const toDateSame = existingToDateStr === newToDateStr
+      const postSame = existingPostIdStr === newPostIdStr
       
-      if (fromDateSame && toDateSame && postSame) {
+      // Also handle null cases explicitly
+      const fromDateUnchanged = (existingFromDateStr === null && newFromDateStr === null) || fromDateSame
+      const toDateUnchanged = (existingToDateStr === null && newToDateStr === null) || toDateSame
+      const postUnchanged = (existingPostIdStr === null && newPostIdStr === null) || postSame
+      
+      if (fromDateUnchanged && toDateUnchanged && postUnchanged) {
         // Dates haven't changed, skip availability check
         // This allows updating other fields (like guests) without triggering availability checks
         return data
       }
+      
+      // Log for debugging (can be removed later)
+      console.log('checkAvailabilityHook: Dates have changed, running validation', {
+        existing: { fromDate: existingFromDateStr, toDate: existingToDateStr, post: existingPostIdStr },
+        new: { fromDate: newFromDateStr, toDate: newToDateStr, post: newPostIdStr },
+        bookingId: id,
+        dataKeys: Object.keys(data)
+      })
       
       // Dates are being changed, ensure we have the values for validation
       if (!('fromDate' in data)) {
