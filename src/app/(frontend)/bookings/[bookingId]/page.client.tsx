@@ -82,13 +82,13 @@ const md5 = (str: string): string => {
     while (byteCount < messageLength) {
       wordCount = (byteCount - (byteCount % 4)) / 4
       bytePosition = (byteCount % 4) * 8
-      wordArray[wordCount] = (wordArray[wordCount] | (str.charCodeAt(byteCount) << bytePosition))
+      wordArray[wordCount] = (wordArray[wordCount] ?? 0) | (str.charCodeAt(byteCount) << bytePosition)
       byteCount++
     }
     
     wordCount = (byteCount - (byteCount % 4)) / 4
     bytePosition = (byteCount % 4) * 8
-    wordArray[wordCount] = wordArray[wordCount] | (0x80 << bytePosition)
+    wordArray[wordCount] = (wordArray[wordCount] ?? 0) | (0x80 << bytePosition)
     wordArray[numberOfWords - 2] = messageLength << 3
     wordArray[numberOfWords - 1] = messageLength >>> 29
     

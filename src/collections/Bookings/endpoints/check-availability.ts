@@ -59,7 +59,7 @@ export const checkAvailability: Endpoint = {
           date.getUTCMonth(),
           date.getUTCDate()
         ))
-        return utcDate.toISOString().split('T')[0]
+        return utcDate.toISOString().split('T')[0] || ''
       }
       
       // Normalize to ISO date strings for consistent database comparison
@@ -306,8 +306,8 @@ function findAvailableDateRanges(
 
     if (!hasConflict(testStart, testEnd)) {
       suggestions.push({
-        startDate: testStart.toISOString().split('T')[0],
-        endDate: testEnd.toISOString().split('T')[0],
+        startDate: testStart.toISOString().split('T')[0] || '',
+        endDate: testEnd.toISOString().split('T')[0] || '',
         duration,
       })
     }
@@ -324,8 +324,8 @@ function findAvailableDateRanges(
 
     if (!hasConflict(testStart, testEnd)) {
       suggestions.push({
-        startDate: testStart.toISOString().split('T')[0],
-        endDate: testEnd.toISOString().split('T')[0],
+        startDate: testStart.toISOString().split('T')[0] || '',
+        endDate: testEnd.toISOString().split('T')[0] || '',
         duration,
       })
     }

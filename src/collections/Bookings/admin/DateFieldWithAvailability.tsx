@@ -299,7 +299,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
               {selectedDate && !isNaN(selectedDate.getTime()) ? (
                 <>
                   {format(selectedDate, 'PPP')}
-                  {field.admin?.date?.pickerAppearance === 'dayAndTime' && selectedDate && (
+                  {(field.admin?.date as { pickerAppearance?: string })?.pickerAppearance === 'dayAndTime' && selectedDate && (
                     <>
                       {' '}
                       <Clock style={{ marginLeft: '0.5rem', height: '0.875rem', width: '0.875rem', display: 'inline' }} />
@@ -359,7 +359,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                 .booking-date-calendar-wrapper .rdp-button:hover:not(:disabled) {
                   color: #000000 !important;
                 }
-              ` || ''
+              `
             }} />
             <div 
               className="booking-date-calendar-wrapper"
@@ -381,7 +381,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                 if (date) {
                   // If time picker is enabled, preserve the time or set to current time
                   let dateWithTime = date
-                  if (field.admin?.date?.pickerAppearance === 'dayAndTime') {
+                  if ((field.admin?.date as { pickerAppearance?: string })?.pickerAppearance === 'dayAndTime') {
                     if (selectedDate) {
                       // Preserve existing time
                       dateWithTime = new Date(date)
@@ -429,7 +429,7 @@ export const DateFieldWithAvailability: React.FC<DateFieldWithAvailabilityProps>
                 initialFocus
               />
             </div>
-            {field.admin?.date?.pickerAppearance === 'dayAndTime' && selectedDate && (
+            {(field.admin?.date as { pickerAppearance?: string })?.pickerAppearance === 'dayAndTime' && selectedDate && (
               <div style={{ 
                 padding: '0.75rem', 
                 borderTop: '1px solid #e5e7eb',
