@@ -263,21 +263,64 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
   )
 
   // Check if selected dates contain unavailable dates
-  if (toDate && hasUnavailableDateInRange(unavailableDates, fromDate, toDate)) {
-    const formattedFromDate = format(new Date(fromDate), 'yyyy-MM-dd')
-    const formattedToDate = format(new Date(toDate), 'yyyy-MM-dd')
+  if (toDate) {
+    const hasOverlap = hasUnavailableDateInRange(unavailableDates, fromDate, toDate)
     
-    throw new APIError(
-      `The selected date range (${formattedFromDate} to ${formattedToDate}) contains dates that are already booked. Please choose different dates.`,
-      400,
-      [
-        {
-          message: 'Selected dates overlap with existing bookings.',
-          unavailableDates: unavailableDates.slice(0, 10), // Show first 10 unavailable dates
-        },
-      ],
-      true,
-    )
+    // Additional defensive check: verify the overlap is real
+    // Normalize the selected dates to compare with unavailable dates
+    const selectedFromDateStr = normalizeDateForComparison(fromDate)
+    const selectedToDateStr = normalizeDateForComparison(toDate)
+    
+    // Double-check: if unavailable dates are all in a different year/month, there's no overlap
+    if (hasOverlap && selectedFromDateStr && selectedToDateStr) {
+      const selectedYear = selectedFromDateStr.split('-')[0]
+      const selectedMonth = selectedFromDateStr.split('-')[1]
+      
+      // Check if any unavailable dates are actually in the selected range
+      const hasRealOverlap = unavailableDates.some((unavailableDate) => {
+        if (!unavailableDate) return false
+        const unavailableYear = unavailableDate.split('-')[0]
+        const unavailableMonth = unavailableDate.split('-')[1]
+        
+        // Quick check: if years don't match, no overlap
+        if (unavailableYear !== selectedYear) return false
+        
+        // Parse and compare dates properly
+        const unavailableDateObj = new Date(unavailableDate + 'T00:00:00.000Z')
+        const selectedFromDateObj = new Date(selectedFromDateStr + 'T00:00:00.000Z')
+        const selectedToDateObj = new Date(selectedToDateStr + 'T00:00:00.000Z')
+        
+        return unavailableDateObj >= selectedFromDateObj && unavailableDateObj < selectedToDateObj
+      })
+      
+      if (!hasRealOverlap) {
+        // False positive detected - log and skip error
+        console.warn('checkAvailabilityHook: False positive detected - dates do not actually overlap', {
+          selectedRange: `${selectedFromDateStr} to ${selectedToDateStr}`,
+          unavailableDates: unavailableDates.slice(0, 10),
+          bookingId: id
+        })
+        // Skip the error - dates don't actually overlap
+        return data
+      }
+    }
+    
+    if (hasOverlap) {
+      const formattedFromDate = format(new Date(fromDate), 'yyyy-MM-dd')
+      const formattedToDate = format(new Date(toDate), 'yyyy-MM-dd')
+      
+      throw new APIError(
+        `The selected date range (${formattedFromDate} to ${formattedToDate}) contains dates that are already booked. Please choose different dates.`,
+        400,
+        [
+          {
+            message: 'Selected dates overlap with existing bookings.',
+            unavailableDates: unavailableDates.slice(0, 10), // Show first 10 unavailable dates
+          },
+        ],
+        true,
+      )
+    }
   }
 
   // Skip overlap check if toDate is not provided
