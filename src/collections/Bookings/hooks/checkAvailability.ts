@@ -115,6 +115,24 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         return data
       }
       
+      // Normalize dates for comparison (compare as date strings)
+      // Handle Date objects, ISO strings, and other date formats
+      const normalizeDate = (date: any): string | null => {
+        if (!date) return null
+        try {
+          // Handle Date objects, ISO strings, timestamps, etc.
+          const d = date instanceof Date ? date : new Date(date)
+          if (isNaN(d.getTime())) return null
+          // Normalize to YYYY-MM-DD format in UTC
+          const year = d.getUTCFullYear()
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+          const day = String(d.getUTCDate()).padStart(2, '0')
+          return `${year}-${month}-${day}`
+        } catch {
+          return null
+        }
+      }
+      
       // Get existing values
       const existingFromDate = existingBooking.fromDate
       const existingToDate = existingBooking.toDate
@@ -130,14 +148,7 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         ? (typeof data.post === 'string' ? data.post : (data.post as any)?.id)
         : existingPostId
       
-      // Normalize dates for comparison (compare as date strings)
-      const normalizeDate = (date: any): string | null => {
-        if (!date) return null
-        const d = new Date(date)
-        if (isNaN(d.getTime())) return null
-        return d.toISOString().split('T')[0]
-      }
-      
+      // Normalize all dates for comparison
       const existingFromDateStr = normalizeDate(existingFromDate)
       const existingToDateStr = normalizeDate(existingToDate)
       const newFromDateStr = normalizeDate(newFromDate)
@@ -147,18 +158,19 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
       const existingPostIdStr = existingPostId ? String(existingPostId) : null
       const newPostIdStr = newPostId ? String(newPostId) : null
       
-      // If dates and post haven't changed, skip availability check entirely
-      // This allows updating other fields (like guests) without triggering availability checks
-      // Use strict equality and handle null/undefined cases explicitly
-      const fromDateUnchanged = existingFromDateStr === newFromDateStr || 
+      // Compare dates and post - if they haven't changed, skip availability check
+      // This is the key check: even if Payload includes existing fields in data,
+      // if the values are the same, we're not actually changing dates
+      const fromDateSame = existingFromDateStr === newFromDateStr || 
         (existingFromDateStr === null && newFromDateStr === null)
-      const toDateUnchanged = existingToDateStr === newToDateStr || 
+      const toDateSame = existingToDateStr === newToDateStr || 
         (existingToDateStr === null && newToDateStr === null)
-      const postUnchanged = existingPostIdStr === newPostIdStr || 
+      const postSame = existingPostIdStr === newPostIdStr || 
         (existingPostIdStr === null && newPostIdStr === null)
       
-      if (fromDateUnchanged && toDateUnchanged && postUnchanged) {
+      if (fromDateSame && toDateSame && postSame) {
         // Dates haven't changed, skip availability check
+        // This allows updating other fields (like guests) without triggering availability checks
         return data
       }
       
