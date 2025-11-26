@@ -131,6 +131,22 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
 }) => {
   // For updates, always check if dates are actually being changed
   if (operation === 'update' && id) {
+    // Check what fields are actually in the update data
+    // If only non-date fields are present, skip validation
+    const dataKeys = Object.keys(data)
+    const dateFields = ['fromDate', 'toDate', 'post']
+    const hasDateFields = dateFields.some(field => field in data)
+    
+    // If no date fields are explicitly in the update, we're only updating other fields
+    // This is the most reliable check since Payload might merge existing data
+    if (!hasDateFields) {
+      console.log('checkAvailabilityHook: No date fields in update, skipping validation', {
+        bookingId: id,
+        dataKeys: dataKeys
+      })
+      return data
+    }
+    
     try {
       const existingBooking = await payload.findByID({
         collection: 'bookings',
@@ -187,7 +203,7 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
           bookingId: id,
           fromDate: existingFromDateStr,
           toDate: existingToDateStr,
-          dataKeys: Object.keys(data)
+          dataKeys: dataKeys
         })
         return data
       }
@@ -197,7 +213,7 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         existing: { fromDate: existingFromDateStr, toDate: existingToDateStr, post: existingPostIdStr },
         new: { fromDate: newFromDateStr, toDate: newToDateStr, post: newPostIdStr },
         bookingId: id,
-        dataKeys: Object.keys(data),
+        dataKeys: dataKeys,
         rawExisting: { fromDate: existingFromDate, toDate: existingToDate },
         rawNew: { fromDate: newFromDate, toDate: newToDate }
       })
