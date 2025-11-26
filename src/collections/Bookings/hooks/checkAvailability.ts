@@ -135,14 +135,22 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
     // If only non-date fields are present, skip validation
     const dataKeys = Object.keys(data)
     const dateFields = ['fromDate', 'toDate', 'post']
-    const hasDateFields = dateFields.some(field => field in data)
+    const nonDateFields = ['guests', 'token', 'paymentStatus', 'total', 'title', 'slug', 'cleaningSchedule', 'cleaningSource', 'packageType', 'selectedPackage']
     
-    // If no date fields are explicitly in the update, we're only updating other fields
-    // This is the most reliable check since Payload might merge existing data
-    if (!hasDateFields) {
+    // Check if ONLY non-date fields are being updated
+    const hasDateFields = dateFields.some(field => field in data)
+    const hasOnlyNonDateFields = dataKeys.every(key => 
+      nonDateFields.includes(key) || key.startsWith('_') // Allow internal Payload fields
+    )
+    
+    // If no date fields AND only non-date fields are present, skip validation
+    // This handles the case where Payload might merge existing data but we're only updating guests
+    if (!hasDateFields || (hasOnlyNonDateFields && !hasDateFields)) {
       console.log('checkAvailabilityHook: No date fields in update, skipping validation', {
         bookingId: id,
-        dataKeys: dataKeys
+        dataKeys: dataKeys,
+        hasDateFields,
+        hasOnlyNonDateFields
       })
       return data
     }
@@ -201,8 +209,27 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         // This allows updating other fields (like guests) without triggering availability checks
         console.log('checkAvailabilityHook: Dates unchanged, skipping validation', {
           bookingId: id,
-          fromDate: existingFromDateStr,
-          toDate: existingToDateStr,
+          existing: { fromDate: existingFromDateStr, toDate: existingToDateStr, post: existingPostIdStr },
+          new: { fromDate: newFromDateStr, toDate: newToDateStr, post: newPostIdStr },
+          dataKeys: dataKeys
+        })
+        return data
+      }
+      
+      // If dates are different, check if they're actually being updated
+      // Payload might include dates in data even if we're not updating them
+      // Check if the dates in data are different from what we fetched
+      const datesActuallyChanged = 
+        ('fromDate' in data && existingFromDateStr !== newFromDateStr) ||
+        ('toDate' in data && existingToDateStr !== newToDateStr) ||
+        ('post' in data && existingPostIdStr !== newPostIdStr)
+      
+      if (!datesActuallyChanged) {
+        // Dates are in data but haven't actually changed - skip validation
+        console.log('checkAvailabilityHook: Dates in data but unchanged, skipping validation', {
+          bookingId: id,
+          existing: { fromDate: existingFromDateStr, toDate: existingToDateStr, post: existingPostIdStr },
+          new: { fromDate: newFromDateStr, toDate: newToDateStr, post: newPostIdStr },
           dataKeys: dataKeys
         })
         return data
