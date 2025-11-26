@@ -41,21 +41,26 @@ async function getUnavailableDates(
     bookings.docs.forEach((booking: any) => {
       if (!booking.fromDate || !booking.toDate) return
 
-      // Parse dates and normalize to midnight UTC
-      const fromDate = new Date(booking.fromDate)
-      const toDate = new Date(booking.toDate)
+      // Use consistent normalization
+      const fromDateStr = normalizeDateForComparison(booking.fromDate)
+      const toDateStr = normalizeDateForComparison(booking.toDate)
 
-      const fromDateStr = fromDate.toISOString().split('T')[0]
-      const toDateStr = toDate.toISOString().split('T')[0]
+      if (!fromDateStr || !toDateStr) return
 
+      // Parse normalized dates
       const normalizedFromDate = new Date(fromDateStr + 'T00:00:00.000Z')
       const normalizedToDate = new Date(toDateStr + 'T00:00:00.000Z')
+
+      if (isNaN(normalizedFromDate.getTime()) || isNaN(normalizedToDate.getTime())) return
 
       // Generate array of all dates in the range (excluding check-out date)
       const currentDate = new Date(normalizedFromDate)
 
       while (currentDate.getTime() < normalizedToDate.getTime()) {
-        unavailableDates.push(currentDate.toISOString().split('T')[0])
+        const dateStr = normalizeDateForComparison(currentDate)
+        if (dateStr) {
+          unavailableDates.push(dateStr)
+        }
         currentDate.setUTCDate(currentDate.getUTCDate() + 1)
       }
     })
@@ -67,24 +72,48 @@ async function getUnavailableDates(
   }
 }
 
+// Helper function to normalize dates consistently
+function normalizeDateForComparison(date: any): string | null {
+  if (!date) return null
+  try {
+    // Handle Date objects, ISO strings, timestamps, etc.
+    const d = date instanceof Date ? date : new Date(date)
+    if (isNaN(d.getTime())) return null
+    // Normalize to YYYY-MM-DD format in UTC
+    const year = d.getUTCFullYear()
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  } catch {
+    return null
+  }
+}
+
 // Helper function to check if a date range contains unavailable dates
 function hasUnavailableDateInRange(
   unavailableDates: string[],
-  fromDate: string,
-  toDate: string,
+  fromDate: string | Date,
+  toDate: string | Date,
 ): boolean {
   if (!fromDate || !toDate) return false
 
-  const fromDateStr = new Date(fromDate).toISOString().split('T')[0]
-  const toDateStr = new Date(toDate).toISOString().split('T')[0]
+  // Normalize dates using the same function as the hook
+  const fromDateStr = normalizeDateForComparison(fromDate)
+  const toDateStr = normalizeDateForComparison(toDate)
 
+  if (!fromDateStr || !toDateStr) return false
+
+  // Parse normalized dates
   const from = new Date(fromDateStr + 'T00:00:00.000Z')
   const to = new Date(toDateStr + 'T00:00:00.000Z')
 
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) return false
+
+  // Check each date in the range (excluding check-out date)
   const checkDate = new Date(from)
   while (checkDate.getTime() < to.getTime()) {
-    const dateStr = checkDate.toISOString().split('T')[0]
-    if (unavailableDates.includes(dateStr)) {
+    const dateStr = normalizeDateForComparison(checkDate)
+    if (dateStr && unavailableDates.includes(dateStr)) {
       return true
     }
     checkDate.setUTCDate(checkDate.getUTCDate() + 1)
@@ -115,23 +144,8 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
         return data
       }
       
-      // Normalize dates for comparison (compare as date strings)
-      // Handle Date objects, ISO strings, and other date formats
-      const normalizeDate = (date: any): string | null => {
-        if (!date) return null
-        try {
-          // Handle Date objects, ISO strings, timestamps, etc.
-          const d = date instanceof Date ? date : new Date(date)
-          if (isNaN(d.getTime())) return null
-          // Normalize to YYYY-MM-DD format in UTC
-          const year = d.getUTCFullYear()
-          const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-          const day = String(d.getUTCDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        } catch {
-          return null
-        }
-      }
+      // Use the shared normalization function
+      const normalizeDate = normalizeDateForComparison
       
       // Get existing values
       const existingFromDate = existingBooking.fromDate
