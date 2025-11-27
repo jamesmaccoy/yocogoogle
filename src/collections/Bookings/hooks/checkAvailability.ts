@@ -131,29 +131,38 @@ export const checkAvailabilityHook: CollectionBeforeChangeHook = async ({
 }) => {
   // For updates, always check if dates are actually being changed
   if (operation === 'update' && id) {
-    // Check what fields are actually in the update data
-    // If only non-date fields are present, skip validation
-    const dataKeys = Object.keys(data)
-    const dateFields = ['fromDate', 'toDate', 'post']
-    const nonDateFields = ['guests', 'token', 'paymentStatus', 'total', 'title', 'slug', 'cleaningSchedule', 'cleaningSource', 'packageType', 'selectedPackage']
-    
-    // Check if ONLY non-date fields are being updated
-    const hasDateFields = dateFields.some(field => field in data)
-    const hasOnlyNonDateFields = dataKeys.every(key => 
-      nonDateFields.includes(key) || key.startsWith('_') // Allow internal Payload fields
+    // Get the actual fields being updated (excluding internal Payload fields and undefined values)
+    const dataKeys = Object.keys(data).filter(key => 
+      !key.startsWith('_') && data[key] !== undefined
     )
+    const dateFields = ['fromDate', 'toDate', 'post']
+    const safeNonDateFields = ['guests', 'token', 'paymentStatus', 'total', 'title', 'slug', 'cleaningSchedule', 'cleaningSource', 'packageType', 'selectedPackage']
     
-    // If no date fields AND only non-date fields are present, skip validation
-    // This handles the case where Payload might merge existing data but we're only updating guests
-    if (!hasDateFields || (hasOnlyNonDateFields && !hasDateFields)) {
-      console.log('checkAvailabilityHook: No date fields in update, skipping validation', {
+    // CRITICAL: Check if ONLY safe non-date fields are being updated
+    // Payload may merge existing document data into `data`, but if we're only updating
+    // non-date fields, we should skip validation regardless of what's in `data`
+    //
+    // IMPORTANT: Check if date fields are actually in the update (in dataKeys)
+    // vs just present in data (which Payload may have merged)
+    const dateFieldsInDataKeys = dataKeys.filter(key => dateFields.includes(key))
+    const hasOnlySafeFields = dataKeys.length > 0 && 
+      dateFieldsInDataKeys.length === 0 && // No date fields in the actual update
+      dataKeys.every(key => safeNonDateFields.includes(key)) // All fields are safe
+    
+    if (hasOnlySafeFields) {
+      // Only updating safe non-date fields (guests, token, etc.) - skip validation
+      console.log('checkAvailabilityHook: Only safe non-date fields being updated, skipping validation', {
         bookingId: id,
         dataKeys: dataKeys,
-        hasDateFields,
-        hasOnlyNonDateFields
+        dateFieldsInDataKeys,
+        allDataKeys: Object.keys(data)
       })
       return data
     }
+    
+    // If we get here, date fields might be in the update
+    // But we still need to verify they've actually changed
+    // Payload may include existing fields in data even if not explicitly updated
     
     try {
       const existingBooking = await payload.findByID({
