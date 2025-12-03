@@ -3,6 +3,25 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { getMeUser } from '@/utilities/getMeUser'
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ bookingId: string }> }
+) {
+  const { bookingId } = await params
+  
+  // Redirect calendar.ics requests to the new route
+  if (bookingId === 'calendar.ics') {
+    const url = new URL(request.url)
+    const searchParams = url.searchParams.toString()
+    return NextResponse.redirect(
+      new URL(`/api/bookings-calendar.ics${searchParams ? `?${searchParams}` : ''}`, request.url),
+      301
+    )
+  }
+  
+  return NextResponse.json({ error: 'Not found' }, { status: 404 })
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ bookingId: string }> }
