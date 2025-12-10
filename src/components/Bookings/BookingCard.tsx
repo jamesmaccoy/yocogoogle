@@ -16,6 +16,7 @@ type Props = {
     title: string
     duration?: number | undefined
     packageName?: string | null
+    packageMinNights?: number | null
     meta?:
       | {
           title?: string | null | undefined
@@ -61,7 +62,14 @@ const BookingCard: FC<Props> = ({ booking }) => {
                 <CalendarIcon className="size-4" />
                 <div className="text-sm">
                   {formatDate(new Date(booking.fromDate), 'PPP')}
-                  {duration !== undefined && ` · ${duration} ${duration === 1 ? 'night' : 'nights'}`}
+                  {duration !== undefined && (() => {
+                    // Check if package is hourly (minNights <= 1)
+                    const isHourly = booking.packageMinNights !== null && booking.packageMinNights !== undefined && booking.packageMinNights <= 1
+                    if (isHourly && duration === 1) {
+                      return ' · hourly'
+                    }
+                    return ` · ${duration} ${duration === 1 ? 'night' : 'nights'}`
+                  })()}
                 </div>
               </div>
             </div>

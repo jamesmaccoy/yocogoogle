@@ -223,9 +223,9 @@ export async function PATCH(
     
     if (body.minNights !== undefined) {
       const minNights = Number(body.minNights)
-      if (isNaN(minNights) || minNights < 1) {
+      if (isNaN(minNights) || minNights < 0.5) {
         return NextResponse.json(
-          { error: 'Min nights must be at least 1' },
+          { error: 'Min nights must be at least 0.5 (for hourly/half-day packages)' },
           { status: 400 }
         )
       }

@@ -1044,7 +1044,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     fromDate: dates.from.toISOString(),
                                     toDate: dates.to.toISOString(),
                                     guests: [],
-                                    title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
+                                    title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
                                     packageType: firstPackage.id,
                                     total,
                                   }),

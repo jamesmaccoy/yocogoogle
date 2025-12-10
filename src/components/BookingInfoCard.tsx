@@ -331,7 +331,7 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
                     return null
                   }
                   
-                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')} (${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'})`
+                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')} (${packageMinNights !== null && packageMinNights !== undefined && packageMinNights <= 1 && suggestion.duration === 1 ? 'hourly' : `${suggestion.duration} ${suggestion.duration === 1 ? 'night' : 'nights'}`})`
                   
                   return (
                     <Suggestion

@@ -119,6 +119,10 @@ const PackageCard = ({
   
   // Check if this is a 1-night package (should not be divided)
   const isOneNightPackage = pkg.minNights === 1 && pkg.maxNights === 1
+  // Check if this is an hourly package (minNights <= 1, including 0.5)
+  const isHourlyPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights <= 1
+  // Check if it's specifically a half-day/hourly package (minNights < 1)
+  const isHalfDayPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights < 1
   
   // For 1-night packages, use total directly; otherwise divide by duration
   const pricePerNight = isOneNightPackage 
@@ -150,11 +154,13 @@ const PackageCard = ({
           <div className="text-right">
             <div className="text-2xl font-bold text-primary">R{total.toFixed(0)}</div>
             <div className="text-sm text-muted-foreground">
-              {isOneNightPackage 
-                ? `R${pricePerNight.toFixed(0)} total`
-                : pkg.baseRate
-                ? `~R${pricePerNight.toFixed(0)}/night · ${effectiveDuration} nights`
-                : `R${pricePerNight.toFixed(0)}/night`}
+              {isHalfDayPackage || (isHourlyPackage && duration === 1)
+                ? `R${pricePerNight.toFixed(0)} hourly`
+                : isOneNightPackage 
+                  ? `R${pricePerNight.toFixed(0)} total`
+                  : pkg.baseRate
+                    ? `~R${pricePerNight.toFixed(0)}/night · ${effectiveDuration} nights`
+                    : `R${pricePerNight.toFixed(0)}/night`}
             </div>
             <div className="text-xs text-muted-foreground">
               {multiplierText}
@@ -165,9 +171,13 @@ const PackageCard = ({
       <CardContent className="pt-0">
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            Duration: {pkg.minNights === pkg.maxNights 
-              ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
-              : `${pkg.minNights}-${pkg.maxNights} nights`
+            Duration: {isHalfDayPackage
+              ? 'hourly'
+              : isHourlyPackage && pkg.minNights === 1 && pkg.maxNights === 1
+                ? 'hourly'
+                : pkg.minNights === pkg.maxNights 
+                  ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
+                  : `${pkg.minNights}-${pkg.maxNights} nights`
             }
           </div>
           <div className="space-y-1">
@@ -1686,9 +1696,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       }
       
       // Filter for per-hour packages (1 night duration) if toggle is on
+      // Allow packages that can accommodate 1-night stays (minNights <= 1)
       if (showPerHourPackages) {
         suitablePackages = suitablePackages.filter((pkg: any) => {
-          return pkg.minNights === 1 && pkg.maxNights === 1
+          return pkg.minNights <= 1
         })
       }
       

@@ -261,6 +261,9 @@ export interface Package {
     | null;
   category?: ('standard' | 'hosted' | 'addon' | 'special') | null;
   entitlement?: ('standard' | 'pro') | null;
+  /**
+   * Minimum nights. Use 0.5 for hourly/half-day packages, 1 for nightly packages.
+   */
   minNights?: number | null;
   maxNights?: number | null;
   /**

@@ -50,6 +50,13 @@ export default async function Bookings() {
           : booking.selectedPackage.customName || 'Package')
       : booking.selectedPackage?.customName || null
     
+    // Extract minNights from package to determine if it's hourly
+    const packageMinNights = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.minNights !== undefined
+          ? Number(booking.selectedPackage.package.minNights)
+          : null)
+      : null
+    
     return {
       ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
       fromDate: booking.fromDate,
@@ -58,6 +65,7 @@ export default async function Bookings() {
       id: booking.id,
       duration,
       packageName,
+      packageMinNights,
     }
   })
 
@@ -72,6 +80,13 @@ export default async function Bookings() {
           : booking.selectedPackage.customName || 'Package')
       : booking.selectedPackage?.customName || null
     
+    // Extract minNights from package to determine if it's hourly
+    const packageMinNights = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.minNights !== undefined
+          ? Number(booking.selectedPackage.package.minNights)
+          : null)
+      : null
+    
     return {
       ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
       fromDate: booking.fromDate,
@@ -80,6 +95,7 @@ export default async function Bookings() {
       id: booking.id,
       duration,
       packageName,
+      packageMinNights,
     }
   })
 
