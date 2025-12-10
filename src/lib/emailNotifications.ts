@@ -141,7 +141,25 @@ function getFromField(): string | { name: string; address: string } {
   const fromAddress = getFromAddress()
   let fromName = process.env.EMAIL_FROM_NAME?.trim()
   
-  // If EMAIL_FROM_NAME is not set, try to extract name from EMAIL_FROM_ADDRESS
+  // Clean up the name - remove any email formatting if it accidentally got in there
+  if (fromName) {
+    // Remove any email-like patterns from the name
+    const emailInName = fromName.match(/<[^>]+>/)
+    if (emailInName) {
+      // If name contains email formatting, extract just the name part
+      const nameMatch = fromName.match(/^([^<]+)\s*</)
+      if (nameMatch && nameMatch[1]) {
+        fromName = nameMatch[1].trim()
+        console.log('📧 Cleaned name (removed email formatting):', fromName)
+      } else {
+        // If we can't extract, use a default
+        fromName = 'Simpleplek'
+        console.log('📧 Using default name due to invalid format')
+      }
+    }
+  }
+  
+  // If EMAIL_FROM_NAME is not set or was invalid, try to extract name from EMAIL_FROM_ADDRESS
   if (!fromName || fromName.length === 0) {
     const extractedName = extractNameFromFormattedString(process.env.EMAIL_FROM_ADDRESS)
     if (extractedName) {
@@ -161,14 +179,15 @@ function getFromField(): string | { name: string; address: string } {
   }
   
   // If name is provided and valid, use object format (nodemailer preferred)
-  if (fromName && fromName.length > 0) {
+  if (fromName && fromName.length > 0 && !emailRegex.test(fromName)) {
+    // Final check: make sure name doesn't contain an email address
     return {
       name: fromName,
       address: cleanAddress,
     }
   }
   
-  // If no name, just return the address as string
+  // If no valid name, just return the address as string
   return cleanAddress
 }
 
