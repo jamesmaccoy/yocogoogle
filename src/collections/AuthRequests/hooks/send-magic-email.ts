@@ -29,8 +29,26 @@ export const sendMagicEmail: CollectionAfterChangeHook = async ({ req, doc, oper
     }),
   )
 
+  // Get from address with validation
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim() || process.env.EMAIL_FROM?.trim() || 'info@simpleplek.co.za'
+  const fromName = process.env.EMAIL_FROM_NAME?.trim()
+  
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(fromAddress)) {
+    req.payload.logger.error(`Invalid EMAIL_FROM_ADDRESS format: ${fromAddress}`)
+    throw new Error(`Invalid sender email address: ${fromAddress}`)
+  }
+
+  const fromField = fromName && fromName.length > 0
+    ? {
+        name: fromName,
+        address: fromAddress,
+      }
+    : fromAddress
+
   await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
+    from: fromField,
     to: doc.email,
     subject: 'Your Magic Login Link',
     html: magicLinkEmailHtml,

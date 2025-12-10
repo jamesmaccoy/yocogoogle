@@ -33,22 +33,29 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     console.log(`Estimate Request ID: ${data.estimateRequestId}`)
     console.log('=====================================')
     
+    // Validate recipient email
+    const hostEmail = data.hostEmail?.trim()
+    if (!hostEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostEmail)) {
+      throw new Error(`Invalid host email address: ${hostEmail}`)
+    }
+    
+    const fromField = getFromField()
+    const toField = data.hostName?.trim()
+      ? {
+          name: data.hostName.trim(),
+          address: hostEmail,
+        }
+      : hostEmail
+
+    console.log('📧 Email configuration:', {
+      from: typeof fromField === 'string' ? fromField : `${fromField.name} <${fromField.address}>`,
+      to: typeof toField === 'string' ? toField : `${toField.name} <${toField.address}>`,
+    })
+    
     // Send email using the configured Resend SMTP transporter
     await transporter.sendMail({
-      from:
-        process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
-          ? {
-              name: process.env.EMAIL_FROM_NAME,
-              address: process.env.EMAIL_FROM_ADDRESS,
-            }
-          : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-      to:
-        data.hostName && data.hostEmail
-          ? {
-              name: data.hostName,
-              address: data.hostEmail,
-            }
-          : data.hostEmail,
+      from: fromField,
+      to: toField,
       subject: `New Estimate Request for ${data.propertyTitle}`,
       html: generateEstimateRequestEmailHTML(data),
       // Optional: Add text version for better email client compatibility
@@ -63,6 +70,39 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
   }
 }
 
+// Helper function to validate and format email address
+function getFromAddress(): string {
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim()
+  
+  // Validate email format (basic check)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  
+  if (fromAddress && emailRegex.test(fromAddress)) {
+    return fromAddress
+  }
+  
+  // Fallback to default if invalid or missing
+  console.warn('⚠️ Invalid or missing EMAIL_FROM_ADDRESS, using default')
+  return 'info@simpleplek.co.za'
+}
+
+// Helper function to get formatted from field
+function getFromField(): string | { name: string; address: string } {
+  const fromAddress = getFromAddress()
+  const fromName = process.env.EMAIL_FROM_NAME?.trim()
+  
+  // If name is provided and valid, use object format
+  if (fromName && fromName.length > 0) {
+    return {
+      name: fromName,
+      address: fromAddress,
+    }
+  }
+  
+  // Otherwise, just use the address string
+  return fromAddress
+}
+
 export async function sendBookingConfirmationEmail(
   data: BookingConfirmationEmailInput,
 ): Promise<void> {
@@ -71,6 +111,12 @@ export async function sendBookingConfirmationEmail(
 
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     throw new Error('Invalid booking dates supplied for confirmation email')
+  }
+
+  // Validate recipient email
+  const recipientEmail = data.recipientEmail?.trim()
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    throw new Error(`Invalid recipient email address: ${recipientEmail}`)
   }
 
   const summary = `Stay at ${data.propertyTitle}`
@@ -85,21 +131,22 @@ export async function sendBookingConfirmationEmail(
     bookingUrl: data.bookingUrl,
   })
 
+  const fromField = getFromField()
+  const toField = data.recipientName?.trim()
+    ? {
+        name: data.recipientName.trim(),
+        address: recipientEmail,
+      }
+    : recipientEmail
+
+  console.log('📧 Email configuration:', {
+    from: typeof fromField === 'string' ? fromField : `${fromField.name} <${fromField.address}>`,
+    to: typeof toField === 'string' ? toField : `${toField.name} <${toField.address}>`,
+  })
+
   await transporter.sendMail({
-    from:
-      process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
-        ? {
-            name: process.env.EMAIL_FROM_NAME,
-            address: process.env.EMAIL_FROM_ADDRESS,
-          }
-        : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-    to:
-      data.recipientName && data.recipientEmail
-        ? {
-            name: data.recipientName,
-            address: data.recipientEmail,
-          }
-        : data.recipientEmail,
+    from: fromField,
+    to: toField,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
     text: textBody,
