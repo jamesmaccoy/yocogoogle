@@ -78,11 +78,13 @@ function getFromAddress(): string {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   
   if (fromAddress && emailRegex.test(fromAddress)) {
+    console.log('📧 Using EMAIL_FROM_ADDRESS from env:', fromAddress)
     return fromAddress
   }
   
   // Fallback to default if invalid or missing
-  console.warn('⚠️ Invalid or missing EMAIL_FROM_ADDRESS, using default')
+  console.warn('⚠️ Invalid or missing EMAIL_FROM_ADDRESS, using default info@simpleplek.co.za')
+  console.log('📧 EMAIL_FROM_ADDRESS value:', process.env.EMAIL_FROM_ADDRESS)
   return 'info@simpleplek.co.za'
 }
 
@@ -91,16 +93,26 @@ function getFromField(): string | { name: string; address: string } {
   const fromAddress = getFromAddress()
   const fromName = process.env.EMAIL_FROM_NAME?.trim()
   
-  // If name is provided and valid, use object format
+  // Ensure fromAddress is clean (no extra formatting)
+  const cleanAddress = fromAddress.trim()
+  
+  // Validate the address one more time
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(cleanAddress)) {
+    console.error('❌ Invalid from address format:', cleanAddress)
+    throw new Error(`Invalid from email address: ${cleanAddress}`)
+  }
+  
+  // If name is provided and valid, use object format (nodemailer preferred)
   if (fromName && fromName.length > 0) {
     return {
       name: fromName,
-      address: fromAddress,
+      address: cleanAddress,
     }
   }
   
-  // Otherwise, just use the address string
-  return fromAddress
+  // If no name, just return the address as string
+  return cleanAddress
 }
 
 export async function sendBookingConfirmationEmail(
@@ -139,12 +151,25 @@ export async function sendBookingConfirmationEmail(
       }
     : recipientEmail
 
+  // Always send a copy to info@simpleplek.co.za (BCC so customer doesn't see it)
+  const adminEmail = 'info@simpleplek.co.za'
+  const bcc = adminEmail !== recipientEmail ? adminEmail : undefined
+
+  // Log the actual from field format for debugging
+  const fromDisplay = typeof fromField === 'string' 
+    ? fromField 
+    : `${fromField.name} <${fromField.address}>`
+  
   console.log('📧 Email configuration:', {
-    from: typeof fromField === 'string' ? fromField : `${fromField.name} <${fromField.address}>`,
+    from: fromDisplay,
     to: typeof toField === 'string' ? toField : `${toField.name} <${toField.address}>`,
+    bcc: bcc || 'none (admin email matches recipient)',
   })
 
-  await transporter.sendMail({
+  // Ensure from field is properly formatted - nodemailer expects either:
+  // - A string: "email@example.com" or "Name <email@example.com>"
+  // - An object: { name: "Name", address: "email@example.com" }
+  const mailOptions: any = {
     from: fromField,
     to: toField,
     subject: `Booking confirmed: ${data.propertyTitle}`,
@@ -157,7 +182,14 @@ export async function sendBookingConfirmationEmail(
         contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
       },
     ],
-  })
+  }
+
+  // Add BCC if admin email is different from recipient
+  if (bcc) {
+    mailOptions.bcc = bcc
+  }
+
+  await transporter.sendMail(mailOptions)
 }
 
 function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): string {
