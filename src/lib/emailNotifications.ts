@@ -70,28 +70,85 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
   }
 }
 
+// Helper function to extract email from formatted string like "Name <email@example.com>" or just "email@example.com"
+function extractEmailAddress(input: string | undefined): string | null {
+  if (!input) return null
+  
+  const trimmed = input.trim()
+  
+  // Check if it's already just an email address
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (emailRegex.test(trimmed)) {
+    return trimmed
+  }
+  
+  // Try to extract email from format "Name <email@example.com>"
+  const match = trimmed.match(/<([^\s@]+@[^\s@]+\.[^\s@]+)>/)
+  if (match && match[1]) {
+    return match[1]
+  }
+  
+  return null
+}
+
 // Helper function to validate and format email address
 function getFromAddress(): string {
-  const fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim()
+  const fromAddressRaw = process.env.EMAIL_FROM_ADDRESS?.trim()
   
-  // Validate email format (basic check)
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  // Extract email address (handles both "email@example.com" and "Name <email@example.com>" formats)
+  let fromAddress = extractEmailAddress(fromAddressRaw)
   
-  if (fromAddress && emailRegex.test(fromAddress)) {
+  // If we extracted noreply@simpleplek.co.za, use info@simpleplek.co.za instead
+  if (fromAddress === 'noreply@simpleplek.co.za') {
+    console.log('📧 Replacing noreply@simpleplek.co.za with info@simpleplek.co.za')
+    fromAddress = 'info@simpleplek.co.za'
+  }
+  
+  if (fromAddress) {
     console.log('📧 Using EMAIL_FROM_ADDRESS from env:', fromAddress)
     return fromAddress
   }
   
   // Fallback to default if invalid or missing
   console.warn('⚠️ Invalid or missing EMAIL_FROM_ADDRESS, using default info@simpleplek.co.za')
-  console.log('📧 EMAIL_FROM_ADDRESS value:', process.env.EMAIL_FROM_ADDRESS)
+  console.log('📧 EMAIL_FROM_ADDRESS raw value:', process.env.EMAIL_FROM_ADDRESS)
   return 'info@simpleplek.co.za'
+}
+
+// Helper function to extract name from formatted string like "Name <email@example.com>"
+function extractNameFromFormattedString(input: string | undefined): string | null {
+  if (!input) return null
+  
+  const trimmed = input.trim()
+  
+  // Check if it's just an email (no name)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (emailRegex.test(trimmed)) {
+    return null
+  }
+  
+  // Try to extract name from format "Name <email@example.com>"
+  const match = trimmed.match(/^([^<]+)\s*<[^>]+>$/)
+  if (match && match[1]) {
+    return match[1].trim()
+  }
+  
+  return null
 }
 
 // Helper function to get formatted from field
 function getFromField(): string | { name: string; address: string } {
   const fromAddress = getFromAddress()
-  const fromName = process.env.EMAIL_FROM_NAME?.trim()
+  let fromName = process.env.EMAIL_FROM_NAME?.trim()
+  
+  // If EMAIL_FROM_NAME is not set, try to extract name from EMAIL_FROM_ADDRESS
+  if (!fromName || fromName.length === 0) {
+    const extractedName = extractNameFromFormattedString(process.env.EMAIL_FROM_ADDRESS)
+    if (extractedName) {
+      fromName = extractedName
+      console.log('📧 Extracted name from EMAIL_FROM_ADDRESS:', fromName)
+    }
+  }
   
   // Ensure fromAddress is clean (no extra formatting)
   const cleanAddress = fromAddress.trim()
@@ -156,6 +213,9 @@ export async function sendBookingConfirmationEmail(
   const bcc = adminEmail !== recipientEmail ? adminEmail : undefined
 
   // Log the actual from field format for debugging
+  console.log('📧 From field type:', typeof fromField)
+  console.log('📧 From field value:', JSON.stringify(fromField))
+  
   const fromDisplay = typeof fromField === 'string' 
     ? fromField 
     : `${fromField.name} <${fromField.address}>`
@@ -169,8 +229,14 @@ export async function sendBookingConfirmationEmail(
   // Ensure from field is properly formatted - nodemailer expects either:
   // - A string: "email@example.com" or "Name <email@example.com>"
   // - An object: { name: "Name", address: "email@example.com" }
+  // IMPORTANT: Always use object format to avoid double-formatting issues
   const mailOptions: any = {
-    from: fromField,
+    from: typeof fromField === 'string' 
+      ? fromField 
+      : {
+          name: fromField.name,
+          address: fromField.address,
+        },
     to: toField,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
@@ -188,6 +254,8 @@ export async function sendBookingConfirmationEmail(
   if (bcc) {
     mailOptions.bcc = bcc
   }
+
+  console.log('📧 Final mailOptions.from:', JSON.stringify(mailOptions.from))
 
   await transporter.sendMail(mailOptions)
 }
