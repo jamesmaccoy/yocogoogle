@@ -18,6 +18,7 @@ type BookingConfirmationEmailInput = {
   toDate: string
   bookingId: string
   bookingUrl: string
+  packageName?: string
 }
 
 export interface EstimateRequestNotification {
@@ -217,11 +218,17 @@ export async function sendBookingConfirmationEmail(
   }
 
   const summary = `Stay at ${data.propertyTitle}`
+  const descriptionParts = [`Stay at ${data.propertyTitle}`]
+  if (data.packageName) {
+    descriptionParts.push(`Package: ${data.packageName}`)
+  }
+  const description = descriptionParts.join(' - ')
+  
   const htmlBody = generateBookingConfirmationHTML({ ...data, summary, startDate, endDate })
   const textBody = generateBookingConfirmationText({ ...data, summary, startDate, endDate })
   const icsContent = buildBookingICS({
     summary,
-    description: `Stay at ${data.propertyTitle}`,
+    description,
     startDate,
     endDate,
     bookingId: data.bookingId,
@@ -412,6 +419,7 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
               <p style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px;"><strong>Property:</strong> ${escapeHtml(
                 data.propertyTitle,
               )}</p>
+              ${data.packageName ? `<p style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px;"><strong>Package:</strong> ${escapeHtml(data.packageName)}</p>` : ''}
               <p style="margin: 0; color: #1f2937; font-size: 16px;"><strong>Booking ID:</strong> ${escapeHtml(
                 data.bookingId,
               )}</p>
@@ -453,6 +461,7 @@ function generateBookingConfirmationText(data: BookingConfirmationTemplateInput)
     'Booking summary:',
     `- Dates: ${start} to ${end}`,
     `- Property: ${data.propertyTitle}`,
+    ...(data.packageName ? [`- Package: ${data.packageName}`] : []),
     `- Booking ID: ${data.bookingId}`,
     '',
     `View booking details: ${data.bookingUrl}`,
@@ -483,6 +492,14 @@ function buildBookingICS({
   const dtStamp = formatDate(new Date())
   const dtStart = formatDate(startDate)
   const dtEnd = formatDate(endDate)
+  const created = dtStamp // Use current time as created time
+  const lastModified = dtStamp // Use current time as last modified
+
+  // Build description with proper line breaks
+  const descriptionParts = [description]
+  descriptionParts.push(`Booking ID: ${bookingId}`)
+  descriptionParts.push(`View details: ${bookingUrl}`)
+  const fullDescription = descriptionParts.join('\\n')
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -496,8 +513,12 @@ function buildBookingICS({
     `DTSTART:${dtStart}`,
     `DTEND:${dtEnd}`,
     `SUMMARY:${escapeICSText(summary)}`,
-    `DESCRIPTION:${escapeICSText(`${description}\\nBooking ID: ${bookingId}\\n${bookingUrl}`)}`,
+    `DESCRIPTION:${escapeICSText(fullDescription)}`,
     `URL:${escapeICSText(bookingUrl)}`,
+    `CREATED:${created}`,
+    `LAST-MODIFIED:${lastModified}`,
+    'STATUS:CONFIRMED',
+    'SEQUENCE:0',
     'TRANSP:OPAQUE',
     'END:VEVENT',
     'END:VCALENDAR',

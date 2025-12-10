@@ -139,6 +139,43 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
         : undefined) ??
       'Booking'
 
+    // Get package information
+    let packageName: string | undefined
+    if (doc.selectedPackage && typeof doc.selectedPackage === 'object') {
+      const selectedPackage = doc.selectedPackage as { package?: unknown; customName?: string | null }
+      
+      // Check for custom name first
+      if (selectedPackage.customName && selectedPackage.customName.trim().length > 0) {
+        packageName = selectedPackage.customName.trim()
+      } else if (selectedPackage.package) {
+        // Fetch package details if it's a relationship
+        const packageId = typeof selectedPackage.package === 'string' 
+          ? selectedPackage.package 
+          : (typeof selectedPackage.package === 'object' && selectedPackage.package !== null && 'id' in selectedPackage.package
+            ? String((selectedPackage.package as { id?: unknown }).id)
+            : null)
+        
+        if (packageId) {
+          try {
+            const packageDoc = typeof selectedPackage.package === 'object' && selectedPackage.package !== null && 'name' in selectedPackage.package
+              ? selectedPackage.package
+              : await payload.findByID({
+                  collection: 'packages',
+                  id: packageId,
+                  depth: 0,
+                  overrideAccess: true,
+                })
+            
+            if (packageDoc && typeof packageDoc === 'object' && 'name' in packageDoc) {
+              packageName = String(packageDoc.name)
+            }
+          } catch (error) {
+            console.warn(`⚠️ Could not fetch package ${packageId} for email:`, error)
+          }
+        }
+      }
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za'
     const bookingUrl = `${baseUrl}/bookings/${doc.id}`
 
@@ -148,6 +185,7 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
         id: recipient.id,
         email: recipient.email,
       })),
+      packageName: packageName || 'none',
     })
 
     await Promise.all(
@@ -160,6 +198,7 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
           toDate: doc.toDate,
           bookingId: doc.id,
           bookingUrl,
+          packageName,
         }),
       ),
     )
