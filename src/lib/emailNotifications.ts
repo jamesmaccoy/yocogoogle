@@ -1,5 +1,8 @@
-// Email notification service for estimate requests using Resend SMTP
-import { transporter } from './transporter'
+// Email notification service using Resend API
+import { Resend } from 'resend'
+
+// Initialize Resend client
+const resend = new Resend(process.env.RESEND_API_KEY || process.env.SMTP_PASS)
 
 type BookingConfirmationEmailInput = {
   recipientEmail: string
@@ -24,7 +27,7 @@ export interface EstimateRequestNotification {
 
 export async function sendEstimateRequestNotification(data: EstimateRequestNotification): Promise<void> {
   try {
-    console.log('📧 Sending estimate request notification via Resend SMTP')
+    console.log('📧 Sending estimate request notification via Resend API')
     console.log('=====================================')
     console.log(`Host: ${data.hostName} (${data.hostEmail})`)
     console.log(`Customer: ${data.customerName} (${data.customerEmail})`)
@@ -40,29 +43,27 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     }
     
     const fromField = getFromField()
-    const toField = data.hostName?.trim()
-      ? {
-          name: data.hostName.trim(),
-          address: hostEmail,
-        }
-      : hostEmail
 
     console.log('📧 Email configuration:', {
-      from: typeof fromField === 'string' ? fromField : `${fromField.name} <${fromField.address}>`,
-      to: typeof toField === 'string' ? toField : `${toField.name} <${toField.address}>`,
+      from: fromField,
+      to: hostEmail,
     })
     
-    // Send email using the configured Resend SMTP transporter
-    await transporter.sendMail({
+    // Send email using Resend API
+    const { data: emailData, error } = await resend.emails.send({
       from: fromField,
-      to: toField,
+      to: hostEmail,
       subject: `New Estimate Request for ${data.propertyTitle}`,
       html: generateEstimateRequestEmailHTML(data),
-      // Optional: Add text version for better email client compatibility
       text: generateEstimateRequestEmailText(data),
     })
+
+    if (error) {
+      console.error('❌ Resend API error:', error)
+      throw new Error(`Failed to send email: ${error.message}`)
+    }
     
-    console.log('✅ Estimate request notification sent successfully')
+    console.log('✅ Estimate request notification sent successfully via Resend:', emailData?.id)
     
   } catch (error) {
     console.error('❌ Failed to send estimate request notification:', error)
@@ -136,8 +137,8 @@ function extractNameFromFormattedString(input: string | undefined): string | nul
   return null
 }
 
-// Helper function to get formatted from field
-function getFromField(): string | { name: string; address: string } {
+// Helper function to get formatted from field for Resend API
+function getFromField(): string {
   const fromAddress = getFromAddress()
   let fromName = process.env.EMAIL_FROM_NAME?.trim()
   
@@ -178,16 +179,12 @@ function getFromField(): string | { name: string; address: string } {
     throw new Error(`Invalid from email address: ${cleanAddress}`)
   }
   
-  // If name is provided and valid, use object format (nodemailer preferred)
+  // Resend API format: "Name <email@example.com>" or just "email@example.com"
   if (fromName && fromName.length > 0 && !emailRegex.test(fromName)) {
-    // Final check: make sure name doesn't contain an email address
-    return {
-      name: fromName,
-      address: cleanAddress,
-    }
+    return `${fromName} <${cleanAddress}>`
   }
   
-  // If no valid name, just return the address as string
+  // If no valid name, just return the address
   return cleanAddress
 }
 
@@ -220,63 +217,40 @@ export async function sendBookingConfirmationEmail(
   })
 
   const fromField = getFromField()
-  const toField = data.recipientName?.trim()
-    ? {
-        name: data.recipientName.trim(),
-        address: recipientEmail,
-      }
-    : recipientEmail
-
+  
   // Always send a copy to info@simpleplek.co.za (BCC so customer doesn't see it)
   const adminEmail = 'info@simpleplek.co.za'
-  const bcc = adminEmail !== recipientEmail ? adminEmail : undefined
+  const bcc = adminEmail !== recipientEmail ? [adminEmail] : undefined
 
-  // Log the actual from field format for debugging
-  console.log('📧 From field type:', typeof fromField)
-  console.log('📧 From field value:', JSON.stringify(fromField))
-  
-  const fromDisplay = typeof fromField === 'string' 
-    ? fromField 
-    : `${fromField.name} <${fromField.address}>`
-  
   console.log('📧 Email configuration:', {
-    from: fromDisplay,
-    to: typeof toField === 'string' ? toField : `${toField.name} <${toField.address}>`,
+    from: fromField,
+    to: recipientEmail,
     bcc: bcc || 'none (admin email matches recipient)',
   })
 
-  // Ensure from field is properly formatted - nodemailer expects either:
-  // - A string: "email@example.com" or "Name <email@example.com>"
-  // - An object: { name: "Name", address: "email@example.com" }
-  // IMPORTANT: Always use object format to avoid double-formatting issues
-  const mailOptions: any = {
-    from: typeof fromField === 'string' 
-      ? fromField 
-      : {
-          name: fromField.name,
-          address: fromField.address,
-        },
-    to: toField,
+  // Send email using Resend API
+  const { data: emailResponse, error } = await resend.emails.send({
+    from: fromField,
+    to: recipientEmail,
+    bcc: bcc,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
     text: textBody,
     attachments: [
       {
         filename: `booking-${data.bookingId}.ics`,
-        content: icsContent,
+        content: Buffer.from(icsContent).toString('base64'),
         contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
       },
     ],
+  })
+
+  if (error) {
+    console.error('❌ Resend API error:', error)
+    throw new Error(`Failed to send email: ${error.message}`)
   }
 
-  // Add BCC if admin email is different from recipient
-  if (bcc) {
-    mailOptions.bcc = bcc
-  }
-
-  console.log('📧 Final mailOptions.from:', JSON.stringify(mailOptions.from))
-
-  await transporter.sendMail(mailOptions)
+  console.log('✅ Email sent successfully via Resend:', emailResponse?.id)
 }
 
 function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): string {
