@@ -2,7 +2,13 @@
 import { Resend } from 'resend'
 
 // Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY || process.env.SMTP_PASS)
+const resendApiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS
+if (!resendApiKey) {
+  console.error('❌ RESEND_API_KEY or SMTP_PASS environment variable is not set!')
+} else {
+  console.log('✅ Resend API key configured:', resendApiKey.substring(0, 10) + '...')
+}
+const resend = new Resend(resendApiKey)
 
 type BookingConfirmationEmailInput = {
   recipientEmail: string
@@ -50,12 +56,18 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     })
     
     // Send email using Resend API
+    // Use unique X-Entity-Ref-ID header to prevent Gmail from threading emails together
+    const uniqueEmailId = `${data.estimateRequestId}-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    
     const { data: emailData, error } = await resend.emails.send({
       from: fromField,
       to: hostEmail,
       subject: `New Estimate Request for ${data.propertyTitle}`,
       html: generateEstimateRequestEmailHTML(data),
       text: generateEstimateRequestEmailText(data),
+      headers: {
+        'X-Entity-Ref-ID': uniqueEmailId,
+      },
     })
 
     if (error) {
@@ -229,6 +241,11 @@ export async function sendBookingConfirmationEmail(
   })
 
   // Send email using Resend API
+  // Use unique X-Entity-Ref-ID header to prevent Gmail from threading emails together
+  // Each email gets a unique ID based on booking ID and timestamp
+  const uniqueEmailId = `${data.bookingId}-${Date.now()}-${Math.random().toString(36).substring(7)}`
+  
+  console.log('📧 Attempting to send email via Resend API...')
   const { data: emailResponse, error } = await resend.emails.send({
     from: fromField,
     to: recipientEmail,
@@ -236,6 +253,9 @@ export async function sendBookingConfirmationEmail(
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
     text: textBody,
+    headers: {
+      'X-Entity-Ref-ID': uniqueEmailId,
+    },
     attachments: [
       {
         filename: `booking-${data.bookingId}.ics`,
@@ -246,11 +266,11 @@ export async function sendBookingConfirmationEmail(
   })
 
   if (error) {
-    console.error('❌ Resend API error:', error)
-    throw new Error(`Failed to send email: ${error.message}`)
+    console.error('❌ Resend API error:', JSON.stringify(error, null, 2))
+    throw new Error(`Failed to send email: ${error.message || JSON.stringify(error)}`)
   }
 
-  console.log('✅ Email sent successfully via Resend:', emailResponse?.id)
+  console.log('✅ Email sent successfully via Resend. Email ID:', emailResponse?.id)
 }
 
 function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): string {

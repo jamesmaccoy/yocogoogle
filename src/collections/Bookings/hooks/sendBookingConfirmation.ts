@@ -48,7 +48,11 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
   operation,
   req,
 }) => {
-  if (operation !== 'create') {
+  console.log('📧 sendBookingConfirmationHook called:', { operation, bookingId: doc.id })
+  
+  // Send emails on both create and update operations
+  if (operation !== 'create' && operation !== 'update') {
+    console.log('📧 Skipping email - operation is not "create" or "update":', operation)
     return doc
   }
 
