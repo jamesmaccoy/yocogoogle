@@ -2692,12 +2692,18 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 onCheckedChange={(checked) => {
                   setShowPerHourPackages(checked)
                   if (checked) {
-                    // Set dates to 1 night when toggle is enabled
+                    // Preserve existing start date if one is selected, otherwise default to tomorrow
                     const today = new Date()
+                    today.setHours(0, 0, 0, 0)
                     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
-                    const endDate = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000) // 1 night
-                    setStartDate(tomorrow)
-                    setEndDate(endDate)
+                    tomorrow.setHours(0, 0, 0, 0)
+                    
+                    // Use existing start date if it's valid and in the future, otherwise use tomorrow
+                    const newStartDate = (startDate && startDate >= today) ? startDate : tomorrow
+                    const newEndDate = new Date(newStartDate.getTime() + 24 * 60 * 60 * 1000) // 1 night
+                    
+                    setStartDate(newStartDate)
+                    setEndDate(newEndDate)
                     setDuration(1)
                     // Reset to allow new package suggestions
                     packagesSuggestedRef.current = false
