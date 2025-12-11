@@ -399,7 +399,7 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 0;">
         <div style="max-width: 640px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); border-radius: 18px; overflow: hidden;">
-          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #312e81 100%); padding: 32px 28px;">
+          <div style="background: linear-gradient(135deg,rgb(128, 201, 206) 0%,rgb(1, 156, 147) 100%); padding: 32px 28px;">
             <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">We will see you at ${data.propertyTitle}!</h1>
             <p style="margin: 12px 0 0 0; color: rgba(255, 255, 255, 0.85); font-size: 16px;">
               We’ve attached a calendar invite so you never miss the dates. We can’t wait to host you!
