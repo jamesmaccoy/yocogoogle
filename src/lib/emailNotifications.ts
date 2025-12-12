@@ -432,7 +432,7 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
               </a>
             </div>
             <p style="margin-top: 32px; font-size: 14px; color: #6b7280;">
-              Add the attached calendar invite to keep everything in sync. We can’t wait to host you!
+              Add the attached calendar invite to keep everything in sync.
             </p>
           </div>
           <div style="padding: 20px 28px; background-color: #111827;">
