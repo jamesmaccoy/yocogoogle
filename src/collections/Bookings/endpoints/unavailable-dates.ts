@@ -49,6 +49,7 @@ export const unavailableDates: Endpoint = {
       }
 
       // Find all bookings for this post with package information
+      // Use depth: 1 to properly populate the selectedPackage relationship
       const bookings = await req.payload.find({
         collection: 'bookings',
         where: {
@@ -62,30 +63,60 @@ export const unavailableDates: Endpoint = {
           toDate: true,
           selectedPackage: true,
         },
-        depth: 0,
+        depth: 1, // Increased depth to properly resolve selectedPackage.package relationship
       })
 
-      // Helper to resolve package ID from booking
+      // Helper to resolve package ID from booking (matches check-availability logic)
       const resolvePackageId = (booking: any): string | null => {
-        const pkg = booking?.selectedPackage?.package
-        if (!pkg) return null
-        if (typeof pkg === 'string') return pkg
-        if (typeof pkg === 'object' && 'id' in pkg) return pkg.id
+        if (!booking?.selectedPackage) {
+          return null
+        }
+        
+        const pkg = booking.selectedPackage.package
+        if (!pkg) {
+          return null
+        }
+        
+        // Handle different formats: string ID, object with id, or nested object
+        if (typeof pkg === 'string') {
+          return pkg
+        }
+        
+        if (typeof pkg === 'object') {
+          if ('id' in pkg) {
+            return pkg.id
+          }
+          // Sometimes Payload returns nested structure
+          if (pkg && typeof pkg === 'object' && 'value' in pkg) {
+            return typeof pkg.value === 'string' ? pkg.value : pkg.value?.id
+          }
+        }
+        
         return null
       }
 
-      // Get all packages for this post to check concurrency limits
+      // Get all enabled packages for this post to check concurrency limits
       const packages = await req.payload.find({
         collection: 'packages',
         where: {
-          post: {
-            equals: resolvedPostId,
-          },
+          and: [
+            {
+              post: {
+                equals: resolvedPostId,
+              },
+            },
+            {
+              isEnabled: {
+                equals: true,
+              },
+            },
+          ],
         },
         limit: 100,
         select: {
           id: true,
           maxConcurrentBookings: true,
+          isEnabled: true,
         },
         depth: 0,
       })
@@ -106,9 +137,28 @@ export const unavailableDates: Endpoint = {
       // Map structure: dateISO -> Map<packageId | 'property-level', count>
       const datePackageBookings = new Map<string, Map<string, number>>()
 
-      bookings.docs.forEach((booking) => {
+      console.log('📅 Processing bookings for unavailable dates:', {
+        postId: resolvedPostId,
+        totalBookings: bookings.docs.length,
+        totalPackages: packages.docs.length,
+        packageIds: packages.docs.map((p: any) => ({ id: p.id, limit: p.maxConcurrentBookings })),
+      })
+
+      bookings.docs.forEach((booking, index) => {
+        // Skip bookings without valid dates
+        if (!booking.fromDate || !booking.toDate) {
+          console.warn('⚠️ Skipping booking with missing dates:', booking.id)
+          return
+        }
+        
         const fromDate = new Date(booking.fromDate)
         const toDate = new Date(booking.toDate)
+        
+        // Skip if dates are invalid
+        if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+          console.warn('⚠️ Skipping booking with invalid dates:', booking.id)
+          return
+        }
         
         const fromDateStr = fromDate.toISOString().split('T')[0]
         const toDateStr = toDate.toISOString().split('T')[0]
@@ -117,7 +167,38 @@ export const unavailableDates: Endpoint = {
         const normalizedToDate = new Date(toDateStr + 'T00:00:00.000Z')
 
         const packageId = resolvePackageId(booking)
-        const bookingKey = packageId || 'property-level' // Use 'property-level' for bookings without packages
+        
+        // If booking has a package ID, check if it's in our enabled packages list
+        // If not, treat it as property-level (blocks everything)
+        let bookingKey: string
+        if (packageId) {
+          // Check if this package is in our enabled packages map
+          if (packageConcurrencyMap.has(packageId)) {
+            bookingKey = packageId
+          } else {
+            // Package exists but is disabled or not found - treat as property-level
+            bookingKey = 'property-level'
+            if (index < 5) {
+              console.warn(`⚠️ Booking ${index + 1} has package ${packageId} that is not enabled - treating as property-level`)
+            }
+          }
+        } else {
+          // No package associated - property-level booking
+          bookingKey = 'property-level'
+        }
+
+        if (index < 10) { // Log first 10 bookings for debugging
+          console.log(`📅 Booking ${index + 1}:`, {
+            id: booking.id,
+            fromDate: fromDateStr,
+            toDate: toDateStr,
+            packageId,
+            bookingKey,
+            isPropertyLevel: bookingKey === 'property-level',
+            selectedPackage: booking.selectedPackage,
+            selectedPackageRaw: JSON.stringify(booking.selectedPackage),
+          })
+        }
 
         // Generate array of all dates in the range (excluding check-out date)
         const currentDate = new Date(normalizedFromDate)
@@ -142,9 +223,19 @@ export const unavailableDates: Endpoint = {
       // 2. NO packages can accept bookings on that date (all have reached their concurrency limits)
       const unavailableDates: string[] = []
 
+      console.log('📅 Analyzing dates for availability:', {
+        totalDates: datePackageBookings.size,
+        packageConcurrencyMap: Object.fromEntries(packageConcurrencyMap),
+        sampleDates: Array.from(datePackageBookings.entries()).slice(0, 5).map(([date, map]) => ({
+          date,
+          bookings: Object.fromEntries(map),
+        })),
+      })
+
       datePackageBookings.forEach((packageMap, dateISO) => {
         // Check if there are property-level bookings (these block everything)
         if (packageMap.has('property-level')) {
+          console.log(`❌ Date ${dateISO} unavailable: property-level booking`)
           unavailableDates.push(dateISO)
           return
         }
@@ -154,33 +245,73 @@ export const unavailableDates: Endpoint = {
         if (packageConcurrencyMap.size === 0) {
           // If there are any bookings and no packages, mark as unavailable
           if (packageMap.size > 0) {
+            console.log(`❌ Date ${dateISO} unavailable: bookings exist but no packages configured`)
             unavailableDates.push(dateISO)
           }
           return
         }
 
-        // Check if ANY package can still accept bookings on this date
-        // A date is available if at least one package has availability
+        // More conservative approach: A date is unavailable if:
+        // 1. ANY package without simultaneous bookings (maxConcurrentBookings: 1) is full, OR
+        // 2. ALL packages have reached their concurrency limits
+        // This ensures dates are marked unavailable when non-simultaneous bookings are present
+        let hasAnyNonSimultaneousPackageFull = false
         let hasAvailablePackage = false
+        const packageStatus: Record<string, { bookings: number; limit: number; available: boolean; isNonSimultaneous: boolean }> = {}
         
         // Check all packages for this post
         for (const [packageId, limit] of packageConcurrencyMap.entries()) {
           const bookingCount = packageMap.get(packageId) || 0
-          if (bookingCount < limit) {
+          const isAvailable = bookingCount < limit
+          const isNonSimultaneous = limit === 1
+          packageStatus[packageId] = { 
+            bookings: bookingCount, 
+            limit, 
+            available: isAvailable,
+            isNonSimultaneous 
+          }
+          
+          // Check if non-simultaneous packages (limit: 1) are full
+          if (isNonSimultaneous && !isAvailable) {
+            hasAnyNonSimultaneousPackageFull = true
+          }
+          
+          if (isAvailable) {
             // This package still has availability
             hasAvailablePackage = true
-            break
           }
         }
 
-        // If no packages can accept bookings, mark the date as unavailable
-        if (!hasAvailablePackage) {
+        // Mark date as unavailable if:
+        // 1. Any non-simultaneous package (limit: 1) is full, OR
+        // 2. All packages are full
+        if (hasAnyNonSimultaneousPackageFull || !hasAvailablePackage) {
+          const reason = hasAnyNonSimultaneousPackageFull 
+            ? 'non-simultaneous package full' 
+            : 'all packages full'
+          console.log(`❌ Date ${dateISO} unavailable: ${reason}`, packageStatus)
           unavailableDates.push(dateISO)
+        } else {
+          // Log available dates for debugging (only first few)
+          if (unavailableDates.length < 5) {
+            console.log(`✅ Date ${dateISO} available:`, packageStatus)
+          }
         }
       })
 
       // Remove duplicates if needed
       const uniqueUnavailableDates = [...new Set(unavailableDates)]
+
+      console.log('📅 Final unavailable dates summary:', {
+        totalUnavailableDates: uniqueUnavailableDates.length,
+        unavailableDates: uniqueUnavailableDates.slice(0, 10), // Show first 10
+        totalBookingsProcessed: bookings.docs.length,
+        totalPackagesFound: packages.docs.length,
+        packagesWithLimits: Array.from(packageConcurrencyMap.entries()).map(([id, limit]) => ({
+          id,
+          limit,
+        })),
+      })
 
       return Response.json({
         unavailableDates: uniqueUnavailableDates,
