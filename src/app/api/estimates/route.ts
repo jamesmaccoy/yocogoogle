@@ -4,6 +4,7 @@ import configPromise from '@/payload.config'
 import { yocoService } from '@/lib/yocoService'
 import type { Estimate } from '@/payload-types'
 import { verifyJwtToken } from '@/utilities/token'
+import { getServerSideURL } from '@/utilities/getURL'
 
 export async function GET(request: NextRequest) {
   try {
@@ -80,6 +81,90 @@ export async function GET(request: NextRequest) {
       sort: '-createdAt',
     })
 
+    // Get base URL for constructing click-through URLs
+    const baseUrl = getServerSideURL()
+
+    // Helper function to truncate text for Google Ads (headlines max 30 chars, descriptions max 90 chars)
+    const truncateText = (text: string, maxLength: number): string => {
+      if (!text) return ''
+      return text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text
+    }
+
+    // Helper function to generate Google Ads headlines (max 30 characters each)
+    const generateHeadlines = (postTitle: string, packageName: string, postMetaDesc?: string): string[] => {
+      const headlines: string[] = []
+      
+      // Headline 1: Post title (truncated)
+      if (postTitle) {
+        headlines.push(truncateText(postTitle, 30))
+      }
+      
+      // Headline 2: Package name if available
+      if (packageName && packageName !== postTitle) {
+        headlines.push(truncateText(packageName, 30))
+      }
+      
+      // Headline 3: "Complete Your Booking"
+      headlines.push('Complete Your Booking')
+      
+      // Headline 4: "Reserve Your Stay"
+      headlines.push('Reserve Your Stay')
+      
+      // Headline 5: "Book Now - Special Rate"
+      headlines.push('Book Now - Special Rate')
+      
+      // Headline 6: Post title + "Available"
+      if (postTitle) {
+        const available = truncateText(`${postTitle} Available`, 30)
+        if (available !== headlines[0]) {
+          headlines.push(available)
+        }
+      }
+      
+      return headlines.slice(0, 15) // Google Ads allows up to 15 headlines
+    }
+
+    // Helper function to generate Google Ads descriptions (max 90 characters each)
+    const generateDescriptions = (
+      postMetaDesc: string | null | undefined,
+      packageDesc: string | null | undefined,
+      postTitle: string,
+      packageName: string,
+      total: number
+    ): string[] => {
+      const descriptions: string[] = []
+      
+      // Description 1: Meta description if available
+      if (postMetaDesc) {
+        descriptions.push(truncateText(postMetaDesc, 90))
+      }
+      
+      // Description 2: Package description if available
+      if (packageDesc && packageDesc !== postMetaDesc) {
+        descriptions.push(truncateText(packageDesc, 90))
+      }
+      
+      // Description 3: Generic booking message
+      descriptions.push('Continue your booking and secure your stay. Complete your reservation today.')
+      
+      // Description 4: Price-focused message
+      if (total > 0) {
+        const formattedTotal = new Intl.NumberFormat('en-ZA', { 
+          style: 'currency', 
+          currency: 'ZAR' 
+        }).format(total)
+        descriptions.push(`Secure your booking for ${formattedTotal}. Don't miss out on this opportunity.`)
+      }
+      
+      // Description 5: Urgency message
+      descriptions.push('Your estimate is ready. Complete your booking now before availability changes.')
+      
+      // Description 6: Value proposition
+      descriptions.push(`Experience ${postTitle}${packageName ? ` with ${packageName}` : ''}. Book now to confirm.`)
+      
+      return descriptions.slice(0, 4) // Google Ads allows up to 4 descriptions
+    }
+
     // Transform estimates to include flattened customer and post data
     const transformedEstimates = estimates.docs.map((estimate: any) => {
       const customer = typeof estimate.customer === 'object' ? estimate.customer : null
@@ -89,6 +174,24 @@ export async function GET(request: NextRequest) {
         ? selectedPackage.package 
         : null
 
+      // Construct click-through URL for Google Ads retargeting
+      const postSlug = post?.slug || ''
+      const estimateId = estimate.id || ''
+      const clickThroughUrl = postSlug && estimateId 
+        ? `${baseUrl}/posts/${postSlug}?restoreEstimate=${estimateId}`
+        : ''
+
+      // Get post and package data for ad copy
+      const postTitle = post?.title || ''
+      const postMetaDesc = post?.meta?.description || null
+      const packageName = packageData?.name || selectedPackage?.customName || ''
+      const packageDesc = packageData?.description || null
+      const total = estimate.total || 0
+
+      // Generate Google Ads assets
+      const headlines = generateHeadlines(postTitle, packageName, postMetaDesc || undefined)
+      const descriptions = generateDescriptions(postMetaDesc, packageDesc, postTitle, packageName, total)
+
       return {
         id: estimate.id,
         title: estimate.title || '',
@@ -96,17 +199,41 @@ export async function GET(request: NextRequest) {
         customerName: customer?.name || estimate.customerName || '',
         customerEmail: customer?.email || estimate.customerEmail || '',
         postId: typeof estimate.post === 'string' ? estimate.post : estimate.post?.id || '',
-        postTitle: post?.title || '',
-        postSlug: post?.slug || '',
+        postTitle: postTitle,
+        postSlug: postSlug,
+        postMetaDescription: postMetaDesc || '',
+        clickThroughUrl: clickThroughUrl,
+        // Google Ads Assets
+        finalUrl: clickThroughUrl, // Google Ads uses "Final URL" field
+        headline1: headlines[0] || '',
+        headline2: headlines[1] || '',
+        headline3: headlines[2] || '',
+        headline4: headlines[3] || '',
+        headline5: headlines[4] || '',
+        headline6: headlines[5] || '',
+        headline7: headlines[6] || '',
+        headline8: headlines[7] || '',
+        headline9: headlines[8] || '',
+        headline10: headlines[9] || '',
+        headline11: headlines[10] || '',
+        headline12: headlines[11] || '',
+        headline13: headlines[12] || '',
+        headline14: headlines[13] || '',
+        headline15: headlines[14] || '',
+        description1: descriptions[0] || '',
+        description2: descriptions[1] || '',
+        description3: descriptions[2] || '',
+        description4: descriptions[3] || '',
         fromDate: estimate.fromDate || '',
         toDate: estimate.toDate || '',
         guests: Array.isArray(estimate.guests) 
           ? estimate.guests.map((g: any) => typeof g === 'object' ? g.email || g.name || g.id : g).join('; ')
           : '',
-        total: estimate.total || 0,
+        total: total,
         packageType: estimate.packageType || '',
-        packageName: packageData?.name || selectedPackage?.customName || '',
+        packageName: packageName,
         packageId: packageData?.id || '',
+        packageDescription: packageDesc || '',
         paymentStatus: estimate.paymentStatus || 'unpaid',
         status: estimate.status || 'pending',
         requestType: estimate.requestType || 'initial',
