@@ -84,26 +84,35 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
     postImage = serverUrl + '/api/media/file/theshack%20lounge%20diy.jpg'
   }
 
+  // Use post's title and description for metadata
+  const postTitle = post?.title || 'Guest Invite'
+  const postDescription = post?.meta?.description || post?.title || 'You have been invited as a guest'
+  const metaTitle = post?.meta?.title || postTitle
+  
+  // Create a more descriptive title that includes the post name
+  const inviteTitle = `${postTitle} - Guest Invite`
+  const inviteDescription = postDescription || `You have been invited as a guest to ${postTitle}`
+
   return {
-    title: 'You have been invited as a guest by a customer of Simple Plek',
-    description: 'Accept your guest invite',
+    title: inviteTitle,
+    description: inviteDescription,
     openGraph: {
-      title: 'Guest Invite',
-      description: 'Accept your guest invite',
+      title: inviteTitle,
+      description: inviteDescription,
       type: 'website',
       images: postImage ? [
         {
           url: postImage,
           width: 1200,
           height: 630,
-          alt: 'Guest Invite Preview',
+          alt: postTitle,
         },
       ] : undefined,
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'Guest Invite',
-      description: 'Accept your guest invite',
+      title: inviteTitle,
+      description: inviteDescription,
       images: postImage ? [postImage] : undefined,
     },
   }
@@ -198,8 +207,8 @@ export default async function GuestInvite({ searchParams }: { searchParams: Sear
   return (
     <div className="mx-4">
       <InviteClientPage
-        booking={tokenData.type === 'booking' ? details : undefined}
-        estimate={tokenData.type === 'estimate' ? details : undefined}
+        booking={tokenData.type === 'booking' && details ? (details as Pick<import('@/payload-types').Booking, 'post' | 'fromDate' | 'createdAt' | 'customer'>) : undefined}
+        estimate={tokenData.type === 'estimate' && details ? (details as Pick<import('@/payload-types').Estimate, 'post' | 'fromDate' | 'createdAt' | 'customer'>) : undefined}
         tokenPayload={tokenData}
         token={token}
       />
@@ -224,10 +233,11 @@ const fetchTokenData = async (token: string) => {
 
     if (response.docs.length > 0) {
       const booking = response.docs[0]
+      if (!booking) return null
       const customerId = typeof booking.customer === 'string' ? booking.customer : booking.customer?.id
       if (!customerId) return null
       return {
-        type: 'booking',
+        type: 'booking' as const,
         id: booking.id,
         customerId,
       }
@@ -249,10 +259,11 @@ const fetchTokenData = async (token: string) => {
     })
     if (response.docs.length > 0) {
       const estimate = response.docs[0]
+      if (!estimate) return null
       const customerId = typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id
       if (!customerId) return null
       return {
-        type: 'estimate',
+        type: 'estimate' as const,
         id: estimate.id,
         customerId,
       }
@@ -290,7 +301,7 @@ const fetchBookingDetails = async (bookingId: string, token: string) => {
       createdAt: true,
     },
     limit: 1,
-    depth: 1,
+    depth: 2, // Increased depth to ensure post meta fields are populated
   })
 
   if (booking.docs.length === 0) {
@@ -327,7 +338,7 @@ const fetchEstimateDetails = async (estimateId: string, token: string) => {
       createdAt: true,
     },
     limit: 1,
-    depth: 1,
+    depth: 2, // Increased depth to ensure post meta fields are populated
   })
 
   if (estimate.docs.length === 0) {
