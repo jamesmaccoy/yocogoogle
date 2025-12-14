@@ -3,6 +3,189 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { yocoService } from '@/lib/yocoService'
 import type { Estimate } from '@/payload-types'
+import { verifyJwtToken } from '@/utilities/token'
+
+export async function GET(request: NextRequest) {
+  try {
+    const payload = await getPayload({ config: configPromise })
+    const searchParams = request.nextUrl.searchParams
+    
+    // Support both header-based auth and token-based auth (for Google Sheets)
+    let isAuthorized = false
+    let isAdmin = false
+    let customerId: string | null = null
+    let user = null
+    
+    // Try header-based authentication first
+    try {
+      const authResult = await payload.auth({ headers: request.headers })
+      user = authResult.user
+      if (user && (user as any).role?.includes('admin')) {
+        isAuthorized = true
+        isAdmin = true
+      } else if (user) {
+        isAuthorized = true
+        customerId = user.id
+      }
+    } catch (error) {
+      // Header auth failed, try token-based auth
+    }
+    
+    // If not authorized via headers, try token query parameter (for Google Sheets)
+    if (!isAuthorized) {
+      const token = searchParams.get('token')
+      if (token) {
+        const decoded = verifyJwtToken<{ estimateId?: string; customerId?: string; admin?: boolean }>(token)
+        if (decoded && decoded.admin) {
+          isAuthorized = true
+          isAdmin = true
+        } else if (decoded && decoded.customerId) {
+          // Allow customers to see their own estimates
+          isAuthorized = true
+          customerId = decoded.customerId
+        }
+      }
+    }
+    
+    // Check for API key in environment (for Google Sheets access - admin only)
+    if (!isAuthorized) {
+      const apiKey = searchParams.get('apiKey')
+      const expectedApiKey = process.env.ESTIMATES_EXPORT_API_KEY
+      if (apiKey && expectedApiKey && apiKey === expectedApiKey) {
+        isAuthorized = true
+        isAdmin = true
+      }
+    }
+    
+    if (!isAuthorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const format = searchParams.get('format') || 'csv' // Default to CSV for Google Sheets
+    const limit = parseInt(searchParams.get('limit') || '1000', 10)
+    const depth = parseInt(searchParams.get('depth') || '2', 10)
+
+    // Build where clause - filter by customer if not admin
+    const where: any = {}
+    if (!isAdmin && customerId) {
+      where.customer = { equals: customerId }
+    }
+
+    // Fetch estimates with full depth to get customer and post details
+    const estimates = await payload.find({
+      collection: 'estimates',
+      where: Object.keys(where).length > 0 ? where : undefined,
+      limit,
+      depth,
+      sort: '-createdAt',
+    })
+
+    // Transform estimates to include flattened customer and post data
+    const transformedEstimates = estimates.docs.map((estimate: any) => {
+      const customer = typeof estimate.customer === 'object' ? estimate.customer : null
+      const post = typeof estimate.post === 'object' ? estimate.post : null
+      const selectedPackage = estimate.selectedPackage
+      const packageData = selectedPackage?.package && typeof selectedPackage.package === 'object' 
+        ? selectedPackage.package 
+        : null
+
+      return {
+        id: estimate.id,
+        title: estimate.title || '',
+        customerId: typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id || '',
+        customerName: customer?.name || estimate.customerName || '',
+        customerEmail: customer?.email || estimate.customerEmail || '',
+        postId: typeof estimate.post === 'string' ? estimate.post : estimate.post?.id || '',
+        postTitle: post?.title || '',
+        postSlug: post?.slug || '',
+        fromDate: estimate.fromDate || '',
+        toDate: estimate.toDate || '',
+        guests: Array.isArray(estimate.guests) 
+          ? estimate.guests.map((g: any) => typeof g === 'object' ? g.email || g.name || g.id : g).join('; ')
+          : '',
+        total: estimate.total || 0,
+        packageType: estimate.packageType || '',
+        packageName: packageData?.name || selectedPackage?.customName || '',
+        packageId: packageData?.id || '',
+        paymentStatus: estimate.paymentStatus || 'unpaid',
+        status: estimate.status || 'pending',
+        requestType: estimate.requestType || 'initial',
+        createdAt: estimate.createdAt || '',
+        updatedAt: estimate.updatedAt || '',
+        notes: estimate.notes || '',
+      }
+    })
+
+    // Return CSV format for Google Sheets
+    if (format === 'csv') {
+      if (transformedEstimates.length === 0) {
+        return new NextResponse('No estimates found', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': 'attachment; filename="estimates.csv"',
+          },
+        })
+      }
+
+      // Get headers from first estimate (guaranteed to exist due to check above)
+      const firstEstimate = transformedEstimates[0]
+      if (!firstEstimate) {
+        return new NextResponse('No estimates found', {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': 'attachment; filename="estimates.csv"',
+          },
+        })
+      }
+      const headers = Object.keys(firstEstimate)
+      
+      // Create CSV rows
+      const csvRows = [
+        headers.join(','), // Header row
+        ...transformedEstimates.map(estimate => 
+          headers.map(header => {
+            const value = estimate[header as keyof typeof estimate] || ''
+            // Escape commas and quotes in CSV values
+            const stringValue = String(value)
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+              return `"${stringValue.replace(/"/g, '""')}"`
+            }
+            return stringValue
+          }).join(',')
+        )
+      ]
+
+      return new NextResponse(csvRows.join('\n'), {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        },
+      })
+    }
+
+    // Return JSON format (default)
+    return NextResponse.json({
+      totalDocs: estimates.totalDocs,
+      limit: estimates.limit,
+      totalPages: estimates.totalPages,
+      page: estimates.page,
+      hasNextPage: estimates.hasNextPage,
+      hasPrevPage: estimates.hasPrevPage,
+      nextPage: estimates.nextPage,
+      prevPage: estimates.prevPage,
+      docs: transformedEstimates,
+    })
+  } catch (err) {
+    console.error('Estimate export error:', err)
+    return NextResponse.json(
+      { error: (err instanceof Error ? err.message : 'Unknown error') },
+      { status: 500 }
+    )
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
