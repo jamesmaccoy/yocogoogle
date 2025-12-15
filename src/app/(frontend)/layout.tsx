@@ -22,6 +22,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { isEnabled } = await draftMode()
   // Google Tag Manager ID
   const gtmId = process.env.NEXT_PUBLIC_GTM_ID || 'GTM-5KT6R7LB'
+  // Google Ads conversion tag ID
+  const googleAdsId = process.env.NEXT_PUBLIC_GOOGLE_ADS || 'AW-684914935'
 
   return (
     <html className={cn(GeistSans.variable, GeistMono.variable)} lang="en" suppressHydrationWarning>
@@ -38,6 +40,23 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
               'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
               })(window,document,'script','dataLayer','${gtmId}');
+            `,
+          }}
+        />
+        {/* Google tag (gtag.js) - Google Ads conversion tracking */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${googleAdsId}`}
+          strategy="beforeInteractive"
+        />
+        <Script
+          id="google-ads-conversion"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', '${googleAdsId}');
             `,
           }}
         />
