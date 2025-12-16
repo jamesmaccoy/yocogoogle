@@ -1409,6 +1409,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }
 
   // Navigate to estimate details (latest or create then navigate)
+  // IMPORTANT: Always update/create estimate with current dates to ensure correct dates are shown
   const handleGoToEstimate = async () => {
     if (!isLoggedIn) {
       router.push('/login')
@@ -1416,20 +1417,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
     try {
       setIsCreatingEstimate(true)
-      // If we already loaded a latest estimate for this post, use it
-      if (latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId)) {
-        router.push(`/estimate/${latestEstimate.id}`)
-        return
-      }
-
-      // Otherwise, create a minimal estimate and navigate to it
+      
+      // Always use current dates from state (most recent selection)
       const from = startDate ? startDate.toISOString() : new Date().toISOString()
       const to = endDate
         ? endDate.toISOString()
         : new Date(Date.now() + (duration || 1) * 24 * 60 * 60 * 1000).toISOString()
       const multiplier = selectedPackage?.multiplier ?? 1
-              const total = selectedPackage?.baseRate || calculateTotal(baseRate, duration || 1, multiplier)
+      const total = selectedPackage?.baseRate || calculateTotal(baseRate, duration || 1, multiplier)
 
+      // Always create/update estimate with current dates to ensure correct dates are shown
       const resp = await fetch('/api/estimates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1448,7 +1445,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
                 enabled: true,
               }
             : undefined,
-          // Include estimateId if we have a latest estimate for this post to preserve package info
+          // Include estimateId if we have a latest estimate for this post to update it with new dates
           estimateId: latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId) 
             ? latestEstimate.id 
             : undefined,

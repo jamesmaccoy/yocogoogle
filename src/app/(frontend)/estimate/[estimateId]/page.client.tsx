@@ -537,22 +537,11 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
 
     if (hasFixedPackageRate) {
       // Use baseRate directly from Payload CMS (stored as-is, no conversion)
+      // For fixed price packages, always use baseRate directly without division
       const packageBaseRate = selectedPackage.baseRate ?? 0
       
-      const effectiveDuration =
-        _bookingDuration > 0
-          ? _bookingDuration
-          : Math.max(selectedPackage.minNights ?? selectedPackage.maxNights ?? 1, 1)
-
-      // Check if this is a 1-night package (should not be divided)
-      const isOneNightPackage = selectedPackage.minNights === 1 && selectedPackage.maxNights === 1
-      
-      // For 1-night packages, use baseRate directly; otherwise divide by duration
-      const perNightRate = isOneNightPackage 
-        ? packageBaseRate 
-        : (effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate)
-
-      setPackagePrice(perNightRate)
+      // For fixed packages, price and total are both the baseRate
+      setPackagePrice(packageBaseRate)
       setPackageTotal(packageBaseRate)
       return
     }
@@ -707,12 +696,26 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     <div className="container py-16">
       <div className="mx-auto max-w-4xl">
         <div className="flex items-center space-x-4 mb-8">
-          <Link
-            href="/estimates"
-            className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            ← Back to Estimates
-          </Link>
+          {(() => {
+            // Get post slug from estimate data
+            const post = typeof data?.post === 'object' ? data.post : null
+            const postSlug = post?.slug
+            
+            // If we have a post slug, link back to the post page with restoreEstimate parameter
+            // Otherwise, fall back to /estimates
+            const backUrl = postSlug 
+              ? `/posts/${postSlug}?restoreEstimate=${data.id}`
+              : '/estimates'
+            
+            return (
+              <Link
+                href={backUrl}
+                className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                ← Back to {postSlug ? 'Property' : 'Estimates'}
+              </Link>
+            )
+          })()}
         </div>
 
         <Tabs defaultValue="details" className="mt-10">
@@ -751,10 +754,10 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   )}
                   <div className="flex flex-col">
                     <span className="font-medium">
-                      Date Estimated: {formatDateTime(data?.createdAt)}
-                    </span>
-                    <span className="font-medium">
                       Guests: {Array.isArray(data?.guests) ? data.guests.length : 0}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Created {formatDateTime(data?.createdAt)}
                     </span>
                   </div>
                 </div>
@@ -805,25 +808,26 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                           ? _bookingDuration 
                           : Math.max(pkg.minNights ?? pkg.maxNights ?? 1, 1)
                         
-                        // Check if this is a 1-night package (should not be divided)
-                        const isOneNightPackage = pkg.minNights === 1 && pkg.maxNights === 1
+                        // Check if this is an hourly package (minNights < 1 indicates hourly/half-day)
+                        const isHourlyPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights < 1
                         
                         // Use baseRate directly from Payload CMS (no conversion)
                         const packageBaseRate = hasFixedPackageRate 
                           ? (pkg.baseRate ?? 0)
                           : null
                         
-                        // For 1-night packages, use baseRate directly; otherwise divide by duration for fixed packages
-                        const perNightRate = isOneNightPackage && hasFixedPackageRate && packageBaseRate !== null
-                          ? packageBaseRate
-                          : hasFixedPackageRate && packageBaseRate !== null
-                          ? (effectiveDuration > 0 ? packageBaseRate / effectiveDuration : packageBaseRate)
+                        // For fixed price packages, use baseRate directly (no division)
+                        // For multiplier-based packages, calculate per-night rate
+                        const perNightRate = hasFixedPackageRate && packageBaseRate !== null
+                          ? packageBaseRate // Use baseRate directly for fixed packages
                           : _postBaseRate * (pkg.multiplier || 1)
                         
                         // Calculate total for this package
+                        // For fixed packages, total is the baseRate (no multiplication)
+                        // For multiplier packages, multiply by duration
                         const packageTotal = hasFixedPackageRate && packageBaseRate !== null
-                          ? packageBaseRate
-                          : perNightRate * effectiveDuration
+                          ? packageBaseRate // Fixed packages: total = baseRate
+                          : perNightRate * effectiveDuration // Multiplier packages: total = rate * duration
                         
                         return (
                           <Card
@@ -858,7 +862,9 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                                   </div>
                                   <CardDescription>{pkg.description}</CardDescription>
                                   <div className="text-xs text-muted-foreground mt-1">
-                                    Duration: {pkg.minNights === pkg.maxNights 
+                                    Duration: {isHourlyPackage
+                                      ? 'hourly'
+                                      : pkg.minNights === pkg.maxNights 
                                       ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
                                       : `${pkg.minNights}-${pkg.maxNights} nights`
                                     }
@@ -866,9 +872,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                                 </div>
                                 <div className="text-right">
                                   <div className="text-lg font-bold">
-                                    {isOneNightPackage && hasFixedPackageRate
-                                      ? formatPrice(perNightRate)
-                                      : `${formatPrice(perNightRate)}/night`}
+                                    {formatPrice(packageTotal)}
                                   </div>
                                   {pkg.baseRate && pkg.baseRate > 0 && pkg.multiplier !== 1 && (
                                     <div className="text-xs text-muted-foreground">
@@ -946,21 +950,11 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                     <span className="text-muted-foreground">Package:</span>
                     <span className="font-medium">{getPackageDisplayName(selectedPackage)}</span>
                   </div>
-                  {isFixedPricePackage ? (
-                    <>
-                      <div className="flex justify-between items-center mb-4">
-                        <span className="text-muted-foreground">Package total:</span>
-                        <span className="font-medium">{formatPrice(bookingTotal)}</span>
-                      </div>
-                      <div className="flex justify-between items-center mb-4">
-                        <span className="text-muted-foreground">
-                          Approx. per night
-                          {effectiveNightsForDisplay ? ` (${effectiveNightsForDisplay} nights)` : ''}:
-                        </span>
-                        <span className="font-medium">{formatPrice(packagePrice)}</span>
-                      </div>
-                    </>
-                  ) : (
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-muted-foreground">Package price:</span>
+                    <span className="font-medium">{formatPrice(bookingTotal)}</span>
+                  </div>
+                  {!isFixedPricePackage && (
                     <div className="flex justify-between items-center mb-4">
                       <span className="text-muted-foreground">Rate per night:</span>
                       <span className="font-medium">{formatPrice(packagePrice)}</span>
