@@ -3,7 +3,7 @@ import { isAdminField } from '@/access/isAdminField'
 import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 
-import { generateJwtToken, verifyJwtToken } from '@/utilities/token'
+import { generateJwtToken, verifyJwtToken, generateShortToken } from '@/utilities/token'
 import { unavailableDates } from './endpoints/unavailable-dates'
 import { checkAvailability } from './endpoints/check-availability'
 import { multiPostAvailability } from './endpoints/multi-post-availability'
@@ -91,12 +91,8 @@ export const Booking: CollectionConfig = {
             })
           }
 
-          // Generate new token
-          const token = generateJwtToken({
-            bookingId: booking.id,
-            customerId:
-              typeof booking.customer === 'string' ? booking.customer : booking.customer?.id,
-          })
+          // Generate short token for invite URL
+          const token = generateShortToken(10)
 
           // Update booking with new token
           await req.payload.update({
@@ -191,11 +187,8 @@ export const Booking: CollectionConfig = {
           )
         }
 
-        const token = generateJwtToken({
-          bookingId: booking.id,
-          customerId:
-            typeof booking.customer === 'string' ? booking.customer : booking.customer?.id,
-        })
+        // Generate short token for invite URL
+        const token = generateShortToken(10)
 
         await req.payload.update({
           collection: 'bookings',
