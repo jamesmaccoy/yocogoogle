@@ -66,7 +66,8 @@ const InviteUrlDialog: FC<Props> = ({ trigger, bookingId }) => {
   //? Set the token URL when the token is available.
   useEffect(() => {
     if (token) {
-      const url = `${window.location.origin}/guest/invite?token=${token}`
+      // Use shorter URL path for better social media compatibility
+      const url = `${window.location.origin}/i/${token}`
       setTokenUrl(url)
     }
   }, [token])

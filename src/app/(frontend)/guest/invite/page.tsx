@@ -140,11 +140,11 @@ export default async function GuestInvite({ searchParams }: { searchParams: Sear
           <CardContent>
             <div>
               <Button asChild variant="default">
-                <Link href={`/login?next=/guest/invite?token=${token}`}>Login</Link>
+                <Link href={`/login?next=/i/${token}`}>Login</Link>
               </Button>
 
               <Button asChild variant="secondary">
-                <Link href={`/register?next=/guest/invite?token=${token}`}>Register</Link>
+                <Link href={`/register?next=/i/${token}`}>Register</Link>
               </Button>
             </div>
           </CardContent>
