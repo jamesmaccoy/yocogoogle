@@ -7,19 +7,44 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ bookingId: string }> }
 ) {
-  const { bookingId } = await params
-  
-  // Redirect calendar.ics requests to the new route
-  if (bookingId === 'calendar.ics') {
-    const url = new URL(request.url)
-    const searchParams = url.searchParams.toString()
-    return NextResponse.redirect(
-      new URL(`/api/bookings-calendar.ics${searchParams ? `?${searchParams}` : ''}`, request.url),
-      301
+  try {
+    const { bookingId } = await params
+    
+    // Redirect calendar.ics requests to the new route
+    if (bookingId === 'calendar.ics') {
+      const url = new URL(request.url)
+      const searchParams = url.searchParams.toString()
+      return NextResponse.redirect(
+        new URL(`/api/bookings-calendar.ics${searchParams ? `?${searchParams}` : ''}`, request.url),
+        301
+      )
+    }
+    
+    const payload = await getPayload({ config: configPromise })
+    
+    // Get depth from query params, default to 0
+    const searchParams = new URL(request.url).searchParams
+    const depth = parseInt(searchParams.get('depth') || '0', 10)
+    
+    // Fetch the booking
+    const booking = await payload.findByID({
+      collection: 'bookings',
+      id: bookingId,
+      depth: depth,
+    })
+    
+    if (!booking) {
+      return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
+    }
+    
+    return NextResponse.json(booking)
+  } catch (error) {
+    console.error('Error fetching booking:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch booking', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
     )
   }
-  
-  return NextResponse.json({ error: 'Not found' }, { status: 404 })
 }
 
 export async function PATCH(
@@ -34,8 +59,93 @@ export async function PATCH(
     }
 
     const { bookingId } = await params
-    const body = await request.json()
+    
+    // Parse request body with better error handling
+    let body: any = {}
+    const contentType = request.headers.get('content-type') || ''
+    
+    try {
+      // Clone request to read body without consuming the stream
+      const clonedRequest = request.clone()
+      
+      if (contentType.includes('application/json')) {
+        const rawBody = await clonedRequest.text()
+        if (rawBody && rawBody.trim()) {
+          body = JSON.parse(rawBody)
+        }
+      } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+        const formData = await clonedRequest.formData()
+        body = {} as any
+        
+        // Convert FormData to regular object, handling nested fields
+        for (const [key, value] of formData.entries()) {
+          if (key.includes('[') && key.includes(']')) {
+            // Handle nested form fields like "fromDate[value]" or "fromDate"
+            const match = key.match(/^(\w+)\[(\w+)\]$/)
+            if (match && match.length >= 3) {
+              const parentKey = match[1]
+              const childKey = match[2]
+              if (parentKey && childKey) {
+                if (!body[parentKey]) body[parentKey] = {}
+                body[parentKey][childKey] = value
+              }
+            } else {
+              body[key] = value
+            }
+          } else {
+            body[key] = value
+          }
+        }
+      } else {
+        // Try JSON as fallback
+        const rawBody = await clonedRequest.text()
+        if (rawBody && rawBody.trim()) {
+          body = JSON.parse(rawBody)
+        }
+      }
+      
+      // Handle Payload admin format - data might be in _payload field or nested in data
+      if (body._payload && typeof body._payload === 'string') {
+        try {
+          const payloadData = JSON.parse(body._payload)
+          body = { ...body, ...payloadData }
+          delete body._payload
+        } catch (err) {
+          console.warn('Could not parse _payload field:', err)
+        }
+      }
+      
+      // Handle nested data field (common in Payload admin requests)
+      if (body.data && typeof body.data === 'object' && !Array.isArray(body.data)) {
+        body = { ...body, ...body.data }
+        delete body.data
+      }
+      
+      // Handle Payload date field format (fromDate: { value: "2024-12-19T10:00:00.000Z" })
+      if (body.fromDate && typeof body.fromDate === 'object' && 'value' in body.fromDate) {
+        body.fromDate = body.fromDate.value
+      }
+      if (body.toDate && typeof body.toDate === 'object' && 'value' in body.toDate) {
+        body.toDate = body.toDate.value
+      }
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError)
+      console.error('Content-Type:', contentType)
+      console.error('Request URL:', request.url)
+      return NextResponse.json(
+        { error: 'Invalid request body', details: parseError instanceof Error ? parseError.message : 'Failed to parse body' },
+        { status: 400 }
+      )
+    }
+    
     const { fromDate, toDate } = body
+    
+    console.log('PATCH booking request:', {
+      bookingId,
+      fromDate,
+      toDate,
+      bodyKeys: Object.keys(body),
+    })
 
     if (!fromDate) {
       return NextResponse.json({ error: 'fromDate is required' }, { status: 400 })

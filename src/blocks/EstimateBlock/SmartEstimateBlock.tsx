@@ -117,17 +117,16 @@ const PackageCard = ({
   const total = pkg.baseRate || calculateTotal(baseRate, duration, pkg.multiplier)
   const effectiveDuration = Math.max(duration, pkg.minNights || pkg.maxNights || 1, 1)
   
-  // Check if this is a 1-night package (should not be divided)
-  const isOneNightPackage = pkg.minNights === 1 && pkg.maxNights === 1
-  // Check if this is an hourly package (minNights <= 1, including 0.5)
-  const isHourlyPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights <= 1
-  // Check if it's specifically a half-day/hourly package (minNights < 1)
-  const isHalfDayPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights < 1
+  // Check if this is an hourly package (minNights < 1 indicates hourly/half-day)
+  const isHourlyPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights < 1
+  // Check if this is a 1-night package (should not be divided, but not hourly)
+  const isOneNightPackage = !isHourlyPackage && pkg.minNights === 1 && pkg.maxNights === 1
   
-  // For 1-night packages, use total directly; otherwise divide by duration
-  const pricePerNight = isOneNightPackage 
-    ? total 
-    : (pkg.baseRate ? total / effectiveDuration : total / Math.max(duration, 1))
+  // For fixed price packages, use baseRate directly (no division)
+  // For multiplier-based packages, calculate per-night rate
+  const pricePerNight = pkg.baseRate
+    ? (isOneNightPackage ? total : total / Math.max(effectiveDuration, 1))
+    : total / Math.max(duration, 1)
   
   const multiplierText = pkg.baseRate 
     ? 'Fixed package price' 
@@ -154,12 +153,12 @@ const PackageCard = ({
           <div className="text-right">
             <div className="text-2xl font-bold text-primary">R{total.toFixed(0)}</div>
             <div className="text-sm text-muted-foreground">
-              {isHalfDayPackage || (isHourlyPackage && duration === 1)
-                ? `R${pricePerNight.toFixed(0)} hourly`
+              {isHourlyPackage
+                ? `R${total.toFixed(0)}`
                 : isOneNightPackage 
-                  ? `R${pricePerNight.toFixed(0)} total`
+                  ? `R${total.toFixed(0)}`
                   : pkg.baseRate
-                    ? `~R${pricePerNight.toFixed(0)}/night · ${effectiveDuration} nights`
+                    ? `R${total.toFixed(0)}`
                     : `R${pricePerNight.toFixed(0)}/night`}
             </div>
             <div className="text-xs text-muted-foreground">
@@ -171,13 +170,11 @@ const PackageCard = ({
       <CardContent className="pt-0">
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            Duration: {isHalfDayPackage
+            Duration: {isHourlyPackage
               ? 'hourly'
-              : isHourlyPackage && pkg.minNights === 1 && pkg.maxNights === 1
-                ? 'hourly'
-                : pkg.minNights === pkg.maxNights 
-                  ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
-                  : `${pkg.minNights}-${pkg.maxNights} nights`
+              : pkg.minNights === pkg.maxNights 
+                ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
+                : `${pkg.minNights}-${pkg.maxNights} nights`
             }
           </div>
           <div className="space-y-1">
