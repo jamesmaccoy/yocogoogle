@@ -1484,14 +1484,14 @@ We trust that the above meets with your approval..`
         <CardHeader>
           <CardTitle>Beneficiary ledger</CardTitle>
           <CardDescription>
-            Records which beneficiaries were linked to bookings that generated short-term income.
+            Records which guests were linked to bookings that generated package money.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {beneficiariesLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading beneficiary records...
+              Loading guest records...
             </div>
           ) : beneficiaries.length > 0 ? (
             <div className="space-y-3">
@@ -1526,7 +1526,7 @@ We trust that the above meets with your approval..`
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No beneficiaries recorded yet. Once bookings include guests, their details will appear here for auditing.
+              No guests recorded yet. Once bookings include guests, their details will appear here for allocation.
             </p>
           )}
         </CardContent>
