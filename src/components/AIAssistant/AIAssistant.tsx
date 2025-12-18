@@ -1968,45 +1968,94 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       My Entitlements
                     </Button>
                     {currentContext?.context === 'booking-details' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs h-6 px-2"
-                        onClick={() => {
-                          try {
-                            const fromISO = currentContext?.booking?.fromDate
-                            const toISO = currentContext?.booking?.toDate
-                            const from = fromISO ? new Date(fromISO) : null
-                            const to = toISO ? new Date(toISO) : null
-                            const msPerDay = 24 * 60 * 60 * 1000
-                            const nights =
-                              from && to
-                                ? Math.max(1, Math.round((to.getTime() - from.getTime()) / msPerDay))
-                                : undefined
-                            const guestsArr = Array.isArray(currentContext?.guests?.guests)
-                              ? currentContext.guests.guests
-                              : []
-                            const guestCount = guestsArr.length || 0
-                            const guestPhrase =
-                              guestCount > 0
-                                ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}`
-                                : 'guests'
-                            const stayPhrase =
-                              typeof nights === 'number'
-                                ? `${nights} ${nights === 1 ? 'day' : 'days'}`
-                                : 'your stay'
-                            const summary = `Your booking includes ${guestPhrase} for ${stayPhrase}.`
-                            const msg = `Tell me about this booking. ${summary} Please include dates, package, payment status, and the guest list.`
-                            setInput(msg)
-                            handleSubmit(new Event('submit') as any)
-                          } catch {
-                            setInput('Tell me about this booking including the guest list and length of stay')
-                            handleSubmit(new Event('submit') as any)
-                          }
-                        }}
-                      >
-                        Tell me about this booking
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-6 px-2"
+                          onClick={() => {
+                            try {
+                              const fromISO = currentContext?.booking?.fromDate
+                              const toISO = currentContext?.booking?.toDate
+                              const from = fromISO ? new Date(fromISO) : null
+                              const to = toISO ? new Date(toISO) : null
+                              const msPerDay = 24 * 60 * 60 * 1000
+                              const nights =
+                                from && to
+                                  ? Math.max(1, Math.round((to.getTime() - from.getTime()) / msPerDay))
+                                  : undefined
+                              const guestsArr = Array.isArray(currentContext?.guests?.guests)
+                                ? currentContext.guests.guests
+                                : []
+                              const guestCount = guestsArr.length || 0
+                              const guestPhrase =
+                                guestCount > 0
+                                  ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}`
+                                  : 'guests'
+                              const stayPhrase =
+                                typeof nights === 'number'
+                                  ? `${nights} ${nights === 1 ? 'day' : 'days'}`
+                                  : 'your stay'
+                              const summary = `Your booking includes ${guestPhrase} for ${stayPhrase}.`
+                              const msg = `Tell me about this booking. ${summary} Please include dates, package, payment status, and the guest list.`
+                              setInput(msg)
+                              handleSubmit(new Event('submit') as any)
+                            } catch {
+                              setInput('Tell me about this booking including the guest list and length of stay')
+                              handleSubmit(new Event('submit') as any)
+                            }
+                          }}
+                        >
+                          Tell me about this booking
+                        </Button>
+                        {hasStandardOrPro && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 border-primary/20"
+                            onClick={() => {
+                              try {
+                                const bookingId = currentContext?.booking?.id
+                                const fromISO = currentContext?.booking?.fromDate
+                                const toISO = currentContext?.booking?.toDate
+                                
+                                if (bookingId) {
+                                  // Scroll to the reschedule section on the booking page
+                                  const rescheduleSection = document.getElementById('booking-reschedule')
+                                  if (rescheduleSection) {
+                                    rescheduleSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    // Try to open the calendar if it exists
+                                    setTimeout(() => {
+                                      const calendarButton = rescheduleSection.querySelector('button[aria-haspopup="dialog"]')
+                                      if (calendarButton) {
+                                        (calendarButton as HTMLElement).click()
+                                      }
+                                    }, 500)
+                                  } else {
+                                    // If section not found, navigate to booking page
+                                    window.location.href = `/bookings/${bookingId}#reschedule`
+                                  }
+                                } else {
+                                  const from = fromISO ? new Date(fromISO) : null
+                                  const to = toISO ? new Date(toISO) : null
+                                  const dateInfo = from && to 
+                                    ? `Current dates: ${format(from, 'MMM d')} - ${format(to, 'MMM d, yyyy')}. `
+                                    : ''
+                                  const msg = `Help me reschedule my booking. ${dateInfo}I want to change the dates but keep the same package and duration. Show me available dates and guide me through the reschedule process.`
+                                  setInput(msg)
+                                  handleSubmit(new Event('submit') as any)
+                                }
+                              } catch {
+                                const msg = 'Help me reschedule my booking. I need to change my booking dates while keeping the same package.'
+                                setInput(msg)
+                                handleSubmit(new Event('submit') as any)
+                              }
+                            }}
+                          >
+                            🔄 Reschedule
+                          </Button>
+                        )}
+                      </>
                     )}
                     {isHostOrAdmin && (
                       <Button

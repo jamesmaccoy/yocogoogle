@@ -977,6 +977,11 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                             baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0 ? Number(data.post.baseRate) : 150)}
                             packageMinNights={packageSnapshot?.minNights ?? null}
                             packageMaxNights={packageSnapshot?.maxNights ?? null}
+                            isReschedule={true}
+                            originalBookingDates={data?.fromDate && data?.toDate ? {
+                              from: new Date(data.fromDate),
+                              to: new Date(data.toDate)
+                            } : null}
                             onEstimateRequest={async (dates) => {
                               setIsSubmittingEstimate(true)
                               setEstimateError(null)
@@ -987,18 +992,9 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                   throw new Error('No post ID found')
                                 }
 
-                                const availabilityResponse = await fetch(
-                                  `/api/bookings/check-availability?postId=${postId}&startDate=${dates.from.toISOString()}&endDate=${dates.to.toISOString()}`,
-                                )
-
-                                if (!availabilityResponse.ok) {
-                                  throw new Error('Failed to check availability')
-                                }
-
-                                const availabilityData = await availabilityResponse.json()
-
-                                if (!availabilityData.isAvailable) {
-                                  throw new Error('The selected dates are not available. Please choose different dates.')
+                                // Use original booking's package for reschedule
+                                if (!packageSnapshot?.id) {
+                                  throw new Error('Original booking package not found. Cannot reschedule.')
                                 }
 
                                 const fromDateObj = new Date(dates.from)
@@ -1008,8 +1004,58 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                   Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
                                 )
 
+                                // Validate duration matches original package constraints
+                                const minNights = packageSnapshot?.minNights ?? null
+                                const maxNights = packageSnapshot?.maxNights ?? null
+                                
+                                // Calculate original booking duration for comparison
+                                const originalDuration = bookingDuration ?? null
+                                
+                                if (minNights !== null && duration < minNights) {
+                                  const durationText = minNights === 1 ? 'night' : 'nights'
+                                  throw new Error(
+                                    `⚠️ Duration mismatch: This package requires a minimum of ${minNights} ${durationText}. ` +
+                                    `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
+                                    `Please select dates that match the package duration requirements.`
+                                  )
+                                }
+                                
+                                if (maxNights !== null && duration > maxNights) {
+                                  const durationText = maxNights === 1 ? 'night' : 'nights'
+                                  throw new Error(
+                                    `⚠️ Duration mismatch: This package allows a maximum of ${maxNights} ${durationText}. ` +
+                                    `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
+                                    `Please select dates that match the package duration requirements.`
+                                  )
+                                }
+                                
+                                // Warn if duration changed significantly (optional check)
+                                if (originalDuration && Math.abs(duration - originalDuration) > 0) {
+                                  console.log(`Duration changed from ${originalDuration} to ${duration} nights`)
+                                  // This is allowed, just log it
+                                }
+
+                                // Check availability with the original package
+                                const packageId = packageSnapshot.id
+                                const availabilityResponse = await fetch(
+                                  `/api/bookings/check-availability?postId=${postId}&startDate=${dates.from.toISOString()}&endDate=${dates.to.toISOString()}&packageId=${packageId}`,
+                                )
+
+                                if (!availabilityResponse.ok) {
+                                  throw new Error('Failed to check availability')
+                                }
+
+                                const availabilityData = await availabilityResponse.json()
+
+                                if (!availabilityData.isAvailable) {
+                                  const suggestedDates = availabilityData.suggestedDates || []
+                                  if (suggestedDates.length > 0) {
+                                    throw new Error('The selected dates are not available for this package. Please see suggested dates below.')
+                                  }
+                                  throw new Error('The selected dates are not available for this package. Please choose different dates.')
+                                }
+
                                 // Get package cost or post base rate
-                                // Use packageSnapshot's baseRate which already handles the logic correctly
                                 const baseRate = packageSnapshot?.baseRate ?? 
                                   (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0
                                     ? Number(data.post.baseRate)
@@ -1022,19 +1068,18 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     ? Number(selectedPackage.package.baseRate)
                                     : null
 
-                                const packagesResponse = await fetch(`/api/packages/post/${postId}`)
-                                const packagesData = packagesResponse.ok ? await packagesResponse.json() : { packages: [] }
-                                const availablePackagesForEstimate = packagesData.packages || []
-                                const firstPackage = availablePackagesForEstimate.find((pkg: any) => pkg.isEnabled)
-
-                                if (!firstPackage) {
-                                  throw new Error('No packages available for this property')
-                                }
-
-                                // Calculate total: if package has baseRate, use it directly; otherwise calculate from baseRate
+                                // Calculate total using original package
+                                const multiplier = packageSnapshot?.multiplier ?? 1
                                 const total = packageBaseRate 
                                   ? packageBaseRate 
-                                  : calculateTotal(baseRate, duration, firstPackage.multiplier || 1)
+                                  : calculateTotal(baseRate, duration, multiplier)
+
+                                // Use original booking's package for the estimate
+                                const originalPackageType = packageSnapshot.id || data?.packageType
+                                
+                                if (!originalPackageType) {
+                                  throw new Error('Original package type not found. Cannot reschedule.')
+                                }
 
                                 const resp = await fetch('/api/estimates', {
                                   method: 'POST',
@@ -1044,8 +1089,8 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     fromDate: dates.from.toISOString(),
                                     toDate: dates.to.toISOString(),
                                     guests: [],
-                                    title: `New estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
-                                    packageType: firstPackage.id,
+                                    title: `Reschedule estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
+                                    packageType: originalPackageType,
                                     total,
                                   }),
                                 })

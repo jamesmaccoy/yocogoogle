@@ -12,6 +12,7 @@ import { format } from 'date-fns'
 import { Media } from '@/components/Media'
 import { hasUnavailableDateBetween } from '@/utilities/hasUnavailableDateBetween'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
+import { cn } from '@/utilities/cn'
 
 interface BookingInfoCardProps {
   postImage?: any
@@ -27,6 +28,8 @@ interface BookingInfoCardProps {
   baseRate?: number
   packageMinNights?: number | null
   packageMaxNights?: number | null
+  isReschedule?: boolean
+  originalBookingDates?: { from: Date; to: Date } | null
 }
 
 export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
@@ -43,6 +46,8 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
   postId,
   packageMinNights,
   packageMaxNights,
+  isReschedule = false,
+  originalBookingDates = null,
 }) => {
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
@@ -240,6 +245,9 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
     }
   }, [checkAvailability])
 
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [pendingDates, setPendingDates] = useState<{ from: Date; to: Date } | null>(null)
+
   const canSubmit = !!dateRange?.from && !!dateRange?.to && !!onEstimateRequest && !isSubmittingEstimate && !isCheckingAvailability && !availabilityError
 
   const handleSubmit = async () => {
@@ -251,18 +259,47 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
       return
     }
     
+    // For reschedule, show confirmation dialog
+    if (isReschedule) {
+      setPendingDates({ from: dateRange.from, to: dateRange.to })
+      setShowConfirmation(true)
+      setIsCalendarOpen(false)
+      return
+    }
+    
     await onEstimateRequest({ from: dateRange.from, to: dateRange.to })
     setIsCalendarOpen(false)
     setDateRange(undefined)
     setSuggestedDates([])
   }
 
+  const handleConfirmReschedule = async () => {
+    if (!pendingDates || !onEstimateRequest) return
+    
+    await onEstimateRequest({ from: pendingDates.from, to: pendingDates.to })
+    setShowConfirmation(false)
+    setPendingDates(null)
+    setDateRange(undefined)
+    setSuggestedDates([])
+  }
+
+  const handleCancelReschedule = () => {
+    setShowConfirmation(false)
+    setPendingDates(null)
+    // Restore the date range so user can try again
+    if (dateRange) {
+      setDateRange(dateRange)
+    }
+  }
+
   const selectedLabel = dateRange?.from && dateRange?.to
     ? `${format(dateRange.from, 'MMM dd, yyyy')} → ${format(dateRange.to, 'MMM dd, yyyy')}`
-    : 'Select dates for a new estimate'
+    : isReschedule 
+      ? 'Select new dates for reschedule'
+      : 'Select dates for a new estimate'
 
   return (
-    <Card className="overflow-hidden border-2">
+    <Card id="booking-reschedule" className="overflow-hidden border-2">
       <CardHeader className="space-y-4 bg-muted/40">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -317,7 +354,24 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
         </div>
 
         <div className="space-y-3">
-          <div className="text-sm font-medium">Request a new estimate</div>
+          {isReschedule ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-foreground">Reschedule Booking</div>
+                <Badge variant="outline" className="text-xs">Important</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Select new dates that match your original package duration. Your booking will be updated once confirmed.
+              </p>
+              {originalBookingDates && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <span className="font-medium">Current dates:</span> {format(originalBookingDates.from, 'MMM dd, yyyy')} → {format(originalBookingDates.to, 'MMM dd, yyyy')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-sm font-medium">Request a new estimate</div>
+          )}
           {/* Show suggested dates when unavailable */}
           {suggestedDates.length > 0 && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-3">
@@ -360,12 +414,12 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <div className="p-4">
+              <div className={cn("p-3", isReschedule && "p-2")}>
                 <Calendar
                   mode="range"
                   selected={dateRange}
                   onSelect={handleDateRangeChange}
-                  numberOfMonths={2}
+                  numberOfMonths={isReschedule ? 1 : 2}
                   initialFocus
                   disabled={(date) => {
                     const today = new Date()
@@ -410,11 +464,71 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
               </div>
             </PopoverContent>
           </Popover>
-          <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full">
-            {isSubmittingEstimate ? 'Preparing estimate…' : isCheckingAvailability ? 'Checking availability…' : 'Create New Estimate'}
-          </Button>
+          {showConfirmation && pendingDates ? (
+            <div className="space-y-3 rounded-lg border-2 border-primary/20 bg-primary/5 p-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">⚠️ Confirm Reschedule</div>
+                  <Badge variant="destructive" className="text-xs">Important</Badge>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-2">
+                  <p className="font-medium text-foreground">You are about to change your booking dates:</p>
+                  <div className="space-y-1 pl-2 border-l-2 border-muted">
+                    {originalBookingDates && (
+                      <div>
+                        <span className="font-medium">Current:</span> {format(originalBookingDates.from, 'MMM dd, yyyy')} → {format(originalBookingDates.to, 'MMM dd, yyyy')}
+                        <span className="ml-2 text-muted-foreground">
+                          ({Math.round((originalBookingDates.to.getTime() - originalBookingDates.from.getTime()) / (1000 * 60 * 60 * 24))} {Math.round((originalBookingDates.to.getTime() - originalBookingDates.from.getTime()) / (1000 * 60 * 60 * 24)) === 1 ? 'night' : 'nights'})
+                        </span>
+                      </div>
+                    )}
+                    <div className="font-medium text-primary">
+                      <span className="font-semibold">New:</span> {format(pendingDates.from, 'MMM dd, yyyy')} → {format(pendingDates.to, 'MMM dd, yyyy')}
+                      <span className="ml-2 text-muted-foreground">
+                        ({Math.round((pendingDates.to.getTime() - pendingDates.from.getTime()) / (1000 * 60 * 60 * 24))} {Math.round((pendingDates.to.getTime() - pendingDates.from.getTime()) / (1000 * 60 * 60 * 24)) === 1 ? 'night' : 'nights'})
+                      </span>
+                    </div>
+                  </div>
+                  <p className="pt-1 text-xs">
+                    Your package and pricing will remain the same. A new estimate will be created for your review.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handleConfirmReschedule} 
+                  disabled={isSubmittingEstimate}
+                  className="flex-1"
+                  variant="default"
+                >
+                  {isSubmittingEstimate ? 'Processing…' : 'Confirm Reschedule'}
+                </Button>
+                <Button 
+                  onClick={handleCancelReschedule}
+                  disabled={isSubmittingEstimate}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full">
+              {isSubmittingEstimate 
+                ? 'Preparing estimate…' 
+                : isCheckingAvailability 
+                  ? 'Checking availability…' 
+                  : isReschedule
+                    ? 'Continue to Reschedule'
+                    : 'Create New Estimate'}
+            </Button>
+          )}
           {availabilityError && (
             <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {isReschedule && (
+                <div className="font-semibold mb-1">⚠️ Cannot reschedule to these dates</div>
+              )}
               {availabilityError}
             </div>
           )}
