@@ -173,7 +173,7 @@ export interface Booking {
   slug?: string | null;
   slugLock?: boolean | null;
   post: string | Post;
-  paymentStatus?: ('paid' | 'unpaid') | null;
+  paymentStatus?: ('paid' | 'unpaid' | 'cancelled') | null;
   fromDate: string;
   toDate?: string | null;
   packageType?: string | null;
@@ -884,11 +884,56 @@ export interface Form {
 export interface YocoTransaction {
   id: string;
   user: string | User;
-  intent: 'booking' | 'subscription' | 'product';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  /**
+   * Notification type (required for notifications)
+   */
+  type?:
+    | (
+        | 'booking_created'
+        | 'booking_updated'
+        | 'booking_cancelled'
+        | 'booking_rescheduled'
+        | 'addon_purchased'
+        | 'payment_received'
+        | 'estimate_created'
+        | 'estimate_confirmed'
+        | 'subscription_renewed'
+        | 'subscription_cancelled'
+      )
+    | null;
+  /**
+   * Notification title (required for notifications)
+   */
+  title?: string | null;
+  /**
+   * Notification description
+   */
+  description?: string | null;
+  /**
+   * Whether the notification has been read
+   */
+  read?: boolean | null;
+  /**
+   * URL to navigate to when notification is clicked
+   */
+  actionUrl?: string | null;
+  /**
+   * Transaction intent (optional for notification-only records)
+   */
+  intent?: ('booking' | 'subscription' | 'product' | 'notification') | null;
+  /**
+   * Transaction status (optional for notification-only records)
+   */
+  status?: ('pending' | 'completed' | 'failed' | 'cancelled') | null;
   productId?: string | null;
-  packageName: string;
-  amount: number;
+  /**
+   * Package name (used for both transactions and notifications)
+   */
+  packageName?: string | null;
+  /**
+   * Transaction amount (optional for notification-only records)
+   */
+  amount?: number | null;
   currency?: string | null;
   paymentLinkId?: string | null;
   paymentUrl?: string | null;
@@ -897,6 +942,15 @@ export interface YocoTransaction {
   periodDays?: number | null;
   expiresAt?: string | null;
   completedAt?: string | null;
+  relatedBooking?: (string | null) | Booking;
+  relatedEstimate?: (string | null) | Estimate;
+  /**
+   * Related transaction (for notification records)
+   */
+  relatedTransaction?: (string | null) | YocoTransaction;
+  /**
+   * Additional metadata (package info, changes, etc.)
+   */
   metadata?:
     | {
         [k: string]: unknown;
@@ -1690,6 +1744,11 @@ export interface AuthRequestsSelect<T extends boolean = true> {
  */
 export interface YocoTransactionsSelect<T extends boolean = true> {
   user?: T;
+  type?: T;
+  title?: T;
+  description?: T;
+  read?: T;
+  actionUrl?: T;
   intent?: T;
   status?: T;
   productId?: T;
@@ -1703,6 +1762,9 @@ export interface YocoTransactionsSelect<T extends boolean = true> {
   periodDays?: T;
   expiresAt?: T;
   completedAt?: T;
+  relatedBooking?: T;
+  relatedEstimate?: T;
+  relatedTransaction?: T;
   metadata?: T;
   updatedAt?: T;
   createdAt?: T;

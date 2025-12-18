@@ -1,11 +1,21 @@
 import type { CollectionConfig } from 'payload'
 import { isAdmin } from '../../access/isAdmin'
+import { createTransactionNotificationHook } from './hooks/createNotification'
 
+/**
+ * Consolidated YocoTransactions & Notifications collection
+ * Handles both payment transactions and user notifications as the same concept
+ * Transaction fields are optional for notification-only records
+ */
 export const YocoTransactions: CollectionConfig = {
   slug: 'yoco-transactions',
+  labels: {
+    singular: 'Transaction / Notification',
+    plural: 'Transactions / Notifications',
+  },
   admin: {
-    useAsTitle: 'packageName',
-    defaultColumns: ['user', 'packageName', 'status', 'amount', 'intent', 'entitlement', 'expiresAt'],
+    useAsTitle: 'title', // Falls back to packageName if title is empty
+    defaultColumns: ['title', 'packageName', 'type', 'status', 'user', 'read', 'amount', 'createdAt'],
   },
   access: {
     create: () => true,
@@ -39,7 +49,59 @@ export const YocoTransactions: CollectionConfig = {
       type: 'relationship',
       relationTo: 'users',
       required: true,
+      index: true,
     },
+    // Notification fields (for all records)
+    {
+      name: 'type',
+      type: 'select',
+      options: [
+        { label: 'Booking Created', value: 'booking_created' },
+        { label: 'Booking Updated', value: 'booking_updated' },
+        { label: 'Booking Cancelled', value: 'booking_cancelled' },
+        { label: 'Booking Rescheduled', value: 'booking_rescheduled' },
+        { label: 'Add-on Purchased', value: 'addon_purchased' },
+        { label: 'Payment Received', value: 'payment_received' },
+        { label: 'Estimate Created', value: 'estimate_created' },
+        { label: 'Estimate Confirmed', value: 'estimate_confirmed' },
+        { label: 'Subscription Renewed', value: 'subscription_renewed' },
+        { label: 'Subscription Cancelled', value: 'subscription_cancelled' },
+      ],
+      admin: {
+        description: 'Notification type (required for notifications)',
+      },
+    },
+    {
+      name: 'title',
+      type: 'text',
+      admin: {
+        description: 'Notification title (required for notifications)',
+      },
+    },
+    {
+      name: 'description',
+      type: 'textarea',
+      admin: {
+        description: 'Notification description',
+      },
+    },
+    {
+      name: 'read',
+      type: 'checkbox',
+      defaultValue: false,
+      admin: {
+        description: 'Whether the notification has been read',
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'actionUrl',
+      type: 'text',
+      admin: {
+        description: 'URL to navigate to when notification is clicked',
+      },
+    },
+    // Transaction fields (optional, for payment transactions)
     {
       name: 'intent',
       type: 'select',
@@ -47,9 +109,12 @@ export const YocoTransactions: CollectionConfig = {
         { label: 'Booking', value: 'booking' },
         { label: 'Subscription', value: 'subscription' },
         { label: 'Product', value: 'product' },
+        { label: 'Notification Only', value: 'notification' },
       ],
       defaultValue: 'product',
-      required: true,
+      admin: {
+        description: 'Transaction intent (optional for notification-only records)',
+      },
     },
     {
       name: 'status',
@@ -61,7 +126,9 @@ export const YocoTransactions: CollectionConfig = {
         { label: 'Cancelled', value: 'cancelled' },
       ],
       defaultValue: 'pending',
-      required: true,
+      admin: {
+        description: 'Transaction status (optional for notification-only records)',
+      },
     },
     {
       name: 'productId',
@@ -70,14 +137,16 @@ export const YocoTransactions: CollectionConfig = {
     {
       name: 'packageName',
       type: 'text',
-      required: true,
+      admin: {
+        description: 'Package name (used for both transactions and notifications)',
+      },
     },
     {
       name: 'amount',
       type: 'number',
-      required: true,
       admin: {
         step: 0.01,
+        description: 'Transaction amount (optional for notification-only records)',
       },
     },
     {
@@ -127,11 +196,65 @@ export const YocoTransactions: CollectionConfig = {
       name: 'completedAt',
       type: 'date',
     },
+    // Relationships (for notifications)
+    {
+      name: 'relatedBooking',
+      type: 'relationship',
+      relationTo: 'bookings',
+      required: false,
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'relatedEstimate',
+      type: 'relationship',
+      relationTo: 'estimates',
+      required: false,
+      admin: {
+        position: 'sidebar',
+      },
+    },
+    {
+      name: 'relatedTransaction',
+      type: 'relationship',
+      relationTo: 'yoco-transactions',
+      required: false,
+      admin: {
+        description: 'Related transaction (for notification records)',
+        position: 'sidebar',
+      },
+    },
     {
       name: 'metadata',
       type: 'json',
+      admin: {
+        description: 'Additional metadata (package info, changes, etc.)',
+      },
     },
   ],
+  hooks: {
+    afterChange: [createTransactionNotificationHook],
+  },
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['user', 'createdAt'],
+    },
+    {
+      fields: ['user', 'read'],
+    },
+    {
+      fields: ['type'],
+    },
+    {
+      fields: ['status'],
+    },
+  ],
+  versions: {
+    drafts: false,
+    maxPerDoc: 20, // Keep transaction/notification history
+  },
 }
 
 export default YocoTransactions

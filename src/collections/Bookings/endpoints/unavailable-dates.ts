@@ -50,18 +50,30 @@ export const unavailableDates: Endpoint = {
 
       // Find all bookings for this post with package information
       // Use depth: 1 to properly populate the selectedPackage relationship
+      // Exclude cancelled bookings (paymentStatus: 'cancelled') so their dates become available
       const bookings = await req.payload.find({
         collection: 'bookings',
         where: {
-          post: {
-            equals: resolvedPostId,
-          },
+          and: [
+            {
+              post: {
+                equals: resolvedPostId,
+              },
+            },
+            {
+              // Exclude cancelled bookings - they free up dates for other customers
+              paymentStatus: {
+                not_equals: 'cancelled',
+              },
+            },
+          ],
         },
         limit: 1000,
         select: {
           fromDate: true,
           toDate: true,
           selectedPackage: true,
+          paymentStatus: true,
         },
         depth: 1, // Increased depth to properly resolve selectedPackage.package relationship
       })

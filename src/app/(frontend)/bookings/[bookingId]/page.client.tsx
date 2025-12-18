@@ -1092,6 +1092,12 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
                                     title: `Reschedule estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
                                     packageType: originalPackageType,
                                     total,
+                                    originalBooking: data.id, // Link to original booking for reschedule context
+                                    selectedPackage: { // Pass selectedPackage details
+                                      package: packageSnapshot.id,
+                                      customName: packageSnapshot.customName || packageSnapshot.name,
+                                      enabled: true,
+                                    },
                                   }),
                                 })
 

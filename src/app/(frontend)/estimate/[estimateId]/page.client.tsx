@@ -20,6 +20,7 @@ import { Media } from '@/components/Media'
 import { formatDateTime } from '@/utilities/formatDateTime'
 import { UserIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
@@ -285,6 +286,21 @@ type Props = {
 export default function EstimateDetailsClientPage({ data, user }: Props) {
   const { createPaymentLinkFromDatabase } = useYoco()
   const router = useRouter()
+
+  // Check if this is a reschedule estimate (has originalBooking)
+  const originalBooking = typeof data?.originalBooking === 'object' ? data.originalBooking : null
+  const isReschedule = !!originalBooking
+  const originalBookingPaid = originalBooking?.paymentStatus === 'paid'
+  const originalBookingTotal = originalBooking?.total ? Number(originalBooking.total) : null
+  const originalBookingDuration = originalBooking?.fromDate && originalBooking?.toDate
+    ? Math.max(
+        1,
+        Math.round(
+          (new Date(originalBooking.toDate).getTime() - new Date(originalBooking.fromDate).getTime()) /
+            (1000 * 60 * 60 * 24),
+        ),
+      )
+    : null
 
   // Helper function to get display name from either package type
   const getPackageDisplayName = (pkg: PostPackage | null): string => {
@@ -614,6 +630,26 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
             package: selectedPackage.id,
             customName: selectedPackage.name,
             enabled: true,
+          }
+        }
+
+        // If this is a reschedule, cancel the original booking first
+        if (isReschedule && originalBooking?.id) {
+          try {
+            await fetch(`/api/bookings/${originalBooking.id}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                paymentStatus: 'cancelled', // Mark original booking as cancelled
+                // Keep dates but mark as cancelled so unavailable-dates excludes it
+              }),
+            })
+            console.log('✅ Original booking cancelled:', originalBooking.id)
+          } catch (cancelError) {
+            console.error('⚠️ Failed to cancel original booking:', cancelError)
+            // Continue with new booking creation even if cancellation fails
           }
         }
 
@@ -970,7 +1006,17 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   </div>
                   <div className="flex justify-between items-center mb-6">
                     <span className="text-muted-foreground">Total:</span>
-                    {isSubscribed && isPackageIncludedInSubscription ? (
+                    {originalBookingPaid ? (
+                      <div className="flex flex-col items-end">
+                        <span className="text-2xl font-bold text-green-600">Paid</span>
+                        <span className="text-xs text-muted-foreground line-through">{formatPrice(bookingTotal)}</span>
+                        {originalBookingTotal && originalBookingTotal !== bookingTotal && (
+                          <span className="text-xs text-muted-foreground mt-1">
+                            Original: {formatPrice(originalBookingTotal)}
+                          </span>
+                        )}
+                      </div>
+                    ) : isSubscribed && isPackageIncludedInSubscription ? (
                       <div className="flex flex-col items-end">
                         <span className="text-2xl font-bold text-green-600">Paid</span>
                         <span className="text-xs text-muted-foreground line-through">{formatPrice(bookingTotal)}</span>
@@ -979,6 +1025,90 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                       <span className="text-2xl font-bold">{formatPrice(bookingTotal)}</span>
                     )}
                   </div>
+                  
+                  {/* Reschedule Comparison Banner */}
+                  {isReschedule && originalBooking && (
+                    <div className="mt-4 rounded-lg border-2 border-primary/20 bg-primary/5 p-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">🔄 Reschedule Comparison</span>
+                        <Badge variant="outline" className="text-xs">Important</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <div className="text-muted-foreground mb-1">Original Booking</div>
+                          <div className="font-medium">
+                            {originalBooking.fromDate && originalBooking.toDate && (
+                              <>
+                                {format(new Date(originalBooking.fromDate), 'MMM dd')} - {format(new Date(originalBooking.toDate), 'MMM dd')}
+                                {originalBookingDuration && (
+                                  <span className="text-muted-foreground ml-1">({originalBookingDuration} {originalBookingDuration === 1 ? 'night' : 'nights'})</span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          {originalBookingTotal && (
+                            <div className="text-muted-foreground mt-1">{formatPrice(originalBookingTotal)}</div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground mb-1">New Dates</div>
+                          <div className="font-medium text-primary">
+                            {data.fromDate && data.toDate && (
+                              <>
+                                {format(new Date(data.fromDate), 'MMM dd')} - {format(new Date(data.toDate), 'MMM dd')}
+                                {_bookingDuration && (
+                                  <span className="text-muted-foreground ml-1">({_bookingDuration} {_bookingDuration === 1 ? 'night' : 'nights'})</span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground mt-1">{formatPrice(bookingTotal)}</div>
+                        </div>
+                      </div>
+                      {originalBookingTotal && originalBookingTotal !== bookingTotal && (
+                        <div className="pt-2 border-t border-border">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-muted-foreground">Price difference:</span>
+                            <span className={`font-semibold ${bookingTotal > originalBookingTotal ? 'text-orange-600' : 'text-green-600'}`}>
+                              {bookingTotal > originalBookingTotal ? '+' : ''}{formatPrice(bookingTotal - originalBookingTotal)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Token Consumption Info for Reschedule */}
+                  {isReschedule && latestTokenUsage && (
+                    <div className="mt-4 rounded-md border border-border bg-muted/40 p-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        Token Consumption
+                      </h3>
+                      <div className="space-y-1 text-xs">
+                        {latestTokenUsage.total !== null && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Total tokens:</span>
+                            <span className="font-medium">{latestTokenUsage.total.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {latestTokenUsage.prompt !== null && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Prompt tokens:</span>
+                            <span className="font-medium">{latestTokenUsage.prompt.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {latestTokenUsage.candidates !== null && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Response tokens:</span>
+                            <span className="font-medium">{latestTokenUsage.candidates.toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        These tokens will be deducted from your monthly subscription allowance.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
               

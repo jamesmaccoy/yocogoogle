@@ -479,6 +479,10 @@ export const Booking: CollectionConfig = {
     beforeChange: [checkAvailabilityHook],
     afterChange: [sendBookingConfirmationHook],
   },
+  versions: {
+    drafts: false, // We don't need drafts for bookings
+    maxPerDoc: 50, // Keep last 50 versions for history
+  },
   fields: [
     {
       name: 'title',
@@ -590,6 +594,10 @@ export const Booking: CollectionConfig = {
         {
           label: 'Unpaid',
           value: 'unpaid',
+        },
+        {
+          label: 'Cancelled',
+          value: 'cancelled',
         },
       ],
       access: {

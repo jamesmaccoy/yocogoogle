@@ -253,10 +253,11 @@ export default async function BookingConfirmationPage({
         }
       }
       
-      // Get the estimate
+      // Get the estimate with originalBooking populated
       const estimate = await payload.findByID({
         collection: 'estimates',
         id: estimateId,
+        depth: 2, // Populate originalBooking relationship
       })
 
       if (!estimate) {
@@ -266,12 +267,18 @@ export default async function BookingConfirmationPage({
         const estimateCustomerId = typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id
         const isCustomerMatch = estimateCustomerId === user.id
 
+        // Check if this is a reschedule (has originalBooking)
+        const originalBooking = typeof estimate.originalBooking === 'object' ? estimate.originalBooking : null
+        const isReschedule = !!originalBooking
+
         console.log('Estimate found:', {
           estimateId: estimate.id,
           estimateCustomerId,
           userId: user.id,
           isCustomerMatch,
           transactionValidated,
+          isReschedule,
+          originalBookingId: originalBooking?.id,
           postId: estimate.post ? (typeof estimate.post === 'string' ? estimate.post : estimate.post.id) : null,
           fromDate: estimate.fromDate,
           toDate: estimate.toDate
@@ -280,6 +287,23 @@ export default async function BookingConfirmationPage({
         if (isCustomerMatch) {
           // Only confirm estimate if transaction is validated (or in development with mock)
           if (transactionValidated || (process.env.NODE_ENV !== 'production' && transactionId)) {
+            // If this is a reschedule, cancel the original booking first to free up dates
+            if (isReschedule && originalBooking?.id) {
+              try {
+                await payload.update({
+                  collection: 'bookings',
+                  id: originalBooking.id,
+                  data: {
+                    paymentStatus: 'cancelled', // Mark original booking as cancelled
+                  },
+                })
+                console.log('✅ Original booking cancelled:', originalBooking.id, '- Dates are now available for other customers')
+              } catch (cancelError) {
+                console.error('⚠️ Failed to cancel original booking:', cancelError)
+                // Continue with booking creation even if cancellation fails
+              }
+            }
+
             // Confirm the estimate
             await payload.update({
               collection: 'estimates',
