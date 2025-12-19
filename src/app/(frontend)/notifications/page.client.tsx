@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Notification, User } from '@/payload-types'
+import { YocoTransaction, User } from '@/payload-types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,7 +26,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/utilities/cn'
 
 type Props = {
-  initialNotifications: Notification[]
+  initialNotifications: YocoTransaction[]
   user: User
 }
 
@@ -57,13 +57,19 @@ const typeColors: Record<string, string> = {
 }
 
 export default function NotificationsClient({ initialNotifications, user }: Props) {
-  const [notifications, setNotifications] = useState<Notification[]>(initialNotifications)
+  const [notifications, setNotifications] = useState<YocoTransaction[]>(initialNotifications)
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   const [expandedNotifications, setExpandedNotifications] = useState<Set<string>>(new Set())
   const [versionHistory, setVersionHistory] = useState<Record<string, any[]>>({})
   const [loadingVersions, setLoadingVersions] = useState<Set<string>>(new Set())
+  const [mounted, setMounted] = useState(false)
   const router = useRouter()
+
+  // Prevent hydration mismatch by only rendering after mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const fetchNotifications = async () => {
     setLoading(true)
@@ -287,7 +293,11 @@ export default function NotificationsClient({ initialNotifications, user }: Prop
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {format(new Date(notification.createdAt), 'MMM d, yyyy h:mm a')}
+                      {mounted && notification.createdAt 
+                        ? format(new Date(notification.createdAt), 'MMM d, yyyy h:mm a')
+                        : notification.createdAt 
+                          ? new Date(notification.createdAt).toLocaleDateString()
+                          : 'Unknown date'}
                     </div>
                   </div>
                 </CardHeader>

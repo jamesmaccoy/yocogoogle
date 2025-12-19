@@ -164,8 +164,13 @@ export async function PATCH(
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     }
 
-    // Check if user is authorized (admin or booking owner)
-    const isAdmin = Array.isArray(user.role) ? user.role.includes('admin') : user.role === 'admin'
+    // Check if user is authorized (admin, host, booking owner, or guest)
+    const role = user.role
+    const roleArray = Array.isArray(role) ? role : role ? [role] : []
+    const isAdmin = roleArray.includes('admin')
+    const isHost = roleArray.includes('host')
+    const isAdminOrHost = isAdmin || isHost
+    
     const bookingCustomerId = typeof booking.customer === 'string' ? booking.customer : booking.customer?.id
     const isOwner = bookingCustomerId === user.id
 
@@ -174,22 +179,40 @@ export async function PATCH(
       (guest) => (typeof guest === 'string' ? guest : guest?.id) === user.id
     )
 
-    if (!isAdmin && !isOwner && !isGuest) {
+    if (!isAdminOrHost && !isOwner && !isGuest) {
       return NextResponse.json({ error: 'Not authorized to update this booking' }, { status: 403 })
     }
 
+    // Build update data object
+    const updateData: any = {}
+
+    // Only admin/host can update customer field
+    if (body.customer !== undefined) {
+      if (!isAdminOrHost) {
+        return NextResponse.json({ 
+          error: 'Only administrators and hosts can change the customer on a booking' 
+        }, { status: 403 })
+      }
+      updateData.customer = body.customer
+    }
+
+    // Validate and update dates (allowed for admin/host/owner/guest)
+    if (fromDate !== undefined) {
+      updateData.fromDate = fromDate
+    }
+    
+    if (toDate !== undefined) {
+      updateData.toDate = toDate || null
+    }
+
     // Validate date range if both dates are provided
-    if (toDate && fromDate >= toDate) {
+    if (updateData.fromDate && updateData.toDate && updateData.fromDate >= updateData.toDate) {
       return NextResponse.json({ error: 'Start date must be before end date' }, { status: 400 })
     }
 
-    // Update the booking with new dates
-    const updateData: { fromDate: string; toDate?: string | null } = {
-      fromDate: fromDate,
-    }
-
-    if (toDate !== undefined) {
-      updateData.toDate = toDate || null
+    // If no valid updates, return error
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
     }
 
     const updatedBooking = await payload.update({

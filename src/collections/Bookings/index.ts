@@ -1,5 +1,6 @@
 import { adminOrSelfField } from '@/access/adminOrSelfField'
 import { isAdminField } from '@/access/isAdminField'
+import { isHostField } from '@/access/isHostField'
 import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 
@@ -503,7 +504,14 @@ export const Booking: CollectionConfig = {
       //   },
       // },
       access: {
-        update: isAdminField,
+        // Only admin and host can change the customer field
+        // Customers cannot change who the booking belongs to
+        update: ({ req: { user } }) => {
+          if (!user) return false
+          const role = user.role
+          const roleArray = Array.isArray(role) ? role : role ? [role] : []
+          return roleArray.includes('admin') || roleArray.includes('host')
+        },
       },
     },
     {

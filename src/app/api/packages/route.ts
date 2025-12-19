@@ -47,7 +47,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const body = await request.json()
+    // Handle different content types
+    let body: any
+    const contentType = request.headers.get('content-type') || ''
+    
+    if (contentType.includes('application/json')) {
+      body = await request.json()
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const formData = await request.formData()
+      body = Object.fromEntries(formData.entries())
+    } else {
+      // Try JSON first, fallback to text
+      try {
+        const text = await request.text()
+        body = text ? JSON.parse(text) : {}
+      } catch {
+        body = {}
+      }
+    }
     
     const packageDoc = await payload.create({
       collection: 'packages',
