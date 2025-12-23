@@ -100,9 +100,9 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
         </section>
       )}
 
-      {/* Cinematic Image Section */}
+      {/* Cinematic Video Section */}
       <CinematicSection
-        image={featured[0]?.meta?.image || featured[0]?.heroImage}
+        videoUrl="https://youtu.be/9N8cK58xrfM?si=tAgALtEfAajoLBUq"
         title="Unforgettable Moments"
         subtitle="Experience"
         ctaText="Discover Our Story"
