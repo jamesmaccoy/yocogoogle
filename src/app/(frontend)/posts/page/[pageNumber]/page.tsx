@@ -34,31 +34,45 @@ export default async function Page({ params: paramsPromise }: Args) {
   })
 
   return (
-    <div className="pt-24 pb-24">
+    <main className="bg-[#faf9f7] min-h-screen">
       <PageClient />
-      <div className="container mb-16">
-        <div className="prose dark:prose-invert max-w-none">
-          <h1>Posts</h1>
+      <div className="pt-24 pb-24">
+        {/* Header Section */}
+        <div className="container mb-16">
+          <div className="max-w-4xl">
+            <h1 className="font-serif-display text-5xl md:text-6xl lg:text-7xl text-[#0a0a0a] leading-tight mb-4">
+              Curated{' '}
+              <span className="italic font-serif-text text-secondary">Collections</span>
+            </h1>
+            <p className="font-serif-text text-xl text-gray-600 leading-relaxed">
+              Discover exceptional stays and experiences in our most coveted destinations.
+            </p>
+          </div>
+        </div>
+
+        {/* Page Range */}
+        <div className="container mb-12">
+          <div className="flex justify-between items-center border-b border-[#e5e5e5] pb-6">
+            <PageRange
+              collection="posts"
+              currentPage={posts.page}
+              limit={12}
+              totalDocs={posts.totalDocs}
+            />
+          </div>
+        </div>
+
+        {/* Posts Grid */}
+        <CollectionArchive posts={posts.docs} />
+
+        {/* Pagination */}
+        <div className="container mt-16">
+          {posts?.page && posts?.totalPages > 1 && (
+            <Pagination page={posts.page} totalPages={posts.totalPages} />
+          )}
         </div>
       </div>
-
-      <div className="container mb-8">
-        <PageRange
-          collection="posts"
-          currentPage={posts.page}
-          limit={12}
-          totalDocs={posts.totalDocs}
-        />
-      </div>
-
-      <CollectionArchive posts={posts.docs} />
-
-      <div className="container">
-        {posts?.page && posts?.totalPages > 1 && (
-          <Pagination page={posts.page} totalPages={posts.totalPages} />
-        )}
-      </div>
-    </div>
+    </main>
   )
 }
 
@@ -76,7 +90,7 @@ export async function generateStaticParams() {
     overrideAccess: false,
   })
 
-  const totalPages = Math.ceil(totalDocs / 10)
+  const totalPages = Math.ceil(totalDocs / 12)
 
   const pages: { pageNumber: string }[] = []
 

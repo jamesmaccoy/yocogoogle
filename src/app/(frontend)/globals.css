@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Inter:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -93,13 +95,36 @@
   body {
     @apply bg-background text-foreground min-h-[100vh] flex flex-col;
   }
+  
+  /* Luxury font classes */
+  .font-serif-display {
+    font-family: 'Playfair Display', serif;
+  }
+  
+  .font-serif-text {
+    font-family: 'Cormorant Garamond', serif;
+  }
 }
 
 html {
   opacity: 0;
+  scroll-behavior: smooth;
 }
 
 html[data-theme='dark'],
 html[data-theme='light'] {
   opacity: initial;
+}
+
+/* Smooth scrolling enhancement */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Custom selection color */
+::selection {
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
 }

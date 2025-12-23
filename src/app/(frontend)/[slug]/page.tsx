@@ -12,6 +12,7 @@ import { RenderHero } from '@/heros/RenderHero'
 import { generateMeta } from '@/utilities/generateMeta'
 import PageClient from './page.client'
 import { LivePreviewListener } from '@/components/LivePreviewListener'
+import { HomepageEditorial } from '@/components/HomepageEditorial'
 
 export async function generateStaticParams() {
   const payload = await getPayload({ config: configPromise })
@@ -64,6 +65,29 @@ export default async function Page({ params: paramsPromise }: Args) {
   }
 
   const { hero, layout } = page
+
+  // For homepage, use editorial layout
+  if (slug === 'home') {
+    const payload = await getPayload({ config: configPromise })
+    const posts = await payload.find({
+      collection: 'posts',
+      depth: 1,
+      limit: 3,
+      page: 1,
+      overrideAccess: false,
+      sort: '-publishedAt',
+    })
+
+    return (
+      <>
+        <PageClient page={page} draft={draft} url={url} />
+        <PayloadRedirects disableNotFound url={url} />
+        {draft && <LivePreviewListener />}
+        <RenderHero {...hero} />
+        <HomepageEditorial featuredPosts={posts.docs} />
+      </>
+    )
+  }
 
   return (
     <article className="pt-16 pb-24">

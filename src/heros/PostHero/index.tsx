@@ -1,24 +1,30 @@
+'use client'
+
 import { formatDateTime } from 'src/utilities/formatDateTime'
 import React from 'react'
+import { motion } from 'framer-motion'
 
 import type { Post } from '@/payload-types'
 
-import { Media } from '@/components/Media'
 import { formatAuthors } from '@/utilities/formatAuthors'
+import { Media } from '@/components/Media'
 
 export const PostHero: React.FC<{
   post: Post
 }> = ({ post }) => {
-  const { categories, heroImage, populatedAuthors, publishedAt, title } = post
+  const { categories, heroImage, meta, populatedAuthors, publishedAt, title, slug } = post
 
   const hasAuthors =
     populatedAuthors && populatedAuthors.length > 0 && formatAuthors(populatedAuthors) !== ''
 
+  // Prioritize heroImage (original behavior), fall back to meta.image for layout animation matching
+  const displayImage = heroImage || meta?.image
+
   return (
-    <div className="relative -mt-[10.4rem] flex items-end">
+    <div className="relative -mt-[10.4rem] flex items-end" style={{ paddingTop: '22rem' }}>
       <div className="container z-10 relative lg:grid lg:grid-cols-[1fr_48rem_1fr] text-white pb-8">
         <div className="col-start-1 col-span-1 md:col-start-2 md:col-span-2">
-          <div className="uppercase text-sm mb-6">
+          <div className="uppercase text-sm mb-6 text-secondary">
             {categories?.map((category, index) => {
               if (typeof category === 'object' && category !== null) {
                 const { title: categoryTitle } = category
@@ -62,12 +68,28 @@ export const PostHero: React.FC<{
           </div>
         </div>
       </div>
-      <div className="min-h-[80vh] select-none">
-        {heroImage && typeof heroImage !== 'string' && (
-          <Media fill priority imgClassName="-z-10 object-cover" resource={heroImage} />
-        )}
-        <div className="absolute pointer-events-none left-0 bottom-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent" />
-      </div>
+      <motion.div 
+        className="absolute inset-0 min-h-[80vh] select-none"
+        layoutId={slug ? `post-image-${slug}` : undefined}
+        transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+        style={{ zIndex: -1 }}
+      >
+        {displayImage && typeof displayImage !== 'string' ? (
+          <motion.div
+            className="absolute inset-0 w-full h-full"
+            layoutId={slug ? `post-image-content-${slug}` : undefined}
+            transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+          >
+            <Media 
+              fill 
+              priority 
+              imgClassName="object-cover" 
+              resource={displayImage} 
+            />
+          </motion.div>
+        ) : null}
+        <div className="absolute pointer-events-none left-0 bottom-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent z-10" />
+      </motion.div>
     </div>
   )
 }

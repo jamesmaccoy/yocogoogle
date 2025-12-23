@@ -11,7 +11,7 @@ import { SmartEstimateBlock } from '@/blocks/EstimateBlock/SmartEstimateBlock'
 
 import type { Post } from '@/payload-types'
 
-import { PostHero } from '@/heros/PostHero'
+import { PostHeroWrapper } from '@/heros/PostHero/PostHeroWrapper'
 import { generateMeta } from '@/utilities/generateMeta'
 import PageClient from './page.client'
 import { LivePreviewListener } from '@/components/LivePreviewListener'
@@ -59,7 +59,7 @@ export default async function Post({ params: paramsPromise }: Args) {
 
       {draft && <LivePreviewListener />}
 
-      <PostHero post={post} />
+      <PostHeroWrapper post={post} />
 
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
