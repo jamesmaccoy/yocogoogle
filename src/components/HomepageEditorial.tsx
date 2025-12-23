@@ -116,7 +116,7 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
         subtitle="Cape Point • Hout Bay • Kommetjie"
         description="Discover the raw beauty of the Southern Peninsula. From the dramatic cliffs of Cape Point to the serene beaches of Kommetjie, experience a coastal lifestyle unlike any other."
         ctaText="Explore the Peninsula"
-        ctaLink="/posts/page/1"
+        ctaLink="https://www.simpleplek.co.za/southern-peninsula"
         align="left"
       />
 
@@ -126,7 +126,7 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
         subtitle="Gardens • Vredehoek • Rondebosch"
         description="Immerse yourself in the vibrant culture of Cape Town. Stay in the heart of the city, surrounded by world-class dining, art, and history, all within reach of the mountain."
         ctaText="View City Stays"
-        ctaLink="/posts/page/1"
+        ctaLink="https://www.simpleplek.co.za/cape-town"
         align="right"
       />
     </main>

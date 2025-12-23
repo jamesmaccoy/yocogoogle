@@ -128,3 +128,25 @@ html[data-theme='light'] {
   background-color: hsl(var(--secondary));
   color: hsl(var(--secondary-foreground));
 }
+
+/* Hero heading styling to match posts page */
+[data-theme='dark'] .payload-richtext h1,
+.payload-richtext h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 3rem; /* text-5xl */
+  line-height: 1.1;
+}
+
+@media (min-width: 768px) {
+  [data-theme='dark'] .payload-richtext h1,
+  .payload-richtext h1 {
+    font-size: 3.75rem; /* md:text-6xl */
+  }
+}
+
+@media (min-width: 1024px) {
+  [data-theme='dark'] .payload-richtext h1,
+  .payload-richtext h1 {
+    font-size: 4.5rem; /* lg:text-7xl */
+  }
+}
