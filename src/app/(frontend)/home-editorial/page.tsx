@@ -24,11 +24,16 @@ export default async function HomeEditorialPage() {
   const payload = await getPayload({ config: configPromise })
   const posts = await payload.find({
     collection: 'posts',
-    depth: 1,
-    limit: 3,
+    depth: 2, // Increased depth to fully populate meta.image Media objects
+    limit: 10, // Fetch more to ensure we get park-estate if needed
     page: 1,
     overrideAccess: false,
     sort: '-publishedAt',
+    where: {
+      _status: {
+        equals: 'published',
+      },
+    },
   })
 
   // Extract hero media from page

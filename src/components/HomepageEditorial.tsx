@@ -17,7 +17,7 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
   const featured = featuredPosts.slice(0, 3)
 
   return (
-    <main className="bg-[#faf9f7] min-h-screen w-full overflow-x-hidden">
+    <main className="bg-[#ffffff] min-h-screen w-full overflow-x-hidden">
       {/* Intro Text Section */}
       <section className="py-24 px-6 md:px-12 text-center bg-[#faf9f7]">
         <motion.div
@@ -121,7 +121,7 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
       />
 
       <EditorialSection
-        image={featured[2]?.meta?.image || featured[2]?.heroImage}
+        image={featuredPosts.find(p => p.slug === 'park-estate')?.meta?.image || featuredPosts.find(p => p.slug === 'park-estate')?.heroImage || featured[2]?.meta?.image || featured[2]?.heroImage}
         title="City Centre & Suburbs"
         subtitle="Gardens • Vredehoek • Rondebosch"
         description="Immerse yourself in the vibrant culture of Cape Town. Stay in the heart of the city, surrounded by world-class dining, art, and history, all within reach of the mountain."

@@ -75,7 +75,7 @@ export default async function Page({ params: paramsPromise }: Args) {
     const posts = await payload.find({
       collection: 'posts',
       depth: 2, // Increased depth to fully populate meta.image Media objects
-      limit: 3,
+      limit: 10, // Fetch more to ensure we get park-estate if needed
       page: 1,
       overrideAccess: false,
       sort: '-publishedAt',
