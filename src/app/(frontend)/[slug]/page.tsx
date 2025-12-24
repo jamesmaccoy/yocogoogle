@@ -15,6 +15,7 @@ import { generateMeta } from '@/utilities/generateMeta'
 import PageClient from './page.client'
 import { LivePreviewListener } from '@/components/LivePreviewListener'
 import { HomepageEditorial } from '@/components/HomepageEditorial'
+import { ScrollAnimationHero } from '@/components/ScrollAnimationHero'
 
 export async function generateStaticParams() {
   const payload = await getPayload({ config: configPromise })
@@ -68,7 +69,7 @@ export default async function Page({ params: paramsPromise }: Args) {
 
   const { hero, layout } = page
 
-  // For homepage, use editorial layout
+  // For homepage, use editorial layout with scroll animation
   if (slug === 'home') {
     const payload = await getPayload({ config: configPromise })
     const posts = await payload.find({
@@ -85,12 +86,20 @@ export default async function Page({ params: paramsPromise }: Args) {
       },
     })
 
+    // Extract hero media from page
+    const heroMedia = page?.hero?.media && typeof page.hero.media === 'object' 
+      ? page.hero.media 
+      : null
+
     return (
       <>
         <PageClient page={page} draft={draft} url={url} />
         <PayloadRedirects disableNotFound url={url} />
         {draft && <LivePreviewListener />}
-        <RenderHero {...hero} />
+        <ScrollAnimationHero 
+          featuredPosts={posts.docs} 
+          heroMedia={heroMedia}
+        />
         <HomepageEditorial featuredPosts={posts.docs} />
       </>
     )
