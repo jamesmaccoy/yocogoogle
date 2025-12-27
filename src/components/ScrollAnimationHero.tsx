@@ -64,38 +64,57 @@ export function ScrollAnimationHero({ featuredPosts = [], heroMedia }: ScrollAni
               <div className="absolute inset-0 bg-black/30 pointer-events-none" />
             </div>
 
-            <div className="relative z-10 text-center text-white px-6 max-w-4xl mx-auto">
+            <div className="relative z-10 text-center text-white px-6 w-full mx-auto">
               <motion.div
                 style={{
                   y: textY,
                   scale: textScale,
                 }}
+                className="relative min-h-[400px] flex items-center justify-center w-full"
               >
-                <motion.p 
-                  className="font-serif-text italic text-2xl md:text-3xl mb-4 tracking-wide"
+                {/* Simple Plek section - fades out */}
+                <motion.div
                   style={{
-                    opacity: useTransform(progress, [0, 0.2], [0, 1]),
+                    opacity: useTransform(progress, [0, 0.2, 0.3], [1, 1, 0]),
                   }}
+                  className="absolute inset-0 flex flex-col items-center justify-center w-full px-4"
                 >
-                  Curated Collections
-                </motion.p>
-                <motion.h1 
-                  className="font-serif-display text-5xl md:text-7xl lg:text-8xl mb-8 leading-none"
+                  <motion.h1 
+                    className="font-serif-display text-5xl md:text-7xl lg:text-8xl mb-4 leading-none whitespace-nowrap"
+                  >
+                    Simple{' '}
+                    <span className="italic font-serif-text text-secondary">Plek</span>
+                  </motion.h1>
+                  
+                  <motion.p 
+                    className="font-serif-text text-xl md:text-2xl tracking-wide whitespace-nowrap"
+                    style={{
+                      opacity: useTransform(progress, [0, 0.15], [0, 1]),
+                    }}
+                  >
+                    Short term bookings for members
+                  </motion.p>
+                </motion.div>
+                
+                {/* Curated Collections section - fades in */}
+                <motion.div
                   style={{
-                    opacity: useTransform(progress, [0.1, 0.3], [0, 1]),
+                    opacity: useTransform(progress, [0.2, 0.3, 0.4], [0, 0, 1]),
                   }}
+                  className="absolute inset-0 flex flex-col items-center justify-center w-full px-4"
                 >
-                  Curated{' '}
-                  <span className="italic font-serif-text text-secondary">Collections</span>
-                </motion.h1>
-                <motion.p 
-                  className="max-w-lg mx-auto text-lg md:text-xl font-light opacity-90 leading-relaxed font-serif-text"
-                  style={{
-                    opacity: useTransform(progress, [0.2, 0.4], [0, 1]),
-                  }}
-                >
-                  Discover exceptional stays and experiences in our most coveted destinations.
-                </motion.p>
+                  <motion.p 
+                    className="font-serif-text italic text-4xl md:text-6xl lg:text-7xl mb-4 tracking-wide whitespace-nowrap"
+                  >
+                    Curated Collections
+                  </motion.p>
+                  
+                  <motion.p 
+                    className="max-w-2xl mx-auto text-lg md:text-xl font-light opacity-90 leading-relaxed font-serif-text"
+                  >
+                    Discover exceptional stays and experiences in our most coveted destinations.
+                  </motion.p>
+                </motion.div>
               </motion.div>
             </div>
 
