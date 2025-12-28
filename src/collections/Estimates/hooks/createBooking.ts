@@ -1,4 +1,5 @@
 import { CollectionAfterChangeHook } from 'payload'
+import { trackBookingConversion } from '@/lib/metaConversions'
 
 export const createBookingHook: CollectionAfterChangeHook = async ({
   doc,
@@ -68,7 +69,7 @@ export const createBookingHook: CollectionAfterChangeHook = async ({
       }
     }
 
-    await payload.create({
+    const booking = await payload.create({
       collection: 'bookings',
       data: {
         fromDate: doc.fromDate,
@@ -85,6 +86,42 @@ export const createBookingHook: CollectionAfterChangeHook = async ({
       },
       req,
     })
+
+    // Track Purchase conversion event for Meta Pixel
+    try {
+      const postId = typeof doc.post === 'string' ? doc.post : doc.post?.id
+      const customerId = typeof doc.customer === 'string' ? doc.customer : doc.customer?.id
+      
+      // Fetch customer data if available
+      let userEmail: string | undefined
+      if (customerId) {
+        try {
+          const customer = await payload.findByID({
+            collection: 'users',
+            id: customerId,
+            depth: 0,
+          })
+          userEmail = customer?.email
+        } catch (error) {
+          // Customer might not exist or be accessible, continue without email
+        }
+      }
+
+      await trackBookingConversion({
+        bookingId: booking.id,
+        bookingValue: doc.total || 0,
+        postId,
+        postTitle: doc.title,
+        packageType: resolvedPackageType || doc.packageType,
+        userId: customerId,
+        userEmail,
+        // Note: IP and user agent not available in hook context
+        // These would ideally come from the request, but hooks don't have direct access
+      })
+    } catch (error) {
+      // Don't fail booking creation if tracking fails
+      console.error('Failed to track booking conversion:', error)
+    }
   }
 
   return doc

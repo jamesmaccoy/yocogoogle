@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { format } from 'date-fns'
 import { DivineLightEffect } from '@/components/DivineLightEffect'
 import { Package } from 'lucide-react'
+import { trackBookingConversion } from '@/lib/metaConversions'
 
 export default async function BookingConfirmationPage({
   searchParams,
@@ -530,6 +531,32 @@ export default async function BookingConfirmationPage({
                   data: bookingData,
                 })
                 console.log('✅ Booking created successfully:', booking.id)
+
+                // Track Purchase conversion event for Meta Pixel
+                try {
+                  const headersList = await headers()
+                  const clientIp = headersList.get('x-forwarded-for')?.split(',')[0] || 
+                                   headersList.get('x-real-ip') || 
+                                   'unknown'
+                  const userAgent = headersList.get('user-agent') || 'unknown'
+                  
+                  await trackBookingConversion({
+                    bookingId: booking.id,
+                    bookingValue: bookingTotal,
+                    postId: bookingPostId,
+                    postTitle: postTitle,
+                    packageType: resolvedPackageType || estimatePackageType,
+                    userId: user.id,
+                    userEmail: user.email,
+                    clientIp,
+                    userAgent,
+                    // Note: eventSourceUrl would ideally come from request headers
+                    // but we don't have direct access to the request URL here
+                  })
+                } catch (trackingError) {
+                  // Don't fail booking creation if tracking fails
+                  console.error('Failed to track booking conversion:', trackingError)
+                }
               } catch (bookingError) {
                 console.error('❌ Failed to create booking:', bookingError)
                 if (bookingError instanceof Error) {
