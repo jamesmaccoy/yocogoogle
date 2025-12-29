@@ -50,8 +50,14 @@ export async function sendMetaEvent(data: MetaEventData): Promise<void> {
   const accessToken = process.env.META_ACCESS_TOKEN
 
   // Skip if not configured
-  if (!pixelId || !accessToken) {
-    console.warn('Meta Conversions API not configured. Missing META_PIXEL_ID or META_ACCESS_TOKEN')
+  if (!pixelId) {
+    console.warn('Meta Conversions API: Missing META_PIXEL_ID or NEXT_PUBLIC_META_PIXEL_ID')
+    return
+  }
+  
+  if (!accessToken) {
+    console.warn('Meta Conversions API: Missing META_ACCESS_TOKEN. Events will not be sent server-side.')
+    console.warn('To enable Conversions API, add META_ACCESS_TOKEN to your environment variables.')
     return
   }
 
@@ -115,9 +121,17 @@ export async function sendMetaEvent(data: MetaEventData): Promise<void> {
 
     const result = await response.json()
     if (result.errors && result.errors.length > 0) {
-      console.error('Meta Conversions API errors:', result.errors)
+      console.error('Meta Conversions API errors:', {
+        eventName: data.eventName,
+        errors: result.errors,
+        pixelId,
+      })
     } else {
-      console.log('Meta event sent successfully:', data.eventName)
+      console.log('Meta event sent successfully:', {
+        eventName: data.eventName,
+        eventId,
+        eventsReceived: result.events_received,
+      })
     }
   } catch (error) {
     console.error('Failed to send Meta event:', error)
