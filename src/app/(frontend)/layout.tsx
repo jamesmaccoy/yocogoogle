@@ -13,6 +13,7 @@ import { InitTheme } from '@/providers/Theme/InitTheme'
 import { mergeOpenGraph } from '@/utilities/mergeOpenGraph'
 import { draftMode } from 'next/headers'
 import Script from 'next/script'
+import { CookieConsent } from '@/components/CookieConsent'
 
 import './globals.css'
 import { getServerSideURL } from '@/utilities/getURL'
@@ -63,44 +64,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             `,
           }}
         />
-        {/* Meta Pixel */}
+        {/* Meta Pixel - Will be initialized by CookieConsent component after user consent */}
+        {/* Note: Pixel initialization is now handled client-side after GDPR/POPIA consent */}
+        {/* Store pixel ID in window for CookieConsent component */}
         {metaPixelId && (
-          <>
-            <Script
-              id="meta-pixel"
-              strategy="afterInteractive"
-              dangerouslySetInnerHTML={{
-                __html: `
-                  !function(f,b,e,v,n,t,s)
-                  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-                  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-                  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-                  n.queue=[];t=b.createElement(e);t.async=!0;
-                  t.src=v;s=b.getElementsByTagName(e)[0];
-                  s.parentNode.insertBefore(t,s)}(window, document,'script',
-                  'https://connect.facebook.net/en_US/fbevents.js');
-                  fbq('init', '${metaPixelId}');
-                  fbq('track', 'PageView');
-                  
-                  // Debug logging (remove in production)
-                  if (typeof window !== 'undefined' && window.location.hostname.includes('localhost')) {
-                    console.log('Meta Pixel initialized:', '${metaPixelId}');
-                    fbq('trackCustom', 'PixelInitialized');
-                  }
-                `,
-              }}
-            />
-            {/* Debug: Log pixel ID in development */}
-            {process.env.NODE_ENV === 'development' && (
-              <Script
-                id="meta-pixel-debug"
-                strategy="afterInteractive"
-                dangerouslySetInnerHTML={{
-                  __html: `console.log('Meta Pixel ID:', '${metaPixelId}');`,
-                }}
-              />
-            )}
-          </>
+          <Script
+            id="meta-pixel-id-setup"
+            strategy="beforeInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `window.__META_PIXEL_ID__ = '${metaPixelId}';`,
+            }}
+          />
         )}
         <link href="/favicon.ico" rel="icon" sizes="32x32" />
         <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
@@ -137,7 +111,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Header />
           {children}
           <Footer />
-          
+          <CookieConsent />
         </Providers>
       </body>
     </html>
