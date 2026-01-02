@@ -125,6 +125,24 @@ Once SSL is working:
 
 ---
 
-**Status**: ✅ DNS records updated - waiting for propagation
-**Next**: Check DNS propagation status, then verify SSL certificate
+## ⚠️ IMPORTANT: Vercel DNS Conflict
+
+Vercel has detected conflicting DNS records that need to be removed:
+
+**Remove these records:**
+- ❌ A record: `@` → `136.110.143.166`
+- ❌ AAAA record: `@` → `2600:1901:0:4095::`
+
+**Action Required:**
+1. Go to **Vercel Dashboard** → Settings → Domains
+2. Get the **exact DNS records** Vercel wants you to use
+3. Remove conflicting records from your DNS provider
+4. Add Vercel's recommended records instead
+
+See `VERCEL_DNS_SETUP.md` for detailed instructions.
+
+---
+
+**Status**: ⚠️ Conflicting DNS records - need to use Vercel's DNS configuration
+**Next**: Remove conflicting records and use Vercel's recommended DNS setup
 
