@@ -1,6 +1,7 @@
 import type { CollectionAfterChangeHook } from 'payload'
 
 import { sendBookingConfirmationEmail } from '@/lib/emailNotifications'
+import { createNotification } from '@/lib/notificationUtils'
 
 type Recipient = {
   id: string
@@ -46,10 +47,33 @@ const extractRecipientFromRelation = (value: unknown): Recipient | null => {
 export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
   doc,
   operation,
+  previousDoc,
   req,
 }) => {
-  if (operation !== 'create') {
+  console.log('📧 sendBookingConfirmationHook called:', { operation, bookingId: doc.id })
+  
+  // Send emails on both create and update operations
+  if (operation !== 'create' && operation !== 'update') {
+    console.log('📧 Skipping email - operation is not "create" or "update":', operation)
     return doc
+  }
+
+  // Track what changed for notifications
+  const changes: Record<string, { from: any; to: any }> = {}
+  if (previousDoc && operation === 'update') {
+    // Track key field changes
+    if (previousDoc.fromDate !== doc.fromDate) {
+      changes.fromDate = { from: previousDoc.fromDate, to: doc.fromDate }
+    }
+    if (previousDoc.toDate !== doc.toDate) {
+      changes.toDate = { from: previousDoc.toDate, to: doc.toDate }
+    }
+    if (previousDoc.paymentStatus !== doc.paymentStatus) {
+      changes.paymentStatus = { from: previousDoc.paymentStatus, to: doc.paymentStatus }
+    }
+    if (previousDoc.total !== doc.total) {
+      changes.total = { from: previousDoc.total, to: doc.total }
+    }
   }
 
   try {
@@ -135,6 +159,43 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
         : undefined) ??
       'Booking'
 
+    // Get package information
+    let packageName: string | undefined
+    if (doc.selectedPackage && typeof doc.selectedPackage === 'object') {
+      const selectedPackage = doc.selectedPackage as { package?: unknown; customName?: string | null }
+      
+      // Check for custom name first
+      if (selectedPackage.customName && selectedPackage.customName.trim().length > 0) {
+        packageName = selectedPackage.customName.trim()
+      } else if (selectedPackage.package) {
+        // Fetch package details if it's a relationship
+        const packageId = typeof selectedPackage.package === 'string' 
+          ? selectedPackage.package 
+          : (typeof selectedPackage.package === 'object' && selectedPackage.package !== null && 'id' in selectedPackage.package
+            ? String((selectedPackage.package as { id?: unknown }).id)
+            : null)
+        
+        if (packageId) {
+          try {
+            const packageDoc = typeof selectedPackage.package === 'object' && selectedPackage.package !== null && 'name' in selectedPackage.package
+              ? selectedPackage.package
+              : await payload.findByID({
+                  collection: 'packages',
+                  id: packageId,
+                  depth: 0,
+                  overrideAccess: true,
+                })
+            
+            if (packageDoc && typeof packageDoc === 'object' && 'name' in packageDoc) {
+              packageName = String(packageDoc.name)
+            }
+          } catch (error) {
+            console.warn(`⚠️ Could not fetch package ${packageId} for email:`, error)
+          }
+        }
+      }
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za'
     const bookingUrl = `${baseUrl}/bookings/${doc.id}`
 
@@ -144,6 +205,7 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
         id: recipient.id,
         email: recipient.email,
       })),
+      packageName: packageName || 'none',
     })
 
     await Promise.all(
@@ -156,8 +218,87 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
           toDate: doc.toDate,
           bookingId: doc.id,
           bookingUrl,
+          packageName,
         }),
       ),
+    )
+
+    // Create notifications for all recipients
+    type NotificationType = 'booking_created' | 'booking_cancelled' | 'booking_rescheduled' | 'booking_updated'
+    let notificationType: NotificationType
+    let notificationTitle: string
+    let notificationDescription: string
+
+    if (operation === 'create') {
+      notificationType = 'booking_created'
+      notificationTitle = `Booking confirmed: ${propertyTitle}`
+      notificationDescription = `Your booking for ${propertyTitle} from ${new Date(doc.fromDate).toLocaleDateString()} to ${doc.toDate ? new Date(doc.toDate).toLocaleDateString() : 'TBD'} has been confirmed.`
+    } else if (doc.paymentStatus === 'cancelled') {
+      notificationType = 'booking_cancelled'
+      notificationTitle = `Booking cancelled: ${propertyTitle}`
+      notificationDescription = `Your booking for ${propertyTitle} has been cancelled.`
+    } else if (changes.fromDate || changes.toDate) {
+      // Check if this is a reschedule (dates changed)
+      notificationType = 'booking_rescheduled'
+      notificationTitle = `Booking rescheduled: ${propertyTitle}`
+      const oldDates = changes.fromDate?.from && changes.toDate?.from
+        ? `${new Date(changes.fromDate.from).toLocaleDateString()} - ${new Date(changes.toDate.from).toLocaleDateString()}`
+        : 'previous dates'
+      const newDates = `${new Date(doc.fromDate).toLocaleDateString()} - ${doc.toDate ? new Date(doc.toDate).toLocaleDateString() : 'TBD'}`
+      notificationDescription = `Your booking for ${propertyTitle} has been rescheduled from ${oldDates} to ${newDates}.`
+    } else {
+      notificationType = 'booking_updated'
+      notificationTitle = `Booking updated: ${propertyTitle}`
+      const changeList = Object.entries(changes)
+        .map(([field, change]) => {
+          if (field === 'paymentStatus') {
+            return `Payment status changed from ${change.from} to ${change.to}`
+          }
+          if (field === 'total') {
+            return `Total changed from R${change.from} to R${change.to}`
+          }
+          return `${field} updated`
+        })
+        .join(', ')
+      notificationDescription = `Your booking for ${propertyTitle} has been updated. ${changeList}`
+    }
+
+    // Create notification for each recipient using consolidated utility
+    await Promise.all(
+      uniqueRecipients.map(async (recipient) => {
+        try {
+          await createNotification({
+            payload,
+            userId: recipient.id,
+            type: notificationType,
+            title: notificationTitle,
+            description: notificationDescription,
+            metadata: {
+              propertyTitle,
+              fromDate: doc.fromDate,
+              toDate: doc.toDate,
+              packageName: packageName || null,
+              bookingId: doc.id,
+              operation,
+              paymentStatus: doc.paymentStatus,
+              changes: Object.keys(changes).length > 0 ? changes : undefined,
+              previousValues: previousDoc && operation === 'update' ? {
+                fromDate: previousDoc.fromDate,
+                toDate: previousDoc.toDate,
+                paymentStatus: previousDoc.paymentStatus,
+                total: previousDoc.total,
+              } : undefined,
+            },
+            relatedBooking: doc.id,
+            actionUrl: bookingUrl,
+            req,
+          })
+          console.log(`✅ Notification created for user ${recipient.id}`)
+        } catch (notificationError) {
+          console.error(`❌ Failed to create notification for user ${recipient.id}:`, notificationError)
+          // Don't throw - email sending is more critical than notification creation
+        }
+      }),
     )
   } catch (error) {
     console.error('❌ Failed to send booking confirmation email:', error)

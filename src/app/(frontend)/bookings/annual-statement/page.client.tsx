@@ -22,6 +22,18 @@ type YocoTransactionRecord = {
   createdAt?: string
   completedAt?: string
   packageName?: string
+  intent?: "booking" | "subscription" | "product"
+  linkedBookings?: Array<{
+    id: string
+    title: string
+    fromDate: string
+    toDate: string
+    post: {
+      id: string
+      title: string
+      slug: string
+    } | null
+  }>
 }
 
 type PostSummary = {
@@ -1330,6 +1342,16 @@ We trust that the above meets with your approval..`
                       Settled on {formatDate(transaction.completedAt)}
                     </p>
                   ) : null}
+                  {transaction.intent === 'product' && transaction.linkedBookings && transaction.linkedBookings.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border/50">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Linked to bookings:</p>
+                      {transaction.linkedBookings.map((booking) => (
+                        <div key={booking.id} className="text-xs text-muted-foreground ml-2">
+                          • {booking.post?.title || booking.title} ({formatDate(booking.fromDate)} - {formatDate(booking.toDate)})
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1462,14 +1484,14 @@ We trust that the above meets with your approval..`
         <CardHeader>
           <CardTitle>Beneficiary ledger</CardTitle>
           <CardDescription>
-            Records which beneficiaries were linked to bookings that generated short-term income.
+            Records which guests were linked to bookings that generated package money.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {beneficiariesLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading beneficiary records...
+              Loading guest records...
             </div>
           ) : beneficiaries.length > 0 ? (
             <div className="space-y-3">
@@ -1504,7 +1526,7 @@ We trust that the above meets with your approval..`
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No beneficiaries recorded yet. Once bookings include guests, their details will appear here for auditing.
+              No guests recorded yet. Once bookings include guests, their details will appear here for allocation.
             </p>
           )}
         </CardContent>

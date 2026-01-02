@@ -96,6 +96,8 @@ const config = {
       fontFamily: {
         mono: ['var(--font-geist-mono)'],
         sans: ['var(--font-geist-sans)'],
+        'serif-display': ['Playfair Display', 'serif'],
+        'serif-text': ['Cormorant Garamond', 'serif'],
       },
       keyframes: {
         'accordion-down': {

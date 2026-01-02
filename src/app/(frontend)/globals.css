@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Inter:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -25,17 +27,17 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 191.6 91.4% 36.5%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 172.5 66% 50.4%;
+    --primary-foreground: 196.4 63.6% 23.7%;
 
-    --secondary: 352.6 95.7% 81.8%;
-    --secondary-foreground: 174.7 83.9% 31.6 100% %;
+    --secondary: 192.9 82.3% 31%;
+    --secondary-foreground: 187 92.4% 69%;
 
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 186.2 93.5% 81.8%%;
-    --accent-foreground: 174.7 83.9% 31.6%;
+    --accent: 170.6 76.9% 64.3%;
+    --accent-foreground: 172.5 66% 50.4%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
@@ -93,13 +95,58 @@
   body {
     @apply bg-background text-foreground min-h-[100vh] flex flex-col;
   }
+  
+  /* Luxury font classes */
+  .font-serif-display {
+    font-family: 'Playfair Display', serif;
+  }
+  
+  .font-serif-text {
+    font-family: 'Cormorant Garamond', serif;
+  }
 }
 
 html {
   opacity: 0;
+  scroll-behavior: smooth;
 }
 
 html[data-theme='dark'],
 html[data-theme='light'] {
   opacity: initial;
+}
+
+/* Smooth scrolling enhancement */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Custom selection color */
+::selection {
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+/* Hero heading styling to match posts page */
+[data-theme='dark'] .payload-richtext h1,
+.payload-richtext h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 3rem; /* text-5xl */
+  line-height: 1.1;
+}
+
+@media (min-width: 768px) {
+  [data-theme='dark'] .payload-richtext h1,
+  .payload-richtext h1 {
+    font-size: 3.75rem; /* md:text-6xl */
+  }
+}
+
+@media (min-width: 1024px) {
+  [data-theme='dark'] .payload-richtext h1,
+  .payload-richtext h1 {
+    font-size: 4.5rem; /* lg:text-7xl */
+  }
 }

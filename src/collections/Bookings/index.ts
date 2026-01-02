@@ -1,11 +1,13 @@
 import { adminOrSelfField } from '@/access/adminOrSelfField'
 import { isAdminField } from '@/access/isAdminField'
+import { isHostField } from '@/access/isHostField'
 import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 
-import { generateJwtToken, verifyJwtToken } from '@/utilities/token'
+import { generateJwtToken, verifyJwtToken, generateShortToken } from '@/utilities/token'
 import { unavailableDates } from './endpoints/unavailable-dates'
 import { checkAvailability } from './endpoints/check-availability'
+import { multiPostAvailability } from './endpoints/multi-post-availability'
 import { checkAvailabilityHook } from './hooks/checkAvailability'
 import { sendBookingConfirmationHook } from './hooks/sendBookingConfirmation'
 
@@ -25,6 +27,7 @@ export const Booking: CollectionConfig = {
   endpoints: [
     unavailableDates,
     checkAvailability,
+    multiPostAvailability,
     // This endpoint is used to generate a token for the booking
     // and return it to the customer
     {
@@ -89,12 +92,8 @@ export const Booking: CollectionConfig = {
             })
           }
 
-          // Generate new token
-          const token = generateJwtToken({
-            bookingId: booking.id,
-            customerId:
-              typeof booking.customer === 'string' ? booking.customer : booking.customer?.id,
-          })
+          // Generate short token for invite URL
+          const token = generateShortToken(10)
 
           // Update booking with new token
           await req.payload.update({
@@ -189,11 +188,8 @@ export const Booking: CollectionConfig = {
           )
         }
 
-        const token = generateJwtToken({
-          bookingId: booking.id,
-          customerId:
-            typeof booking.customer === 'string' ? booking.customer : booking.customer?.id,
-        })
+        // Generate short token for invite URL
+        const token = generateShortToken(10)
 
         await req.payload.update({
           collection: 'bookings',
@@ -484,6 +480,10 @@ export const Booking: CollectionConfig = {
     beforeChange: [checkAvailabilityHook],
     afterChange: [sendBookingConfirmationHook],
   },
+  versions: {
+    drafts: false, // We don't need drafts for bookings
+    maxPerDoc: 50, // Keep last 50 versions for history
+  },
   fields: [
     {
       name: 'title',
@@ -504,7 +504,14 @@ export const Booking: CollectionConfig = {
       //   },
       // },
       access: {
-        update: isAdminField,
+        // Only admin and host can change the customer field
+        // Customers cannot change who the booking belongs to
+        update: ({ req: { user } }) => {
+          if (!user) return false
+          const role = user.role
+          const roleArray = Array.isArray(role) ? role : role ? [role] : []
+          return roleArray.includes('admin') || roleArray.includes('host')
+        },
       },
     },
     {
@@ -596,6 +603,10 @@ export const Booking: CollectionConfig = {
           label: 'Unpaid',
           value: 'unpaid',
         },
+        {
+          label: 'Cancelled',
+          value: 'cancelled',
+        },
       ],
       access: {
         update: isAdminField,
@@ -620,7 +631,7 @@ export const Booking: CollectionConfig = {
     {
       name: 'toDate',
       type: 'date',
-      required: true,
+      required: false,
       label: 'Check-out Date',
       admin: {
         position: 'sidebar',
@@ -638,6 +649,48 @@ export const Booking: CollectionConfig = {
       required: false,
       admin: {
         position: 'sidebar',
+      },
+    },
+    {
+      name: 'cleaningSchedule',
+      label: 'Cleaning Schedule',
+      type: 'json',
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Stored cleaning schedule plan for this booking',
+      },
+    },
+    {
+      name: 'cleaningSource',
+      label: 'Cleaning Source',
+      type: 'select',
+      required: false,
+      options: [
+        {
+          label: 'Included in Booking',
+          value: 'included',
+        },
+        {
+          label: 'Addon Purchase',
+          value: 'addon',
+        },
+      ],
+      admin: {
+        position: 'sidebar',
+        description: 'Whether cleaning was included in the booking or purchased as an addon',
+      },
+    },
+    {
+      name: 'addonTransactions',
+      label: 'Addon Transactions',
+      type: 'relationship',
+      relationTo: 'yoco-transactions',
+      hasMany: true,
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Transactions for addons purchased for this booking',
       },
     },
   ],

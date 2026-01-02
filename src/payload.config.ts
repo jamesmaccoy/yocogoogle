@@ -101,7 +101,7 @@ export default buildConfig({
   }),
   email: process.env.SMTP_HOST
     ? nodemailerAdapter({
-        defaultFromAddress: process.env.EMAIL_FROM_ADDRESS || 'no-reply@localhost',
+        defaultFromAddress: process.env.EMAIL_FROM_ADDRESS || 'info@simpleplek.co.za',
         defaultFromName: process.env.EMAIL_FROM_NAME || 'Betaplek',
         transportOptions: {
           host: process.env.SMTP_HOST,

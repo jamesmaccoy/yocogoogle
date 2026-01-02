@@ -7,11 +7,15 @@ import { draftMode } from 'next/headers'
 import React, { cache } from 'react'
 import { homeStatic } from '@/endpoints/seed/home-static'
 
+export const revalidate = 60 // Revalidate every 60 seconds for fresh content
+
 import { RenderBlocks } from '@/blocks/RenderBlocks'
 import { RenderHero } from '@/heros/RenderHero'
 import { generateMeta } from '@/utilities/generateMeta'
 import PageClient from './page.client'
 import { LivePreviewListener } from '@/components/LivePreviewListener'
+import { HomepageEditorial } from '@/components/HomepageEditorial'
+import { ScrollAnimationHero } from '@/components/ScrollAnimationHero'
 
 export async function generateStaticParams() {
   const payload = await getPayload({ config: configPromise })
@@ -64,6 +68,42 @@ export default async function Page({ params: paramsPromise }: Args) {
   }
 
   const { hero, layout } = page
+
+  // For homepage, use editorial layout with scroll animation
+  if (slug === 'home') {
+    const payload = await getPayload({ config: configPromise })
+    const posts = await payload.find({
+      collection: 'posts',
+      depth: 2, // Increased depth to fully populate meta.image Media objects
+      limit: 10, // Fetch more to ensure we get park-estate if needed
+      page: 1,
+      overrideAccess: false,
+      sort: '-publishedAt',
+      where: {
+        _status: {
+          equals: 'published',
+        },
+      },
+    })
+
+    // Extract hero media from page
+    const heroMedia = page?.hero?.media && typeof page.hero.media === 'object' 
+      ? page.hero.media 
+      : null
+
+    return (
+      <>
+        <PageClient page={page} draft={draft} url={url} />
+        <PayloadRedirects disableNotFound url={url} />
+        {draft && <LivePreviewListener />}
+        <ScrollAnimationHero 
+          featuredPosts={posts.docs} 
+          heroMedia={heroMedia}
+        />
+        <HomepageEditorial featuredPosts={posts.docs} />
+      </>
+    )
+  }
 
   return (
     <article className="pt-16 pb-24">

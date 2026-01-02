@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { format } from 'date-fns'
 import { DivineLightEffect } from '@/components/DivineLightEffect'
 import { Package } from 'lucide-react'
+import { trackBookingConversion } from '@/lib/metaConversions'
 
 export default async function BookingConfirmationPage({
   searchParams,
@@ -83,6 +84,42 @@ export default async function BookingConfirmationPage({
               id: transactionId,
               data: updateData,
             })
+          }
+
+          // Link addon transactions to bookings
+          if (transaction.intent === 'product' && transaction.metadata && typeof transaction.metadata === 'object') {
+            const metadata = transaction.metadata as Record<string, unknown>
+            const bookingId = metadata.bookingId as string | undefined
+            
+            if (bookingId) {
+              try {
+                // Find the booking
+                const booking = await payload.findByID({
+                  collection: 'bookings',
+                  id: bookingId,
+                })
+                
+                if (booking) {
+                  // Add this transaction to the booking's addonTransactions
+                  const existingAddons = Array.isArray(booking.addonTransactions) 
+                    ? booking.addonTransactions.map((t: any) => typeof t === 'string' ? t : t.id)
+                    : []
+                  
+                  if (!existingAddons.includes(transactionId)) {
+                    await payload.update({
+                      collection: 'bookings',
+                      id: bookingId,
+                      data: {
+                        addonTransactions: [...existingAddons, transactionId],
+                      },
+                    })
+                    console.log(`✅ Linked addon transaction ${transactionId} to booking ${bookingId}`)
+                  }
+                }
+              } catch (error) {
+                console.error('Error linking addon transaction to booking:', error)
+              }
+            }
           }
 
           if (transaction.intent === 'subscription') {
@@ -217,10 +254,11 @@ export default async function BookingConfirmationPage({
         }
       }
       
-      // Get the estimate
+      // Get the estimate with originalBooking populated
       const estimate = await payload.findByID({
         collection: 'estimates',
         id: estimateId,
+        depth: 2, // Populate originalBooking relationship
       })
 
       if (!estimate) {
@@ -230,12 +268,18 @@ export default async function BookingConfirmationPage({
         const estimateCustomerId = typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id
         const isCustomerMatch = estimateCustomerId === user.id
 
+        // Check if this is a reschedule (has originalBooking)
+        const originalBooking = typeof estimate.originalBooking === 'object' ? estimate.originalBooking : null
+        const isReschedule = !!originalBooking
+
         console.log('Estimate found:', {
           estimateId: estimate.id,
           estimateCustomerId,
           userId: user.id,
           isCustomerMatch,
           transactionValidated,
+          isReschedule,
+          originalBookingId: originalBooking?.id,
           postId: estimate.post ? (typeof estimate.post === 'string' ? estimate.post : estimate.post.id) : null,
           fromDate: estimate.fromDate,
           toDate: estimate.toDate
@@ -244,6 +288,23 @@ export default async function BookingConfirmationPage({
         if (isCustomerMatch) {
           // Only confirm estimate if transaction is validated (or in development with mock)
           if (transactionValidated || (process.env.NODE_ENV !== 'production' && transactionId)) {
+            // If this is a reschedule, cancel the original booking first to free up dates
+            if (isReschedule && originalBooking?.id) {
+              try {
+                await payload.update({
+                  collection: 'bookings',
+                  id: originalBooking.id,
+                  data: {
+                    paymentStatus: 'cancelled', // Mark original booking as cancelled
+                  },
+                })
+                console.log('✅ Original booking cancelled:', originalBooking.id, '- Dates are now available for other customers')
+              } catch (cancelError) {
+                console.error('⚠️ Failed to cancel original booking:', cancelError)
+                // Continue with booking creation even if cancellation fails
+              }
+            }
+
             // Confirm the estimate
             await payload.update({
               collection: 'estimates',
@@ -470,6 +531,32 @@ export default async function BookingConfirmationPage({
                   data: bookingData,
                 })
                 console.log('✅ Booking created successfully:', booking.id)
+
+                // Track Purchase conversion event for Meta Pixel
+                try {
+                  const headersList = await headers()
+                  const clientIp = headersList.get('x-forwarded-for')?.split(',')[0] || 
+                                   headersList.get('x-real-ip') || 
+                                   'unknown'
+                  const userAgent = headersList.get('user-agent') || 'unknown'
+                  
+                  await trackBookingConversion({
+                    bookingId: booking.id,
+                    bookingValue: bookingTotal,
+                    postId: bookingPostId,
+                    postTitle: postTitle,
+                    packageType: resolvedPackageType || estimatePackageType,
+                    userId: user.id,
+                    userEmail: user.email,
+                    clientIp,
+                    userAgent,
+                    // Note: eventSourceUrl would ideally come from request headers
+                    // but we don't have direct access to the request URL here
+                  })
+                } catch (trackingError) {
+                  // Don't fail booking creation if tracking fails
+                  console.error('Failed to track booking conversion:', trackingError)
+                }
               } catch (bookingError) {
                 console.error('❌ Failed to create booking:', bookingError)
                 if (bookingError instanceof Error) {

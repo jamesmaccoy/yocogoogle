@@ -75,7 +75,10 @@ const Packages: CollectionConfig = {
       type: 'number', 
       required: false, // Changed to false to prevent forced defaults
       defaultValue: 1, 
-      min: 1 
+      min: 0.5, // Allow 0.5 for hourly packages (half-day), 1 for nightly
+      admin: {
+        description: 'Minimum nights. Use 0.5 for hourly/half-day packages, 1 for nightly packages.'
+      }
     },
     { 
       name: 'maxNights', 

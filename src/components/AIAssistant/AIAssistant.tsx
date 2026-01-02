@@ -1,20 +1,59 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
+import { format } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Context as AIContextCard, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Bot, Send, X, Mic, MicOff, Lock } from 'lucide-react'
+import {
+  Bot,
+  Send,
+  X,
+  Mic,
+  MicOff,
+  Lock,
+  CalendarDays,
+  MapPin,
+  Clock,
+  ArrowRight,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserContext } from '@/context/UserContext'
+import { useSubscription } from '@/hooks/useSubscription'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
+import {
+  Plan,
+  PlanHeader,
+  PlanTitle,
+  PlanDescription,
+  PlanTrigger,
+  PlanContent,
+  PlanFooter,
+  PlanAction,
+} from '@/components/ai-elements/plan'
+import {
+  Queue,
+  QueueSection,
+  QueueSectionTrigger,
+  QueueSectionLabel,
+  QueueSectionContent,
+  QueueList,
+  QueueItem,
+  QueueItemIndicator,
+  QueueItemContent,
+  QueueItemDescription,
+  QueueItemActions,
+  QueueItemAction,
+} from '@/components/ai-elements/queue'
 import {
   PromptInput,
+  PromptInputHeader,
   PromptInputBody,
   PromptInputTextarea,
   PromptInputFooter,
@@ -23,6 +62,7 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { Reasoning, ReasoningTrigger, ReasoningContent } from '@/components/ai-elements/reasoning'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -66,7 +106,98 @@ declare global {
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  propertySuggestions?: {
+    fromDate: string
+    toDate: string
+    properties: Array<{
+      id: string
+      title: string
+      slug: string
+      description?: string
+      baseRate?: number
+      categories?: string
+    }>
+  }
+  cleaningSchedule?: {
+    sameDayCheckouts: Array<{
+      date: string
+      dateISO: string
+      properties: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkoutDate: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
+        nextCheckin: {
+          date: string
+          propertyTitle: string
+          timeWindowHours?: number
+          timeWindowDays?: number
+          packageName?: string
+        } | null
+      }>
+      sameDayCheckins?: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
+      }>
+    }>
+    dateSuggestions?: Array<{
+      checkoutDate: string
+      checkoutDateFormatted: string
+      nextCheckinDate: string
+      nextCheckinDateFormatted: string
+      propertyTitle: string
+      timeWindowHours: number
+      timeWindowDays: number
+      timeWindowLabel: string
+      nextPackageName: string
+      isGuestBooking: boolean
+    }>
+    scheduleSuggestions?: Array<{
+      label: string
+      fromCheckoutDate: string
+      fromCheckoutDateFormatted: string
+      fromPropertyCount: number
+      toCheckoutDate: string
+      toCheckoutDateFormatted: string
+      toPropertyCount: number
+      properties: Array<{
+        id: string
+        propertyTitle: string
+        propertySlug: string
+        checkoutDate: string
+        checkinDate: string
+        sleepCapacity: string
+        proximityCategories: string[]
+        isGuestBooking?: boolean
+        currentPackageName?: string
+        nextCheckin: {
+          date: string
+          checkoutDate: string
+          checkoutDateFormatted: string
+          propertyTitle: string
+          timeWindowHours?: number
+          timeWindowDays?: number
+          packageName?: string
+        } | null
+      }>
+    }>
+  }
 }
+
+type CleaningScheduleSuggestion = NonNullable<
+  NonNullable<Message['cleaningSchedule']>['scheduleSuggestions']
+>[number]
 
 interface PackageSuggestion {
   revenueCatId: string
@@ -98,8 +229,15 @@ interface TokenUsageDetails {
 export const AIAssistant = () => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
+  const { isSubscribed } = useSubscription()
   const router = useRouter()
   const pathname = usePathname()
+  
+  // Determine if user has basic, pro, or enterprise subscription
+  const userRole = Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean)
+  const isHostOrAdmin = userRole.includes('host') || userRole.includes('admin')
+  const subscriptionPlan = currentUser?.subscriptionStatus?.plan || 'none'
+  const hasStandardOrPro = isSubscribed && (subscriptionPlan === 'basic' || subscriptionPlan === 'pro' || subscriptionPlan === 'enterprise' || isHostOrAdmin)
   
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
     if (!usage || typeof usage !== 'object') return null
@@ -162,6 +300,10 @@ export const AIAssistant = () => {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
+const [dateSuggestions, setDateSuggestions] = useState<
+  Array<{ startDate: Date; endDate: Date; label: string }>
+>([])
+const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleSuggestion[]>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
   const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -273,6 +415,110 @@ export const AIAssistant = () => {
     }
   }, [])
 
+  // Generate date suggestions when on a post page
+  useEffect(() => {
+    const generateDateSuggestions = async () => {
+      if (currentContext?.context !== 'post-article' || !currentContext?.post?.id || !isLoggedIn) {
+        setDateSuggestions([])
+        return
+      }
+
+      try {
+        const postId = currentContext.post.id
+        const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`, {
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          setDateSuggestions([])
+          return
+        }
+
+        const data = await response.json()
+        const unavailableDates = new Set(data.unavailableDates || [])
+
+        // Generate date suggestions for common durations
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const suggestions: Array<{ startDate: Date; endDate: Date; label: string }> = []
+
+        // Helper to normalize dates to midnight UTC (matching check-availability.ts)
+        const normalizeDate = (date: Date): Date => {
+          const normalized = new Date(date)
+          normalized.setUTCHours(0, 0, 0, 0)
+          return normalized
+        }
+
+        // Helper to check if a date range conflicts with unavailable dates
+        const hasConflict = (testStart: Date, testEnd: Date): boolean => {
+          const checkDate = new Date(testStart)
+          while (checkDate < testEnd) {
+            const dateStr = checkDate.toISOString()
+            if (unavailableDates.has(dateStr)) {
+              return true
+            }
+            checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+          }
+          return false
+        }
+
+        // Generate suggestions for 3, 5, and 7 night stays
+        // Spread them across different months for variety
+        const durations = [3, 5, 7]
+        const todayNormalized = normalizeDate(today)
+        
+        // Target dates spread across months: 1 week, 1 month, 2 months from now
+        const targetDates = [
+          new Date(todayNormalized.getTime() + 7 * 24 * 60 * 60 * 1000),   // ~1 week
+          new Date(todayNormalized.getTime() + 30 * 24 * 60 * 60 * 1000),  // ~1 month
+          new Date(todayNormalized.getTime() + 60 * 24 * 60 * 60 * 1000),  // ~2 months
+        ]
+
+        for (const targetDate of targetDates) {
+          for (const nights of durations) {
+            // Look for available dates around the target date (±7 days)
+            const searchWindow = 7
+            let found = false
+            
+            for (let offset = 0; offset <= searchWindow && !found; offset++) {
+              // Try dates before and after target
+              for (const direction of [-1, 1]) {
+                const startDate = new Date(targetDate)
+                startDate.setUTCDate(startDate.getUTCDate() + (offset * direction))
+                const endDate = new Date(startDate)
+                endDate.setUTCDate(endDate.getUTCDate() + nights)
+
+                // Ensure dates are in the future
+                if (startDate < todayNormalized) continue
+
+                if (!hasConflict(startDate, endDate)) {
+                  const startStr = format(startDate, 'MMM d')
+                  const endStr = format(endDate, 'MMM d')
+                  suggestions.push({
+                    startDate,
+                    endDate,
+                    label: `${startStr} - ${endStr}`,
+                  })
+                  found = true
+                  break
+                }
+              }
+            }
+          }
+        }
+
+        // Sort by start date and limit to 6 suggestions
+        suggestions.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+        setDateSuggestions(suggestions.slice(0, 6))
+      } catch (error) {
+        console.error('Error generating date suggestions:', error)
+        setDateSuggestions([])
+      }
+    }
+
+    generateDateSuggestions()
+  }, [currentContext, isLoggedIn])
+
   const formatUsageInline = (usage: TokenUsageDetails | null) => {
     if (!usage || usage.total == null) return null
     const parts: string[] = [`${usage.total}`]
@@ -345,6 +591,127 @@ export const AIAssistant = () => {
     },
     [setMessages],
   )
+
+  useEffect(() => {
+    const latestCleaningMessage = [...messages].reverse().find((msg) => msg.cleaningSchedule)
+    if (latestCleaningMessage?.cleaningSchedule?.scheduleSuggestions) {
+      setScheduleSuggestions(latestCleaningMessage.cleaningSchedule.scheduleSuggestions)
+    }
+  }, [messages])
+
+  useEffect(() => {
+    if (!isOpen || !isHostOrAdmin) return
+    if (scheduleSuggestions.length > 0) return
+
+    let isCancelled = false
+
+    const fetchSuggestions = async () => {
+      try {
+        const response = await fetch('/api/cleaning-schedule/suggestions', {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to load cleaning suggestions')
+        }
+
+        const data = await response.json()
+        if (isCancelled) return
+
+        if (Array.isArray(data?.scheduleSuggestions) && data.scheduleSuggestions.length > 0) {
+          setScheduleSuggestions(data.scheduleSuggestions)
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          console.error('Error fetching cleaning schedule suggestions:', error)
+        }
+      }
+    }
+
+    fetchSuggestions()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [isOpen, isHostOrAdmin, scheduleSuggestions.length])
+
+  const handleScheduleSuggestionClick = useCallback(
+    async (scheduleSuggestion: CleaningScheduleSuggestion) => {
+      const threadId = activeThreadRef.current
+      const fromDate = new Date(`${scheduleSuggestion.fromCheckoutDate}T00:00:00Z`)
+      const toDate = new Date(`${scheduleSuggestion.toCheckoutDate}T00:00:00Z`)
+      const diffMs = Math.max(0, toDate.getTime() - fromDate.getTime())
+      const diffDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)))
+      const timeWindowLabel =
+        diffDays === 1 ? '1 day between schedules' : `${diffDays} days between schedules`
+
+      const schedulePlan: Message = {
+        role: 'assistant',
+        content: `Cleaning schedule: ${scheduleSuggestion.label}`,
+        cleaningSchedule: {
+          sameDayCheckouts: [
+            {
+              date: scheduleSuggestion.fromCheckoutDateFormatted,
+              dateISO: scheduleSuggestion.fromCheckoutDate,
+              properties: scheduleSuggestion.properties,
+            },
+          ],
+          dateSuggestions: [
+            {
+              checkoutDate: scheduleSuggestion.fromCheckoutDate,
+              checkoutDateFormatted: scheduleSuggestion.fromCheckoutDateFormatted,
+              nextCheckinDate: scheduleSuggestion.toCheckoutDate,
+              nextCheckinDateFormatted: scheduleSuggestion.toCheckoutDateFormatted,
+              propertyTitle: scheduleSuggestion.label,
+              timeWindowHours: diffDays * 24,
+              timeWindowDays: diffDays,
+              timeWindowLabel,
+              nextPackageName: '',
+              isGuestBooking: false,
+            },
+          ],
+        },
+      }
+
+      appendMessageToThread(threadId, schedulePlan)
+
+      try {
+        const bookingIds = scheduleSuggestion.properties
+          .map((property) => property.id)
+          .filter((id): id is string => Boolean(id))
+
+        for (const bookingId of bookingIds) {
+          try {
+            const response = await fetch(`/api/bookings/${bookingId}/cleaning-schedule`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                cleaningSchedule: schedulePlan.cleaningSchedule,
+                cleaningSource: 'included',
+              }),
+            })
+
+            if (!response.ok) {
+              console.error(
+                `Failed to attach schedule to booking ${bookingId}:`,
+                await response.text(),
+              )
+            }
+          } catch (error) {
+            console.error(`Error attaching schedule to booking ${bookingId}:`, error)
+          }
+        }
+      } catch (error) {
+        console.error('Error attaching cleaning schedules to bookings:', error)
+      }
+    },
+    [appendMessageToThread],
+  )
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (
@@ -400,6 +767,8 @@ export const AIAssistant = () => {
     const checkContext = () => {
       if ((window as any).bookingContext) {
         setCurrentContext((window as any).bookingContext)
+      } else if ((window as any).estimateContext) {
+        setCurrentContext((window as any).estimateContext)
       } else if ((window as any).postContext) {
         setCurrentContext((window as any).postContext)
       }
@@ -526,6 +895,11 @@ export const AIAssistant = () => {
       if (ctx && !currentContext) {
         setCurrentContext(ctx)
       }
+    }
+    // Stop speech when closing the assistant
+    if (!opening && synthRef.current) {
+      synthRef.current.cancel()
+      setIsSpeaking(false)
     }
     setIsOpen(opening)
   }
@@ -911,7 +1285,6 @@ Article Context:
 - Related Posts: ${postContext.post?.relatedPosts?.map((p: any) => p.title || p).join(', ') || 'None'}
 - Categories: ${categoriesLine}
 - Hero Image: ${heroSummary}
- - Hero Image: ${heroSummary}
 ${sourcesBlock}
 
 Full Article Content:
@@ -1012,6 +1385,476 @@ ${packages.map((pkg: any, index: number) =>
           }
           appendMessageToThread(threadId, assistantMessage)
           speakSafely('Error fetching debug information.')
+        }
+      } else if (
+        (messageToSend.toLowerCase().includes('both') && 
+         (messageToSend.toLowerCase().includes('available') || messageToSend.toLowerCase().includes('availability'))) ||
+        messageToSend.toLowerCase().includes('when are both') ||
+        messageToSend.toLowerCase().includes('simultaneously') ||
+        messageToSend.toLowerCase().includes('at the same time')
+      ) {
+        // Handle multi-post availability queries
+        try {
+          // First, use chat API to help identify post names from the message
+          const chatResponse = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `I need to identify which properties the user is asking about. User message: "${messageToSend}"
+
+Please extract the property/post names mentioned. Respond ONLY with a JSON array of property names/slugs you can identify, like: ["the-shack", "sea-side-cottage"] or ["The Shack", "Seaside Cottage"]. If you can't identify specific properties, respond with an empty array: [].`,
+              context: 'multi-post-availability-extraction'
+            }),
+          })
+
+          const chatData = await chatResponse.json()
+          const extractionText = chatData.message || chatData.response || '[]'
+          
+          // Try to parse JSON from the response
+          let postIdentifiers: string[] = []
+          try {
+            // Try to extract JSON array from the response
+            const jsonMatch = extractionText.match(/\[.*?\]/s)
+            if (jsonMatch) {
+              postIdentifiers = JSON.parse(jsonMatch[0])
+            }
+          } catch (e) {
+            // If parsing fails, try to extract post names manually
+            const lowerMessage = messageToSend.toLowerCase()
+            // Look for common patterns like "the shack and sea side cottage"
+            const matches = messageToSend.match(/(?:the\s+)?([a-z\s-]+?)(?:\s+and\s+(?:the\s+)?([a-z\s-]+?))?(?:\s+available|availability|sleep|both|simultaneously)/i)
+            if (matches) {
+              if (matches[1]) postIdentifiers.push(matches[1].trim())
+              if (matches[2]) postIdentifiers.push(matches[2].trim())
+            }
+          }
+
+          if (postIdentifiers.length < 2) {
+            // Ask user to clarify
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'I can help you check availability for multiple properties! Please specify which properties you\'d like to check (e.g., "the shack and sea side cottage"). You can provide post names, slugs, or IDs.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('Please specify which properties you\'d like to check.')
+            return
+          }
+
+          // Look up post IDs from names/slugs
+          const postIdPromises = postIdentifiers.map(async (identifier: string) => {
+            try {
+              // Try to find by slug first (normalize to slug format)
+              const slug = identifier.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+              const response = await fetch(`/api/posts/search?slug=${encodeURIComponent(slug)}`, {
+                credentials: 'include',
+              })
+              if (response.ok) {
+                const data = await response.json()
+                if (data.docs && data.docs.length > 0) {
+                  return data.docs[0].id
+                }
+              }
+              
+              // Try to find by title/name
+              const titleResponse = await fetch(`/api/posts/search?title=${encodeURIComponent(identifier)}`, {
+                credentials: 'include',
+              })
+              if (titleResponse.ok) {
+                const titleData = await titleResponse.json()
+                if (titleData.docs && titleData.docs.length > 0) {
+                  return titleData.docs[0].id
+                }
+              }
+            } catch (e) {
+              console.error(`Error looking up post: ${identifier}`, e)
+            }
+            return null
+          })
+
+          const postIds = (await Promise.all(postIdPromises)).filter((id): id is string => id !== null)
+
+          if (postIds.length < 2) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `I couldn't find both properties you mentioned. I found ${postIds.length} of ${postIdentifiers.length} properties. Please check the property names and try again, or provide post IDs directly.`,
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('I couldn\'t find both properties. Please check the names and try again.')
+            return
+          }
+
+          // Call the multi-post availability endpoint
+          const availabilityResponse = await fetch(
+            `/api/bookings/multi-post-availability?postIds=${postIds.join(',')}`,
+            {
+              credentials: 'include',
+            }
+          )
+
+          if (!availabilityResponse.ok) {
+            throw new Error('Failed to fetch availability data')
+          }
+
+          const availabilityData = await availabilityResponse.json()
+          
+          // Process the data to find when both are available
+          const unavailableInAnyPost = new Set(availabilityData.unavailableInAnyPost || [])
+          
+          // Get post details
+          const postDetails = availabilityData.posts || []
+          const postNames = postDetails.map((p: any) => p.title).join(' and ')
+          
+          // Calculate available date ranges (simplified - show next 90 days)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const futureDate = new Date(today)
+          futureDate.setDate(futureDate.getDate() + 90)
+          
+          const availableRanges: Array<{ start: Date; end: Date }> = []
+          let currentRangeStart: Date | null = null
+          
+          const checkDate = new Date(today)
+          while (checkDate <= futureDate) {
+            const dateStr = checkDate.toISOString()
+            const isUnavailable = unavailableInAnyPost.has(dateStr)
+            
+            if (!isUnavailable && !currentRangeStart) {
+              // Start of available range
+              currentRangeStart = new Date(checkDate)
+            } else if (isUnavailable && currentRangeStart) {
+              // End of available range
+              availableRanges.push({
+                start: currentRangeStart,
+                end: new Date(checkDate.getTime() - 24 * 60 * 60 * 1000), // Previous day
+              })
+              currentRangeStart = null
+            }
+            
+            checkDate.setDate(checkDate.getDate() + 1)
+          }
+          
+          // If we ended in an available range, close it
+          if (currentRangeStart) {
+            availableRanges.push({
+              start: currentRangeStart,
+              end: futureDate,
+            })
+          }
+
+          // Format the response
+          let responseText = `I checked availability for **${postNames}**. Here's when both properties are available simultaneously:\n\n`
+          
+          if (availableRanges.length === 0) {
+            responseText += '❌ **No overlapping availability found** in the next 90 days. Both properties have conflicting bookings.\n\n'
+          } else {
+            responseText += `✅ **Found ${availableRanges.length} available period${availableRanges.length > 1 ? 's' : ''}** when both properties are free:\n\n`
+            
+            availableRanges.slice(0, 10).forEach((range, idx) => {
+              const startStr = format(range.start, 'MMM d, yyyy')
+              const endStr = format(range.end, 'MMM d, yyyy')
+              const nights = Math.ceil((range.end.getTime() - range.start.getTime()) / (24 * 60 * 60 * 1000))
+              responseText += `${idx + 1}. **${startStr}** to **${endStr}** (${nights} night${nights !== 1 ? 's' : ''})\n`
+            })
+            
+            if (availableRanges.length > 10) {
+              responseText += `\n...and ${availableRanges.length - 10} more period${availableRanges.length - 10 > 1 ? 's' : ''}.\n`
+            }
+          }
+          
+          responseText += `\n💡 **Tip:** Both properties can sleep 2 people each, so booking both together gives you capacity for 4 guests!`
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: responseText,
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(`I found ${availableRanges.length} available period${availableRanges.length !== 1 ? 's' : ''} when both properties are free.`)
+        } catch (error) {
+          console.error('Multi-post availability error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while checking multi-property availability. Please try again or specify the property names more clearly.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error checking multi-property availability.')
+        }
+      } else if (
+        isHostOrAdmin && (
+          messageToSend.toLowerCase().includes('cleaner') ||
+          messageToSend.toLowerCase().includes('cleaning') ||
+          messageToSend.toLowerCase().includes('send') && messageToSend.toLowerCase().includes('cleaner')
+        )
+      ) {
+        // Handle cleaning schedule queries for hosts
+        try {
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `As a host, I'm asking about cleaning schedules. ${messageToSend}
+
+Please help me understand:
+- When to send cleaners based on booking check-out dates
+- How many cleaners to send (e.g., "send 1 cleaner instead of 2")
+- Cleaning schedule optimization
+
+If I mentioned specific bookings or dates, please reference them.`,
+              context: 'cleaning-schedule',
+              userRole: isHostOrAdmin ? 'host' : 'admin'
+            }),
+          })
+
+          const data = await response.json()
+          if (activeThreadRef.current !== threadId) return
+          const usage = normalizeTokenUsage(data.usage)
+          const baseContent = data.message || data.response || 'I can help you with cleaning schedules. Please provide more details about which bookings or dates you\'re referring to.'
+
+          persistTokenUsage(usage)
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
+            cleaningSchedule: data.cleaningSchedule || undefined,
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(baseContent)
+        } catch (error) {
+          console.error('Cleaning schedule error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while processing your cleaning schedule query. Please try again.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error processing cleaning schedule query.')
+        }
+      } else if (
+        (currentContext?.context === 'estimate-details' || currentContext?.context === 'booking-details') &&
+        (messageToSend.toLowerCase().includes('other properties') ||
+         messageToSend.toLowerCase().includes('suggest other') ||
+         messageToSend.toLowerCase().includes('find other') ||
+         messageToSend.toLowerCase().includes('available for my dates'))
+      ) {
+        // Handle property suggestions for estimates or bookings
+        try {
+          const context = currentContext
+          let fromDate: string | undefined
+          let toDate: string | undefined
+          let currentPostId: string | undefined
+          let currentPostCategories: string[] = []
+          
+          if (context.context === 'estimate-details') {
+            fromDate = context.estimate?.fromDate
+            toDate = context.estimate?.toDate
+            currentPostId = context?.post?.id
+            // Get categories from current post if available
+            if (context?.post && typeof context.post === 'object') {
+              const postCategories = (context.post as any).categories
+              if (Array.isArray(postCategories)) {
+                currentPostCategories = postCategories.map((c: any) => 
+                  typeof c === 'object' ? (c.id || c.slug || c.title) : c
+                ).filter(Boolean)
+              }
+            }
+          } else if (context.context === 'booking-details') {
+            fromDate = context.booking?.fromDate
+            toDate = context.booking?.toDate
+            currentPostId = context?.property?.id
+            // Get categories from property if available
+            if (context?.property && typeof context.property === 'object') {
+              const propertyCategories = (context.property as any).categories
+              if (Array.isArray(propertyCategories)) {
+                currentPostCategories = propertyCategories.map((c: any) => 
+                  typeof c === 'object' ? (c.id || c.slug || c.title) : c
+                ).filter(Boolean)
+              }
+            }
+          }
+          
+          if (!fromDate || !toDate) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'I need dates to find other available properties. Please make sure your booking/estimate has check-in and check-out dates set.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('I need dates to find other available properties.')
+            return
+          }
+          
+          // Fetch all posts
+          const postsResponse = await fetch('/api/posts?limit=100&depth=2', {
+            credentials: 'include',
+          })
+          
+          if (!postsResponse.ok) {
+            throw new Error('Failed to fetch posts')
+          }
+          
+          const postsData = await postsResponse.json()
+          const allPosts = postsData.docs || []
+          
+          // Filter out current post if specified
+          let otherPosts = currentPostId 
+            ? allPosts.filter((p: any) => p.id !== currentPostId)
+            : allPosts
+          
+          // Filter by same categories if we have categories from current post
+          if (currentPostCategories.length > 0) {
+            const categoryFiltered = otherPosts.filter((p: any) => {
+              const postCategories = Array.isArray(p.categories) 
+                ? p.categories.map((c: any) => typeof c === 'object' ? (c.id || c.slug || c.title) : c).filter(Boolean)
+                : []
+              // Check if any category matches
+              return postCategories.some((catId: string) => currentPostCategories.includes(catId))
+            })
+            
+            // If we found category matches, use those; otherwise use all posts
+            if (categoryFiltered.length > 0) {
+              otherPosts = categoryFiltered
+            }
+          }
+          
+          if (otherPosts.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'No other properties found to check availability for.',
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('No other properties found.')
+            return
+          }
+          
+          // Check availability for each post
+          const availabilityChecks = await Promise.all(
+            otherPosts.slice(0, 20).map(async (post: any) => {
+              try {
+                const availResponse = await fetch(
+                  `/api/bookings/unavailable-dates?postId=${post.id}`,
+                  { credentials: 'include' }
+                )
+                if (!availResponse.ok) return { post, available: false, error: true }
+                
+                const availData = await availResponse.json()
+                const unavailableDates = new Set(availData.unavailableDates || [])
+                
+                // Check if the date range overlaps with unavailable dates
+                const from = new Date(fromDate)
+                const to = new Date(toDate)
+                const checkDate = new Date(from)
+                let isAvailable = true
+                
+                while (checkDate < to && isAvailable) {
+                  const dateStr = checkDate.toISOString()
+                  if (unavailableDates.has(dateStr)) {
+                    isAvailable = false
+                    break
+                  }
+                  checkDate.setDate(checkDate.getDate() + 1)
+                }
+                
+                return { post, available: isAvailable, error: false }
+              } catch (e) {
+                return { post, available: false, error: true }
+              }
+            })
+          )
+          
+          const availablePosts = availabilityChecks
+            .filter((result: any) => result.available && !result.error)
+            .map((result: any) => result.post)
+          
+          // Format response with available properties
+          const fromStr = format(new Date(fromDate), 'MMM d, yyyy')
+          const toStr = format(new Date(toDate), 'MMM d, yyyy')
+          
+          if (availablePosts.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `I checked ${otherPosts.length} other properties for availability from **${fromStr}** to **${toStr}**, but none are available for those exact dates. You may want to consider adjusting your dates slightly or checking back later.`,
+            }
+            appendMessageToThread(threadId, assistantMessage)
+            speakSafely('No other properties are available for those dates.')
+            return
+          }
+          
+          // Build property list with links
+          const propertyList = availablePosts.map((p: any, idx: number) => {
+            const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
+            const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${postUrl}` : postUrl
+            const categories = Array.isArray(p.categories) 
+              ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
+              : 'None'
+            return `${idx + 1}. **[${p.title}](${postUrl})** - [View Property](${postUrl})
+   - **Link:** [${fullUrl}](${postUrl})
+   - **Description:** ${p.meta?.description || 'No description'}
+   - **Base Rate:** ${p.baseRate ? `R${p.baseRate}` : 'Not set'}
+   - **Categories:** ${categories}`
+          }).join('\n\n')
+
+          // Use chat API to format a nice response with property details and links
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `User has dates ${fromStr} to ${toStr}. I found ${availablePosts.length} other properties available for these exact dates:
+
+${propertyList}
+
+IMPORTANT: You MUST include clickable markdown links to each property in your response. Use the format [Property Name](${typeof window !== 'undefined' ? window.location.origin : ''}/posts/slug) for each property. List each property with its link prominently. Format it nicely with markdown, making sure every property name is a clickable link.`,
+              context: 'property-suggestions',
+            }),
+          })
+
+          const data = await response.json()
+          if (activeThreadRef.current !== threadId) return
+          const usage = normalizeTokenUsage(data.usage)
+          let baseContent = data.message || data.response || `I found ${availablePosts.length} other properties available for your dates from ${fromStr} to ${toStr}.`
+
+          // Ensure links are included even if AI didn't add them
+          if (!baseContent.includes('[') || !baseContent.includes('](')) {
+            const linksSection = '\n\n**Available Properties:**\n\n' + 
+              availablePosts.map((p: any) => {
+                const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
+                return `- [${p.title}](${postUrl})`
+              }).join('\n')
+            baseContent += linksSection
+          }
+
+          persistTokenUsage(usage)
+
+          // Prepare property suggestions data for Plan component
+          const propertySuggestionsData = {
+            fromDate: fromStr,
+            toDate: toStr,
+            properties: availablePosts.map((p: any) => ({
+              id: p.id,
+              title: p.title,
+              slug: p.slug || p.id,
+              description: p.meta?.description || '',
+              baseRate: p.baseRate,
+              categories: Array.isArray(p.categories) 
+                ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
+                : 'None',
+            })),
+          }
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: appendUsageToContent(baseContent, usage),
+            propertySuggestions: propertySuggestionsData,
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely(`I found ${availablePosts.length} other properties available for your dates.`)
+        } catch (error) {
+          console.error('Property suggestions error:', error)
+          if (activeThreadRef.current !== threadId) return
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Sorry, I encountered an error while finding other properties. Please try again.',
+          }
+          appendMessageToThread(threadId, assistantMessage)
+          speakSafely('Error finding other properties.')
         }
       } else {
         // Regular chat API call
@@ -1125,47 +1968,116 @@ ${packages.map((pkg: any, index: number) =>
                       My Entitlements
                     </Button>
                     {currentContext?.context === 'booking-details' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-6 px-2"
+                          onClick={() => {
+                            try {
+                              const fromISO = currentContext?.booking?.fromDate
+                              const toISO = currentContext?.booking?.toDate
+                              const from = fromISO ? new Date(fromISO) : null
+                              const to = toISO ? new Date(toISO) : null
+                              const msPerDay = 24 * 60 * 60 * 1000
+                              const nights =
+                                from && to
+                                  ? Math.max(1, Math.round((to.getTime() - from.getTime()) / msPerDay))
+                                  : undefined
+                              const guestsArr = Array.isArray(currentContext?.guests?.guests)
+                                ? currentContext.guests.guests
+                                : []
+                              const guestCount = guestsArr.length || 0
+                              const guestPhrase =
+                                guestCount > 0
+                                  ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}`
+                                  : 'guests'
+                              const stayPhrase =
+                                typeof nights === 'number'
+                                  ? `${nights} ${nights === 1 ? 'day' : 'days'}`
+                                  : 'your stay'
+                              const summary = `Your booking includes ${guestPhrase} for ${stayPhrase}.`
+                              const msg = `Tell me about this booking. ${summary} Please include dates, package, payment status, and the guest list.`
+                              setInput(msg)
+                              handleSubmit(new Event('submit') as any)
+                            } catch {
+                              setInput('Tell me about this booking including the guest list and length of stay')
+                              handleSubmit(new Event('submit') as any)
+                            }
+                          }}
+                        >
+                          Tell me about this booking
+                        </Button>
+                        {hasStandardOrPro && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 border-primary/20"
+                            onClick={() => {
+                              try {
+                                const bookingId = currentContext?.booking?.id
+                                const fromISO = currentContext?.booking?.fromDate
+                                const toISO = currentContext?.booking?.toDate
+                                
+                                if (bookingId) {
+                                  // Scroll to the reschedule section on the booking page
+                                  const rescheduleSection = document.getElementById('booking-reschedule')
+                                  if (rescheduleSection) {
+                                    rescheduleSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                    // Try to open the calendar if it exists
+                                    setTimeout(() => {
+                                      const calendarButton = rescheduleSection.querySelector('button[aria-haspopup="dialog"]')
+                                      if (calendarButton) {
+                                        (calendarButton as HTMLElement).click()
+                                      }
+                                    }, 500)
+                                  } else {
+                                    // If section not found, navigate to booking page
+                                    window.location.href = `/bookings/${bookingId}#reschedule`
+                                  }
+                                } else {
+                                  const from = fromISO ? new Date(fromISO) : null
+                                  const to = toISO ? new Date(toISO) : null
+                                  const dateInfo = from && to 
+                                    ? `Current dates: ${format(from, 'MMM d')} - ${format(to, 'MMM d, yyyy')}. `
+                                    : ''
+                                  const msg = `Help me reschedule my booking. ${dateInfo}I want to change the dates but keep the same package and duration. Show me available dates and guide me through the reschedule process.`
+                                  setInput(msg)
+                                  handleSubmit(new Event('submit') as any)
+                                }
+                              } catch {
+                                const msg = 'Help me reschedule my booking. I need to change my booking dates while keeping the same package.'
+                                setInput(msg)
+                                handleSubmit(new Event('submit') as any)
+                              }
+                            }}
+                          >
+                            🔄 Reschedule
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {isHostOrAdmin && (
                       <Button
                         size="sm"
                         variant="outline"
                         className="text-xs h-6 px-2"
                         onClick={() => {
-                          try {
-                            const fromISO = currentContext?.booking?.fromDate
-                            const toISO = currentContext?.booking?.toDate
-                            const from = fromISO ? new Date(fromISO) : null
-                            const to = toISO ? new Date(toISO) : null
-                            const msPerDay = 24 * 60 * 60 * 1000
-                            const nights =
-                              from && to
-                                ? Math.max(1, Math.round((to.getTime() - from.getTime()) / msPerDay))
-                                : undefined
-                            const guestsArr = Array.isArray(currentContext?.guests?.guests)
-                              ? currentContext.guests.guests
-                              : []
-                            const guestCount = guestsArr.length || 0
-                            const guestPhrase =
-                              guestCount > 0
-                                ? `${guestCount} ${guestCount === 1 ? 'guest' : 'guests'}`
-                                : 'guests'
-                            const stayPhrase =
-                              typeof nights === 'number'
-                                ? `${nights} ${nights === 1 ? 'day' : 'days'}`
-                                : 'your stay'
-                            const summary = `Your booking includes ${guestPhrase} for ${stayPhrase}.`
-                            const msg = `Tell me about this booking. ${summary} Please include dates, package, payment status, and the guest list.`
-                            setInput(msg)
-                            handleSubmit(new Event('submit') as any)
-                          } catch {
-                            setInput('Tell me about this booking including the guest list and length of stay')
-                            handleSubmit(new Event('submit') as any)
-                          }
+                          const today = new Date()
+                          const todayStr = today.toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                          const msg = `Plan same-day checkout cleaning routes for cleaners.\n\nFocus on bookings checking out today (${todayStr}). Group properties by proximity/area and tell me when to send a cleaner, and whether to send 1 cleaner instead of 2.\n\nThis is about my cleaners, not guests.`
+                          setInput(msg)
+                          handleSubmit(new Event('submit') as any)
                         }}
                       >
-                        Tell me about this booking
+                        Same-day checkout cleaning
                       </Button>
                     )}
-                    {currentContext?.context === 'post-article' && (
+                    {currentContext?.context === 'post-article' && hasStandardOrPro && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1178,7 +2090,7 @@ ${packages.map((pkg: any, index: number) =>
                         Tell me about my bookings
                       </Button>
                     )}
-                    {currentContext?.context === 'post-article' && (
+                    {(currentContext?.context === 'post-article' || currentContext?.context === 'booking-details') && hasStandardOrPro && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -1191,16 +2103,415 @@ ${packages.map((pkg: any, index: number) =>
                         Summarize this page
                       </Button>
                     )}
+                    {currentContext?.context === 'estimate-details' && currentContext?.estimate && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          try {
+                            const fromDate = currentContext.estimate?.fromDate
+                            const toDate = currentContext.estimate?.toDate
+                            const currentPostId = currentContext?.post?.id
+                            
+                            if (!fromDate || !toDate) {
+                              setInput('Find other properties available for my dates')
+                              handleSubmit(new Event('submit') as any)
+                              return
+                            }
+                            
+                            const from = new Date(fromDate)
+                            const to = new Date(toDate)
+                            const fromStr = format(from, 'MMM d, yyyy')
+                            const toStr = format(to, 'MMM d, yyyy')
+                            
+                            const msg = `Find other properties available from ${fromStr} to ${toStr}${currentPostId ? ` (excluding the current property)` : ''}. Show me properties that are available for these exact dates.`
+                            setInput(msg)
+                            handleSubmit(new Event('submit') as any)
+                          } catch {
+                            setInput('Find other properties available for my dates')
+                            handleSubmit(new Event('submit') as any)
+                          }
+                        }}
+                      >
+                        Suggest Other Properties
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
               
               {messages.map((message, index) => (
-                <Message key={index} from={message.role}>
-                  <MessageContent>
-                    <MessageResponse>{message.content || ''}</MessageResponse>
-                  </MessageContent>
-                </Message>
+                <React.Fragment key={index}>
+                  <Message from={message.role}>
+                    <MessageContent>
+                      <MessageResponse>{message.content || ''}</MessageResponse>
+                    </MessageContent>
+                  </Message>
+                  {message.propertySuggestions && message.propertySuggestions.properties.length > 0 && (
+                    <div className="mb-4">
+                      <Plan defaultOpen={true}>
+                        <PlanHeader>
+                          <PlanTitle>
+                            {`Available Properties for ${message.propertySuggestions.fromDate} to ${message.propertySuggestions.toDate}`}
+                          </PlanTitle>
+                          <PlanDescription>
+                            {`${message.propertySuggestions.properties.length} properties available for your selected dates`}
+                          </PlanDescription>
+                        </PlanHeader>
+                        <PlanTrigger>View Properties</PlanTrigger>
+                        <PlanContent>
+                          <div className="space-y-4">
+                            {(() => {
+                              const suggestions = message.propertySuggestions!
+                              const fromDateParam = new Date(suggestions.fromDate).toISOString().split('T')[0]
+                              const toDateParam = new Date(suggestions.toDate).toISOString().split('T')[0]
+                              
+                              return suggestions.properties.map((property, idx) => {
+                                const basePostUrl = property.slug ? `/posts/${property.slug}` : `/posts/${property.id}`
+                                // Add date parameters to the URL
+                                const postUrl = `${basePostUrl}?fromDate=${fromDateParam}&toDate=${toDateParam}`
+                                return (
+                                  <div key={property.id} className="border-b pb-4 last:border-0 last:pb-0">
+                                    <h4 className="font-semibold mb-2">
+                                      <a 
+                                        href={postUrl} 
+                                        className="text-primary hover:underline"
+                                      >
+                                        {idx + 1}. {property.title}
+                                      </a>
+                                    </h4>
+                                    {property.description && (
+                                      <p className="text-sm text-muted-foreground mb-2">
+                                        {property.description}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mb-2">
+                                      {property.baseRate && (
+                                        <span>Base Rate: R{property.baseRate}</span>
+                                      )}
+                                      {property.categories && property.categories !== 'None' && (
+                                        <span>Categories: {property.categories}</span>
+                                      )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mb-2">
+                                      <span>Available: {suggestions.fromDate} to {suggestions.toDate}</span>
+                                    </div>
+                                    <div className="mt-2">
+                                      <PlanAction asChild size="sm" variant="outline">
+                                        <a href={postUrl}>View Property with Dates</a>
+                                      </PlanAction>
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            })()}
+                          </div>
+                        </PlanContent>
+                      </Plan>
+                    </div>
+                  )}
+                  {message.cleaningSchedule &&
+                    (() => {
+                      const overlappingGroups = message.cleaningSchedule.sameDayCheckouts.filter(
+                        (group) => group.properties.length > 1 || (group.sameDayCheckins && group.sameDayCheckins.length > 0),
+                      )
+                      const reasoningLines =
+                        overlappingGroups.length > 0
+                          ? overlappingGroups.flatMap((group) => {
+                              const lines: string[] = []
+                              if (group.properties.length > 1) {
+                                const propertyList = group.properties
+                                  .map((p) => p.propertyTitle)
+                                  .join(', ')
+                                lines.push(`${group.properties.length} properties check out on ${group.date}: ${propertyList}`)
+                              }
+                              if (group.sameDayCheckins && group.sameDayCheckins.length > 0) {
+                                const checkinList = group.sameDayCheckins
+                                  .map((c) => c.propertyTitle)
+                                  .join(', ')
+                                lines.push(`⚠️ Critical: ${group.sameDayCheckins.length} ${group.sameDayCheckins.length === 1 ? 'property' : 'properties'} checking in on ${group.date}: ${checkinList}. Clean checkout properties before check-in time.`)
+                              }
+                              return lines
+                            })
+                          : ['No overlapping same-day checkouts detected. Cleaners can move sequentially.']
+
+                      return (
+                        <>
+                          {message.cleaningSchedule.sameDayCheckouts.length > 0 && (
+                            <div className="mb-4">
+                              <Plan defaultOpen={true}>
+                                <PlanHeader>
+                                  <PlanTitle>Same Day Checkout Schedule</PlanTitle>
+                                  <PlanDescription>
+                                    {`Properties checking out grouped by date`}
+                                  </PlanDescription>
+                                </PlanHeader>
+                                <PlanTrigger>View Checkout Schedule</PlanTrigger>
+                                <PlanContent>
+                                  <Reasoning className="mb-4" isStreaming={false}>
+                                    <ReasoningTrigger title="Cleaning insight" />
+                                    <ReasoningContent>
+                                      {reasoningLines.map((line) => `• ${line}`).join('\n')}
+                                    </ReasoningContent>
+                                  </Reasoning>
+                                  <Queue className="mb-4">
+                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => {
+                                      const totalCount = checkoutGroup.properties.length + (checkoutGroup.sameDayCheckins?.length || 0)
+                                      const hasOverlap = (checkoutGroup.sameDayCheckins?.length || 0) > 0
+                                      
+                                      return (
+                                      <QueueSection key={checkoutGroup.date} defaultOpen={groupIdx === 0}>
+                                        <QueueSectionTrigger>
+                                          <QueueSectionLabel
+                                            label={checkoutGroup.date}
+                                            count={totalCount}
+                                            icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
+                                          />
+                                        </QueueSectionTrigger>
+                                        <QueueSectionContent>
+                                          {hasOverlap && (
+                                            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800">
+                                              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                                ⚠️ Critical: {checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'} checking out, {checkoutGroup.sameDayCheckins?.length} {checkoutGroup.sameDayCheckins?.length === 1 ? 'property' : 'properties'} checking in on the same day
+                                              </p>
+                                            </div>
+                                          )}
+                                          <QueueList>
+                                            {checkoutGroup.properties.map((property, propIdx) => {
+                                              const windowLabel =
+                                                property.nextCheckin?.timeWindowHours !== undefined
+                                                  ? property.nextCheckin.timeWindowHours < 24
+                                                    ? `${property.nextCheckin.timeWindowHours} hr`
+                                                    : property.nextCheckin.timeWindowDays === 1
+                                                    ? '1 day'
+                                                    : `${property.nextCheckin.timeWindowDays} days`
+                                                  : 'Awaiting next booking'
+
+                                              return (
+                                                <QueueItem key={property.id ?? `${checkoutGroup.date}-${propIdx}`}>
+                                                  <QueueItemIndicator completed={false} />
+                                                  <div className="flex-1">
+                                                    <QueueItemContent>{property.propertyTitle}</QueueItemContent>
+                                                    <QueueItemDescription>
+                                                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                        <span className="inline-flex items-center gap-1">
+                                                          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                                          Checkout {property.checkoutDate}
+                                                        </span>
+                                                        {property.nextCheckin && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            Next {property.nextCheckin.date}
+                                                          </span>
+                                                        )}
+                                                        {property.proximityCategories.length > 0 && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            {property.proximityCategories.join(', ')}
+                                                          </span>
+                                                        )}
+                                                        {property.nextCheckin && (
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            {windowLabel}
+                                                          </span>
+                                                        )}
+                                                        <span className="inline-flex items-center gap-1">
+                                                          Sleeps {property.sleepCapacity}
+                                                        </span>
+                                                      </div>
+                                                    </QueueItemDescription>
+                                                  </div>
+                                                  {property.propertySlug && (
+                                                    <QueueItemActions>
+                                                      <QueueItemAction asChild>
+                                                        <a
+                                                          href={`/posts/${property.propertySlug}`}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                        >
+                                                          Open
+                                                        </a>
+                                                      </QueueItemAction>
+                                                    </QueueItemActions>
+                                                  )}
+                                                </QueueItem>
+                                              )
+                                            })}
+                                            {checkoutGroup.sameDayCheckins && checkoutGroup.sameDayCheckins.map((checkin, checkinIdx) => (
+                                              <QueueItem key={checkin.id ?? `checkin-${checkoutGroup.date}-${checkinIdx}`}>
+                                                <QueueItemIndicator completed={false} />
+                                                <div className="flex-1">
+                                                  <QueueItemContent>
+                                                    {checkin.propertyTitle} <span className="text-xs text-muted-foreground">(Check-in)</span>
+                                                  </QueueItemContent>
+                                                  <QueueItemDescription>
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                      <span className="inline-flex items-center gap-1">
+                                                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                                        Check-in {checkin.checkinDate}
+                                                      </span>
+                                                      {checkin.proximityCategories.length > 0 && (
+                                                        <span className="inline-flex items-center gap-1">
+                                                          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                                          {checkin.proximityCategories.join(', ')}
+                                                        </span>
+                                                      )}
+                                                      <span className="inline-flex items-center gap-1">
+                                                        Sleeps {checkin.sleepCapacity}
+                                                      </span>
+                                                    </div>
+                                                  </QueueItemDescription>
+                                                </div>
+                                                {checkin.propertySlug && (
+                                                  <QueueItemActions>
+                                                    <QueueItemAction asChild>
+                                                      <a
+                                                        href={`/posts/${checkin.propertySlug}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                      >
+                                                        Open
+                                                      </a>
+                                                    </QueueItemAction>
+                                                  </QueueItemActions>
+                                                )}
+                                              </QueueItem>
+                                            ))}
+                                          </QueueList>
+                                        </QueueSectionContent>
+                                      </QueueSection>
+                                      )
+                                    })}
+                                  </Queue>
+                                  <div className="space-y-6">
+                                    {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => (
+                                      <div key={`${checkoutGroup.date}-${groupIdx}`} className="border-b pb-4 last:border-0 last:pb-0">
+                                        <h4 className="mb-3 text-base font-semibold">
+                                          {checkoutGroup.date} ({checkoutGroup.properties.length}{' '}
+                                          {checkoutGroup.properties.length === 1 ? 'property' : 'properties'})
+                                        </h4>
+                                        <div className="space-y-3">
+                                          {checkoutGroup.properties.map((property, propIdx) => (
+                                            <div key={property.id ?? `${groupIdx}-${propIdx}`} className="border-l-2 border-muted pl-4">
+                                              <div className="mb-1 text-sm font-medium">
+                                                {property.propertySlug ? (
+                                                  <a href={`/posts/${property.propertySlug}`} className="text-primary hover:underline">
+                                                    {property.propertyTitle}
+                                                  </a>
+                                                ) : (
+                                                  property.propertyTitle
+                                                )}
+                                              </div>
+                                              <div className="space-y-1 text-xs text-muted-foreground">
+                                                <div>
+                                                  <span className="font-medium">Checkout:</span> {property.checkoutDate}
+                                                </div>
+                                                <div>
+                                                  <span className="font-medium">Check-in:</span> {property.checkinDate}
+                                                </div>
+                                                {property.nextCheckin && (
+                                                  <>
+                                                    <div className="text-primary">
+                                                      <span className="font-medium">Next booking:</span> {property.nextCheckin.propertyTitle} on{' '}
+                                                      {property.nextCheckin.date}
+                                                    </div>
+                                                    {property.nextCheckin.timeWindowHours !== undefined && (
+                                                      <div className="font-medium text-primary">
+                                                        <span className="font-medium">Cleaning window:</span>{' '}
+                                                        {property.nextCheckin.timeWindowHours < 24
+                                                          ? `${property.nextCheckin.timeWindowHours} hour${
+                                                              property.nextCheckin.timeWindowHours !== 1 ? 's' : ''
+                                                            }`
+                                                          : property.nextCheckin.timeWindowDays === 1
+                                                          ? '1 day'
+                                                          : `${property.nextCheckin.timeWindowDays} days`}
+                                                      </div>
+                                                    )}
+                                                    {property.nextCheckin.packageName && (
+                                                      <div className="text-xs">
+                                                        <span className="font-medium">Next package:</span> {property.nextCheckin.packageName}
+                                                      </div>
+                                                    )}
+                                                  </>
+                                                )}
+                                                {property.currentPackageName && (
+                                                  <div className="text-xs">
+                                                    <span className="font-medium">Current package:</span> {property.currentPackageName}
+                                                  </div>
+                                                )}
+                                                {property.isGuestBooking && (
+                                                  <div className="text-xs text-green-600">
+                                                    <span className="font-medium">Guest booking</span>
+                                                  </div>
+                                                )}
+                                                <div>
+                                                  <span className="font-medium">Sleeps:</span> {property.sleepCapacity}
+                                                </div>
+                                                {property.proximityCategories.length > 0 && (
+                                                  <div>
+                                                    <span className="font-medium">Area:</span> {property.proximityCategories.join(', ')}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PlanContent>
+                              </Plan>
+                            </div>
+                          )}
+                          {message.cleaningSchedule.dateSuggestions && message.cleaningSchedule.dateSuggestions.length > 0 && (
+                            <div className="mb-4">
+                              <Plan defaultOpen={false}>
+                                <PlanHeader>
+                                  <PlanTitle>Cleaning Time Windows</PlanTitle>
+                                  <PlanDescription>
+                                    {`Time available for cleaning between bookings`}
+                                  </PlanDescription>
+                                </PlanHeader>
+                                <PlanTrigger>View Time Windows</PlanTrigger>
+                                <PlanContent>
+                                  <div className="space-y-3">
+                                    {message.cleaningSchedule.dateSuggestions.map((suggestion, idx) => (
+                                      <div key={idx} className="border-b pb-3 last:border-0 last:pb-0">
+                                        <div className="mb-1 text-sm font-medium">{suggestion.propertyTitle}</div>
+                                        <div className="space-y-1 text-xs text-muted-foreground">
+                                          <div>
+                                            <span className="font-medium">Checkout:</span> {suggestion.checkoutDateFormatted}
+                                          </div>
+                                          <div>
+                                            <span className="font-medium">Next check-in:</span> {suggestion.nextCheckinDateFormatted}
+                                          </div>
+                                          <div className="font-medium text-primary">
+                                            <span className="font-medium">Cleaning window:</span> {suggestion.timeWindowLabel}
+                                          </div>
+                                          {suggestion.nextPackageName && (
+                                            <div>
+                                              <span className="font-medium">Next package:</span> {suggestion.nextPackageName}
+                                            </div>
+                                          )}
+                                          {suggestion.isGuestBooking && (
+                                            <div className="text-green-600">
+                                              <span className="font-medium">Guest booking</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PlanContent>
+                              </Plan>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                </React.Fragment>
               ))}
               {isLoading && (
                 <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">
@@ -1243,6 +2554,10 @@ ${packages.map((pkg: any, index: number) =>
                           })
                           window.dispatchEvent(event)
                           // Close AI Assistant after applying
+                          if (synthRef.current) {
+                            synthRef.current.cancel()
+                            setIsSpeaking(false)
+                          }
                           setIsOpen(false)
                         }}
                       >
@@ -1270,6 +2585,56 @@ ${packages.map((pkg: any, index: number) =>
               onSubmit={handlePromptSubmit} 
               className="mt-2"
             >
+              {(scheduleSuggestions.length > 0 ||
+                (currentContext?.context === 'post-article' && !isHostOrAdmin && dateSuggestions.length > 0)) && (
+                <PromptInputHeader className="pb-2 space-y-2">
+                  {scheduleSuggestions.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Suggested checkout schedules</p>
+                      <Suggestions>
+                        {scheduleSuggestions.map((suggestion, idx) => {
+                          // Format as day abbreviations like "Tues-Fri" for cleaner display
+                          const fromDay = format(new Date(suggestion.fromCheckoutDate + 'T00:00:00Z'), 'EEE')
+                          const toDay = format(new Date(suggestion.toCheckoutDate + 'T00:00:00Z'), 'EEE')
+                          const label = `${fromDay}-${toDay}`
+                          return (
+                            <Suggestion
+                              key={`${suggestion.label}-${idx}`}
+                              suggestion={label}
+                              className="text-xs"
+                              onClick={() => handleScheduleSuggestionClick(suggestion)}
+                            />
+                          )
+                        })}
+                      </Suggestions>
+                    </div>
+                  )}
+                  {!isHostOrAdmin && currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Stay date ideas</p>
+                      <Suggestions>
+                        {dateSuggestions.map((suggestion, idx) => (
+                          <Suggestion
+                            key={idx}
+                            suggestion={suggestion.label}
+                            onClick={(label) => {
+                              const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
+                              const toStr = format(suggestion.endDate, 'MMM d, yyyy')
+                              const nights = Math.ceil(
+                                (suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000),
+                              )
+                              setInput(
+                                `Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`,
+                              )
+                            }}
+                            className="text-xs"
+                          />
+                        ))}
+                      </Suggestions>
+                    </div>
+                  )}
+                </PromptInputHeader>
+              )}
               <PromptInputBody>
                 <PromptInputTextarea
                   ref={textareaRef}

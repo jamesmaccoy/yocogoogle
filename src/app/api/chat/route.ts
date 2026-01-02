@@ -75,13 +75,27 @@ export async function POST(req: Request) {
     }
 
     // Format bookings and estimates data for the AI
-    const bookingsInfo = bookings.docs.map((booking) => ({
-      id: booking.id,
-      title: booking.title,
-      fromDate: new Date(booking.fromDate).toLocaleDateString(),
-      toDate: new Date(booking.toDate).toLocaleDateString(),
-      status: booking.paymentStatus || 'unknown',
-    }))
+    const bookingsInfo = bookings.docs.map((booking: any) => {
+      const post = typeof booking.post === 'object' && booking.post ? booking.post : null
+      const categories = Array.isArray(post?.categories)
+        ? post.categories.map((c: any) =>
+            typeof c === 'object'
+              ? (c.title || c.slug || c.id || '').toString()
+              : String(c)
+          ).filter(Boolean)
+        : []
+
+      return {
+        id: booking.id,
+        title: booking.title,
+        fromDate: new Date(booking.fromDate).toLocaleDateString(),
+        toDate: new Date(booking.toDate).toLocaleDateString(),
+        status: booking.paymentStatus || 'unknown',
+        propertyTitle: post?.title || '',
+        propertySlug: post?.slug || '',
+        proximityCategories: categories,
+      }
+    })
 
     const estimatesInfo = estimates.docs.map((estimate) => ({
       id: estimate.id,
@@ -218,6 +232,516 @@ Respond with clear, specific suggestions for updating the package.`
       } catch (error) {
         console.error('Error in package update:', error)
         return NextResponse.json({ response: 'Sorry, I encountered an error while updating the package. Please try again.' })
+      }
+    }
+
+    // Handle cleaning schedule optimization for hosts/admins
+    if (context === 'cleaning-schedule') {
+      try {
+        // Fetch ALL bookings (not just user's bookings) for cleaning schedule
+        // Hosts need to see all bookings across all properties
+        const allBookings = await payload.find({
+          collection: 'bookings',
+          where: {
+            paymentStatus: { equals: 'paid' }, // Only paid bookings
+          },
+          depth: 2,
+          sort: 'toDate',
+          limit: 200, // Get upcoming bookings
+        })
+
+        // Check for guest transactions (bookings paid by guests)
+        const customerIds = allBookings.docs
+          .map((b: any) => typeof b.customer === 'object' ? b.customer?.id : b.customer)
+          .filter(Boolean) as string[]
+        
+        const guestTransactions = customerIds.length > 0 ? await payload.find({
+          collection: 'yoco-transactions',
+          where: {
+            user: { in: customerIds },
+            intent: { equals: 'booking' },
+            status: { equals: 'completed' },
+          },
+          limit: 1000,
+        }) : { docs: [] }
+        
+        const guestTransactionUserIds = new Set(
+          guestTransactions.docs.map((t: any) => 
+            typeof t.user === 'object' ? t.user?.id : t.user
+          ).filter(Boolean) as string[]
+        )
+
+        // Format bookings with full property details including sleep capacity
+        const cleaningBookingsInfo = allBookings.docs.map((booking: any) => {
+          const post = typeof booking.post === 'object' && booking.post ? booking.post : null
+          const categories = Array.isArray(post?.categories)
+            ? post.categories.map((c: any) =>
+                typeof c === 'object'
+                  ? (c.title || c.slug || c.id || '').toString()
+                  : String(c)
+              ).filter(Boolean)
+            : []
+          
+          // Extract sleep capacity from post meta description or content
+          let sleepCapacity = 'Unknown'
+          if (post?.meta?.description) {
+            const desc = post.meta.description
+            const match1 = desc.match(/(?:sleeps?|accommodates?|fits?)\s+(\d+)/i)?.[1]
+            const match2 = desc.match(/(\d+)\s+(?:person|people|guest|bedroom)/i)?.[1]
+            const match3 = desc.match(/(?:couple|double|single|twin)/i) ? '2' : null
+            sleepCapacity = match1 || match2 || match3 || 'Unknown'
+          }
+          
+          // Also try to extract from post content if it's a string (simple text)
+          if (sleepCapacity === 'Unknown' && post?.content && typeof post.content === 'string') {
+            const content = post.content
+            const match1 = content.match(/(?:sleeps?|accommodates?|fits?)\s+(\d+)/i)?.[1]
+            const match2 = content.match(/(\d+)\s+(?:person|people|guest|bedroom)/i)?.[1]
+            sleepCapacity = match1 || match2 || sleepCapacity
+          }
+
+          const checkoutDateISO = booking.toDate.split('T')[0] // YYYY-MM-DD format
+          const checkinDateISO = booking.fromDate.split('T')[0] // YYYY-MM-DD format
+          
+          // Check if booking was paid by a guest (has completed transaction)
+          const customerId = typeof booking.customer === 'object' ? booking.customer?.id : booking.customer
+          const isGuestBooking = customerId && guestTransactionUserIds.has(customerId)
+          
+          // Get package info for current booking
+          const currentPackage = booking.selectedPackage?.package
+          const currentPackageName = typeof currentPackage === 'object' && currentPackage
+            ? (currentPackage.name || booking.selectedPackage?.customName || 'Unknown Package')
+            : (booking.selectedPackage?.customName || 'Unknown Package')
+
+          return {
+            id: booking.id,
+            propertyTitle: post?.title || booking.title || 'Unknown Property',
+            propertySlug: post?.slug || '',
+            propertyId: post?.id || '',
+            fromDate: booking.fromDate,
+            toDate: booking.toDate,
+            checkoutDate: new Date(booking.toDate).toLocaleDateString('en-US', { 
+              weekday: 'short', 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            }),
+            checkinDate: new Date(booking.fromDate).toLocaleDateString('en-US', { 
+              weekday: 'short', 
+              year: 'numeric', 
+              month: 'short', 
+              day: 'numeric' 
+            }),
+            checkoutDateISO: checkoutDateISO,
+            checkinDateISO: checkinDateISO,
+            status: booking.paymentStatus || 'unknown',
+            proximityCategories: categories,
+            sleepCapacity: sleepCapacity,
+            isGuestBooking: isGuestBooking,
+            currentPackageName: currentPackageName,
+          }
+        })
+
+        // Find next bookings for each property to determine cleaning needs before check-in
+        // Also calculate time windows between checkout and next check-in
+        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] & { 
+          timeWindowHours: number
+          timeWindowDays: number
+          nextPackageName: string
+        } | null> = {}
+        
+        cleaningBookingsInfo.forEach((booking) => {
+          const propertyId = booking.propertyId
+          if (!propertyId) return
+          
+          // Find the next booking for this property (earliest check-in after this checkout)
+          const nextBooking = cleaningBookingsInfo
+            .filter(b => b.propertyId === propertyId && b.checkinDateISO > booking.checkoutDateISO)
+            .sort((a, b) => a.checkinDateISO.localeCompare(b.checkinDateISO))[0]
+          
+          if (nextBooking) {
+            // Calculate time window between checkout and next check-in
+            const checkoutDate = new Date(booking.toDate)
+            const nextCheckinDate = new Date(nextBooking.fromDate)
+            const timeWindowMs = nextCheckinDate.getTime() - checkoutDate.getTime()
+            const timeWindowHours = Math.floor(timeWindowMs / (1000 * 60 * 60))
+            const timeWindowDays = Math.floor(timeWindowMs / (1000 * 60 * 60 * 24))
+            
+            propertyNextBookings[booking.id] = {
+              ...nextBooking,
+              timeWindowHours,
+              timeWindowDays,
+              nextPackageName: nextBooking.currentPackageName,
+            }
+          }
+        })
+
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const todayISO = today.toISOString().split('T')[0]
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomorrowISO = tomorrow.toISOString().split('T')[0]
+
+        // Filter bookings checking out today and tomorrow
+        const todayCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === todayISO)
+        const tomorrowCheckouts = cleaningBookingsInfo.filter(b => b.checkoutDateISO === tomorrowISO)
+
+        // Group bookings by checkout date for same-day analysis
+        const bookingsByCheckoutDate: Record<string, typeof cleaningBookingsInfo> = {}
+        cleaningBookingsInfo.forEach((booking) => {
+          if (!bookingsByCheckoutDate[booking.checkoutDateISO]) {
+            bookingsByCheckoutDate[booking.checkoutDateISO] = []
+          }
+          const dateGroup = bookingsByCheckoutDate[booking.checkoutDateISO]
+          if (dateGroup) {
+            dateGroup.push(booking)
+          }
+        })
+
+        // Group bookings by checkin date to detect same-day checkout/checkin overlaps
+        const bookingsByCheckinDate: Record<string, typeof cleaningBookingsInfo> = {}
+        cleaningBookingsInfo.forEach((booking) => {
+          if (!bookingsByCheckinDate[booking.checkinDateISO]) {
+            bookingsByCheckinDate[booking.checkinDateISO] = []
+          }
+          const dateGroup = bookingsByCheckinDate[booking.checkinDateISO]
+          if (dateGroup) {
+            dateGroup.push(booking)
+          }
+        })
+
+        // Build detailed booking info with next booking context
+        const detailedBookingsInfo = cleaningBookingsInfo.map((b) => {
+          const nextBooking = propertyNextBookings[b.id]
+          return {
+            ...b,
+            nextCheckin: nextBooking ? {
+              date: nextBooking.checkinDate,
+              dateISO: nextBooking.checkinDateISO,
+              propertyTitle: nextBooking.propertyTitle,
+              timeWindowHours: nextBooking.timeWindowHours,
+              timeWindowDays: nextBooking.timeWindowDays,
+              packageName: nextBooking.nextPackageName,
+            } : null,
+          }
+        })
+
+        const systemPrompt = `You are an expert operations assistant helping a host plan cleaner routes.
+
+HOST CONTEXT:
+- User ID: ${user.id}
+- Email: ${user.email}
+- Today's date: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
+ALL UPCOMING BOOKINGS WITH CLEANING CONTEXT:
+${detailedBookingsInfo.length > 0 
+  ? detailedBookingsInfo.map(
+      (b) => {
+        const nextInfo = b.nextCheckin 
+          ? ` → Next check-in: ${b.nextCheckin.propertyTitle} on ${b.nextCheckin.date} (clean on ${b.checkoutDate} before next guest)`
+          : ` → No immediate next booking (clean on ${b.checkoutDate})`
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Check-in: ${b.checkinDate}${nextInfo} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+      }
+    ).join('\n')
+  : 'No upcoming bookings found.'}
+
+SAME-DAY CHECKOUTS BY DATE:
+${Object.entries(bookingsByCheckoutDate)
+  .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+  .map(([date, bookings]) => {
+    const dateFormatted = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    const sameDayCheckins = bookingsByCheckinDate[date] || []
+    const checkinsText = sameDayCheckins.length > 0
+      ? `\n  ⚠️ CRITICAL: ${sameDayCheckins.length} ${sameDayCheckins.length === 1 ? 'property' : 'properties'} checking IN on this same date:\n${sameDayCheckins.map(c => `    - ${c.propertyTitle} (sleeps ${c.sleepCapacity}) • Categories: ${c.proximityCategories.join(', ') || 'None'}`).join('\n')}`
+      : ''
+    return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}${checkinsText}`
+  }).join('\n')}
+
+TODAY'S CHECKOUTS (${todayCheckouts.length}):
+${todayCheckouts.length > 0
+  ? todayCheckouts.map(
+      (b) => {
+        const nextInfo = propertyNextBookings[b.id]
+          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean today before next guest)`
+          : ''
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+      }
+    ).join('\n')
+  : 'No checkouts today.'}
+
+TOMORROW'S CHECKOUTS (${tomorrowCheckouts.length}):
+${tomorrowCheckouts.length > 0
+  ? tomorrowCheckouts.map(
+      (b) => {
+        const nextInfo = propertyNextBookings[b.id]
+          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean tomorrow before next guest)`
+          : ''
+        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+      }
+    ).join('\n')
+  : 'No checkouts tomorrow.'}
+
+CRITICAL INSTRUCTIONS - BE CONCISE AND USE RELATIVE DATES:
+
+1. **ALWAYS use relative date references instead of specific dates**:
+   - Use: "tomorrow", "next week", "this Sunday", "in 3 weeks", "twice next week", "next month"
+   - Avoid: "Dec 19", "January 17", "December 21" (only use if absolutely necessary)
+   - Examples: "Tomorrow, and twice next week" or "This Sunday, next Wednesday, and in 3 weeks"
+
+2. **If there are overlapping checkouts (same day)**: 
+   - Briefly mention: "X properties checking out [relative date]" and if they're in close proximity
+   - Example: "2 properties checking out tomorrow in southern peninsular area"
+   - Example: "3 properties checking out this Sunday"
+   - **CRITICAL**: If properties are checking IN on the same date as checkouts, explicitly call this out as it requires immediate cleaning before check-in time
+
+3. **If NO overlapping checkouts**:
+   - Simply list when to send cleaners using relative dates: "Tomorrow, and twice next week" or "This Sunday, next Wednesday, and in 3 weeks"
+   - Be concise - just the relative dates/times, no elaboration
+
+4. **Only mention proximity if properties share categories AND checkout on the same day** - otherwise skip proximity details
+
+5. **Do NOT elaborate on**:
+   - Individual property details unless asked
+   - Sleep capacity unless relevant to cleaner count
+   - Detailed routes unless there are same-day checkouts
+   - Next check-in dates unless critical
+
+6. **Keep response under 3-4 sentences** - focus on key insights only
+
+Respond concisely with just the essential information using relative date references.`
+
+        const chat = model.startChat({
+          history: [
+            {
+              role: 'user',
+              parts: [{ text: systemPrompt }],
+            },
+            {
+              role: 'model',
+              parts: [{ text: "I understand. I'm ready to help you plan cleaner schedules and routes." }],
+            },
+          ],
+        })
+
+        const result = await chat.sendMessage(message)
+        const response = await result.response
+        const text = response.text()
+        const usage = serializeUsageMetadata(response.usageMetadata)
+
+        // Structure same-day checkouts by date for the Plan component
+        // Also include checkins on the same date (critical cleaning insight)
+        const sameDayCheckoutsByDate = Object.entries(bookingsByCheckoutDate)
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([dateISO, bookings]) => {
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })
+            
+            // Find checkins happening on the same date (different properties)
+            const sameDayCheckins = bookingsByCheckinDate[dateISO] || []
+            
+            return {
+              date: dateFormatted,
+              dateISO: dateISO,
+              properties: bookings.map(b => {
+                const nextBooking = propertyNextBookings[b.id]
+                return {
+                  id: b.id,
+                  propertyTitle: b.propertyTitle,
+                  propertySlug: b.propertySlug,
+                  checkoutDate: b.checkoutDate,
+                  checkinDate: b.checkinDate,
+                  sleepCapacity: b.sleepCapacity,
+                  proximityCategories: b.proximityCategories,
+                  isGuestBooking: b.isGuestBooking,
+                  currentPackageName: b.currentPackageName,
+                  nextCheckin: nextBooking ? {
+                    date: nextBooking.checkinDate,
+                    propertyTitle: nextBooking.propertyTitle,
+                    timeWindowHours: nextBooking.timeWindowHours,
+                    timeWindowDays: nextBooking.timeWindowDays,
+                    packageName: nextBooking.nextPackageName,
+                  } : null,
+                }
+              }),
+              // Include checkins on the same date (for cleaning insight)
+              sameDayCheckins: sameDayCheckins
+                .filter(checkin => !bookings.some(checkout => checkout.id === checkin.id)) // Exclude if it's the same booking
+                .map(checkin => {
+                  return {
+                    id: checkin.id,
+                    propertyTitle: checkin.propertyTitle,
+                    propertySlug: checkin.propertySlug,
+                    checkinDate: checkin.checkinDate,
+                    sleepCapacity: checkin.sleepCapacity,
+                    proximityCategories: checkin.proximityCategories,
+                    isGuestBooking: checkin.isGuestBooking,
+                    currentPackageName: checkin.currentPackageName,
+                  }
+                }),
+            }
+          })
+        
+        // Create date suggestions showing checkout schedules grouped by date
+        // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
+        const checkoutScheduleSuggestions = Object.entries(bookingsByCheckoutDate)
+          .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+          .map(([dateISO, bookings]) => {
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })
+            
+            // Get next checkout dates for properties in this group
+            const nextCheckouts = bookings
+              .map(b => {
+                const nextBooking = propertyNextBookings[b.id]
+                if (!nextBooking) return null
+                return {
+                  checkoutDate: nextBooking.checkoutDateISO,
+                  checkoutDateFormatted: new Date(nextBooking.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  }),
+                  propertyTitle: b.propertyTitle,
+                }
+              })
+              .filter((nc): nc is { checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string } => nc !== null)
+            
+            // Group next checkouts by date
+            const nextCheckoutsByDate: Record<string, Array<{ checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string }>> = {}
+            nextCheckouts.forEach(nc => {
+              if (!nextCheckoutsByDate[nc.checkoutDate]) {
+                nextCheckoutsByDate[nc.checkoutDate] = []
+              }
+              const dateGroup = nextCheckoutsByDate[nc.checkoutDate]
+              if (dateGroup) {
+                dateGroup.push(nc)
+              }
+            })
+            
+            return {
+              checkoutDate: dateISO,
+              checkoutDateFormatted: dateFormatted,
+              propertyCount: bookings.length,
+              properties: bookings.map(b => ({
+                id: b.id,
+                propertyTitle: b.propertyTitle,
+                propertySlug: b.propertySlug,
+                checkoutDate: b.checkoutDate,
+                checkinDate: b.checkinDate,
+                sleepCapacity: b.sleepCapacity,
+                proximityCategories: b.proximityCategories,
+                isGuestBooking: b.isGuestBooking,
+                currentPackageName: b.currentPackageName,
+                nextCheckin: propertyNextBookings[b.id] ? {
+                  date: propertyNextBookings[b.id]!.checkinDate,
+                  checkoutDate: propertyNextBookings[b.id]!.checkoutDateISO,
+                  checkoutDateFormatted: new Date(propertyNextBookings[b.id]!.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  }),
+                  propertyTitle: propertyNextBookings[b.id]!.propertyTitle,
+                  timeWindowHours: propertyNextBookings[b.id]!.timeWindowHours,
+                  timeWindowDays: propertyNextBookings[b.id]!.timeWindowDays,
+                  packageName: propertyNextBookings[b.id]!.nextPackageName,
+                } : null,
+              })),
+              nextCheckoutsByDate: Object.entries(nextCheckoutsByDate)
+                .map(([nextDateISO, props]) => {
+                  const firstProp = props[0]
+                  if (!firstProp) return null
+                  return {
+                    checkoutDate: nextDateISO,
+                    checkoutDateFormatted: firstProp.checkoutDateFormatted,
+                    propertyCount: props.length,
+                  }
+                })
+                .filter((item): item is { checkoutDate: string; checkoutDateFormatted: string; propertyCount: number } => item !== null),
+            }
+          })
+        
+        // Create schedule suggestions showing date ranges with property counts
+        // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
+        const scheduleSuggestions = checkoutScheduleSuggestions
+          .filter(schedule => schedule.nextCheckoutsByDate.length > 0)
+          .flatMap(schedule => 
+            schedule.nextCheckoutsByDate.map(nextCheckout => ({
+              label: `${schedule.checkoutDateFormatted} (${schedule.propertyCount} ${schedule.propertyCount === 1 ? 'property' : 'properties'}) - ${nextCheckout.checkoutDateFormatted} (${nextCheckout.propertyCount} ${nextCheckout.propertyCount === 1 ? 'property' : 'properties'})`,
+              fromCheckoutDate: schedule.checkoutDate,
+              fromCheckoutDateFormatted: schedule.checkoutDateFormatted,
+              fromPropertyCount: schedule.propertyCount,
+              toCheckoutDate: nextCheckout.checkoutDate,
+              toCheckoutDateFormatted: nextCheckout.checkoutDateFormatted,
+              toPropertyCount: nextCheckout.propertyCount,
+              properties: schedule.properties,
+            }))
+          )
+        
+        // Also keep the time window suggestions for the existing display
+        const dateSuggestions = cleaningBookingsInfo
+          .filter(b => propertyNextBookings[b.id]) // Only bookings with next check-ins
+          .map(b => {
+            const nextBooking = propertyNextBookings[b.id]!
+            const checkoutDate = new Date(b.toDate)
+            const nextCheckinDate = new Date(nextBooking.fromDate)
+            
+            // Format time window
+            let timeWindowLabel = ''
+            if (nextBooking.timeWindowHours < 24) {
+              timeWindowLabel = `${nextBooking.timeWindowHours} hour${nextBooking.timeWindowHours !== 1 ? 's' : ''}`
+            } else if (nextBooking.timeWindowDays === 1) {
+              timeWindowLabel = '1 day'
+            } else {
+              timeWindowLabel = `${nextBooking.timeWindowDays} days`
+            }
+            
+            return {
+              checkoutDate: b.checkoutDateISO,
+              checkoutDateFormatted: b.checkoutDate,
+              nextCheckinDate: nextBooking.checkinDateISO,
+              nextCheckinDateFormatted: nextBooking.checkinDate,
+              propertyTitle: b.propertyTitle,
+              timeWindowHours: nextBooking.timeWindowHours,
+              timeWindowDays: nextBooking.timeWindowDays,
+              timeWindowLabel: timeWindowLabel,
+              nextPackageName: nextBooking.nextPackageName,
+              isGuestBooking: b.isGuestBooking,
+            }
+          })
+          .sort((a, b) => a.checkoutDate.localeCompare(b.checkoutDate))
+
+        return NextResponse.json({ 
+          response: text, 
+          usage,
+          cleaningSchedule: {
+            sameDayCheckouts: sameDayCheckoutsByDate,
+            dateSuggestions: dateSuggestions,
+            scheduleSuggestions: scheduleSuggestions,
+          },
+        })
+      } catch (error) {
+        console.error('Error in cleaning-schedule context:', error)
+        return NextResponse.json({
+          response:
+            'Sorry, I encountered an error while planning the cleaning schedule. Please try again in a moment.',
+        })
       }
     }
 

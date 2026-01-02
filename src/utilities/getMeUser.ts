@@ -21,11 +21,17 @@ export const getMeUser = async (args?: {
     },
   })
 
-  const {
-    user,
-  }: {
-    user: User
-  } = await meUserReq.json()
+  let user: User | null = null
+
+  try {
+    if (meUserReq.ok) {
+      const response = await meUserReq.json()
+      user = response.user
+    }
+  } catch (error) {
+    console.error('Error parsing user response:', error)
+    // If JSON parsing fails, user remains null
+  }
 
   if (validUserRedirect && meUserReq.ok && user) {
     redirect(validUserRedirect)
@@ -37,7 +43,7 @@ export const getMeUser = async (args?: {
 
   // Token will exist here because if it doesn't the user will be redirected
   return {
-    token: token!,
-    user,
+    token: token || '',
+    user: user!,
   }
 }

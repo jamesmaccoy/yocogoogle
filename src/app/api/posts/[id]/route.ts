@@ -18,7 +18,82 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (req.method === 'PATCH') {
-      const body = await req.json();
+      let body: any;
+      const contentType = req.headers.get('content-type') || '';
+      
+      try {
+        if (contentType.includes('multipart/form-data')) {
+          // Handle multipart/form-data (Payload CMS form submissions)
+          const formData = await req.formData();
+          const payloadField = formData.get('_payload');
+          
+          if (!payloadField) {
+            return NextResponse.json(
+              { error: 'Missing _payload field in form data' },
+              { status: 400 }
+            );
+          }
+          
+          // Parse the JSON from the _payload field
+          try {
+            body = typeof payloadField === 'string' 
+              ? JSON.parse(payloadField) 
+              : JSON.parse(payloadField.toString());
+          } catch (parseError) {
+            console.error('JSON parse error from _payload:', parseError);
+            return NextResponse.json(
+              { error: 'Invalid JSON in _payload field' },
+              { status: 400 }
+            );
+          }
+        } else if (contentType.includes('application/json')) {
+          // Handle JSON requests
+          const text = await req.text();
+          if (!text || text.trim() === '') {
+            return NextResponse.json(
+              { error: 'Request body is empty' },
+              { status: 400 }
+            );
+          }
+          
+          try {
+            body = JSON.parse(text);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            console.error('Request body:', text.substring(0, 200));
+            return NextResponse.json(
+              { error: 'Invalid JSON in request body' },
+              { status: 400 }
+            );
+          }
+        } else {
+          // Try to parse as JSON as fallback
+          const text = await req.text();
+          if (!text || text.trim() === '') {
+            return NextResponse.json(
+              { error: 'Request body is empty' },
+              { status: 400 }
+            );
+          }
+          
+          try {
+            body = JSON.parse(text);
+          } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            return NextResponse.json(
+              { error: 'Invalid request body format' },
+              { status: 400 }
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error reading request body:', error);
+        return NextResponse.json(
+          { error: 'Failed to read request body' },
+          { status: 400 }
+        );
+      }
+      
       // Deduplicate and ensure only package IDs are saved
       let packageSettings = Array.isArray(body.packageSettings) ? body.packageSettings : [];
       const deduped: Record<string, any> = {};

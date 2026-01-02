@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2 } from 'lucide-react'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
@@ -15,6 +17,7 @@ import { Loader } from '@/components/ai-elements/loader'
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
 import {
   PromptInput,
+  PromptInputHeader,
   PromptInputBody,
   PromptInputTextarea,
   PromptInputFooter,
@@ -113,7 +116,18 @@ const PackageCard = ({
 }) => {
   const total = pkg.baseRate || calculateTotal(baseRate, duration, pkg.multiplier)
   const effectiveDuration = Math.max(duration, pkg.minNights || pkg.maxNights || 1, 1)
-  const pricePerNight = pkg.baseRate ? total / effectiveDuration : total / Math.max(duration, 1)
+  
+  // Check if this is an hourly package (minNights < 1 indicates hourly/half-day)
+  const isHourlyPackage = pkg.minNights !== null && pkg.minNights !== undefined && pkg.minNights < 1
+  // Check if this is a 1-night package (should not be divided, but not hourly)
+  const isOneNightPackage = !isHourlyPackage && pkg.minNights === 1 && pkg.maxNights === 1
+  
+  // For fixed price packages, use baseRate directly (no division)
+  // For multiplier-based packages, calculate per-night rate
+  const pricePerNight = pkg.baseRate
+    ? (isOneNightPackage ? total : total / Math.max(effectiveDuration, 1))
+    : total / Math.max(duration, 1)
+  
   const multiplierText = pkg.baseRate 
     ? 'Fixed package price' 
     : pkg.multiplier === 1 
@@ -139,9 +153,13 @@ const PackageCard = ({
           <div className="text-right">
             <div className="text-2xl font-bold text-primary">R{total.toFixed(0)}</div>
             <div className="text-sm text-muted-foreground">
-              {pkg.baseRate
-                ? `~R${pricePerNight.toFixed(0)}/night · ${effectiveDuration} nights`
-                : `R${pricePerNight.toFixed(0)}/night`}
+              {isHourlyPackage
+                ? `R${total.toFixed(0)}`
+                : isOneNightPackage 
+                  ? `R${total.toFixed(0)}`
+                  : pkg.baseRate
+                    ? `R${total.toFixed(0)}`
+                    : `R${pricePerNight.toFixed(0)}/night`}
             </div>
             <div className="text-xs text-muted-foreground">
               {multiplierText}
@@ -152,9 +170,11 @@ const PackageCard = ({
       <CardContent className="pt-0">
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
-            Duration: {pkg.minNights === pkg.maxNights 
-              ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
-              : `${pkg.minNights}-${pkg.maxNights} nights`
+            Duration: {isHourlyPackage
+              ? 'hourly'
+              : pkg.minNights === pkg.maxNights 
+                ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
+                : `${pkg.minNights}-${pkg.maxNights} nights`
             }
           </div>
           <div className="space-y-1">
@@ -200,6 +220,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [duration, setDuration] = useState(1)
   const [startDate, setStartDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
+  const [showPerHourPackages, setShowPerHourPackages] = useState(false)
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
@@ -239,6 +260,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   
   // Suggested dates state (for showing near input)
   const [suggestedDates, setSuggestedDates] = useState<Array<{ startDate: string; endDate: string; duration: number }>>([])
+  // Proactive date suggestions for PromptInput header
+  const [dateSuggestions, setDateSuggestions] = useState<Array<{ startDate: Date; endDate: Date; label: string }>>([])
   
   // Package loading state to prevent multiple API calls
   const [loadingPackages, setLoadingPackages] = useState(false)
@@ -429,6 +452,92 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       console.error('Error loading unavailable dates:', error)
     }
   }
+
+  // Generate date suggestions based on unavailable dates
+  useEffect(() => {
+    const generateDateSuggestions = () => {
+      if (!isLoggedIn) {
+        setDateSuggestions([])
+        return
+      }
+
+      const unavailableDatesSet = new Set(unavailableDates)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const suggestions: Array<{ startDate: Date; endDate: Date; label: string }> = []
+
+      // Helper to normalize dates to midnight UTC (matching check-availability.ts)
+      const normalizeDate = (date: Date): Date => {
+        const normalized = new Date(date)
+        normalized.setUTCHours(0, 0, 0, 0)
+        return normalized
+      }
+
+      // Helper to check if a date range conflicts with unavailable dates
+      const hasConflict = (testStart: Date, testEnd: Date): boolean => {
+        const checkDate = new Date(testStart)
+        while (checkDate < testEnd) {
+          const dateStr = checkDate.toISOString()
+          if (unavailableDatesSet.has(dateStr)) {
+            return true
+          }
+          checkDate.setUTCDate(checkDate.getUTCDate() + 1)
+        }
+        return false
+      }
+
+      // Generate suggestions for 3, 5, and 7 night stays
+      // Spread them across different months for variety
+      const durations = [3, 5, 7]
+      const todayNormalized = normalizeDate(today)
+      
+      // Target dates spread across months: 1 week, 1 month, 2 months from now
+      const targetDates = [
+        new Date(todayNormalized.getTime() + 7 * 24 * 60 * 60 * 1000),   // ~1 week
+        new Date(todayNormalized.getTime() + 30 * 24 * 60 * 60 * 1000),  // ~1 month
+        new Date(todayNormalized.getTime() + 60 * 24 * 60 * 60 * 1000),  // ~2 months
+      ]
+
+      for (const targetDate of targetDates) {
+        for (const nights of durations) {
+          // Look for available dates around the target date (±7 days)
+          const searchWindow = 7
+          let found = false
+          
+          for (let offset = 0; offset <= searchWindow && !found; offset++) {
+            // Try dates before and after target
+            for (const direction of [-1, 1]) {
+              const startDate = new Date(targetDate)
+              startDate.setUTCDate(startDate.getUTCDate() + (offset * direction))
+              const endDate = new Date(startDate)
+              endDate.setUTCDate(endDate.getUTCDate() + nights)
+
+              // Ensure dates are in the future
+              if (startDate < todayNormalized) continue
+
+              if (!hasConflict(startDate, endDate)) {
+                const startStr = format(startDate, 'MMM d')
+                const endStr = format(endDate, 'MMM d')
+                suggestions.push({
+                  startDate,
+                  endDate,
+                  label: `${startStr} - ${endStr}`,
+                })
+                found = true
+                break
+              }
+            }
+          }
+        }
+      }
+
+      // Sort by start date and limit to 6 suggestions
+      suggestions.sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+      setDateSuggestions(suggestions.slice(0, 6))
+    }
+
+    generateDateSuggestions()
+  }, [unavailableDates, isLoggedIn])
 
   // Check if selected dates are available
   const checkDateAvailability = async (
@@ -648,6 +757,35 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     
     // Load unavailable dates for the post
     loadUnavailableDates()
+    
+    // Check for fromDate and toDate URL parameters (from property suggestions)
+    const fromDateParam = searchParams?.get('fromDate')
+    const toDateParam = searchParams?.get('toDate')
+    if (fromDateParam && toDateParam && !restored) {
+      try {
+        const from = new Date(fromDateParam)
+        const to = new Date(toDateParam)
+        
+        // Validate dates
+        if (!isNaN(from.getTime()) && !isNaN(to.getTime()) && to > from) {
+          const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+          
+          setStartDate(from)
+          setEndDate(to)
+          setDuration(calcDuration)
+          
+          // Clear URL parameters after setting dates
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href)
+            url.searchParams.delete('fromDate')
+            url.searchParams.delete('toDate')
+            router.replace(url.pathname + url.search, { scroll: false })
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing date parameters:', error)
+      }
+    }
     
     // Check for restoreEstimate URL parameter
     const restoreEstimateId = searchParams?.get('restoreEstimate')
@@ -1268,6 +1406,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   }
 
   // Navigate to estimate details (latest or create then navigate)
+  // IMPORTANT: Always update/create estimate with current dates to ensure correct dates are shown
   const handleGoToEstimate = async () => {
     if (!isLoggedIn) {
       router.push('/login')
@@ -1275,20 +1414,16 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
     try {
       setIsCreatingEstimate(true)
-      // If we already loaded a latest estimate for this post, use it
-      if (latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId)) {
-        router.push(`/estimate/${latestEstimate.id}`)
-        return
-      }
-
-      // Otherwise, create a minimal estimate and navigate to it
+      
+      // Always use current dates from state (most recent selection)
       const from = startDate ? startDate.toISOString() : new Date().toISOString()
       const to = endDate
         ? endDate.toISOString()
         : new Date(Date.now() + (duration || 1) * 24 * 60 * 60 * 1000).toISOString()
       const multiplier = selectedPackage?.multiplier ?? 1
-              const total = selectedPackage?.baseRate || calculateTotal(baseRate, duration || 1, multiplier)
+      const total = selectedPackage?.baseRate || calculateTotal(baseRate, duration || 1, multiplier)
 
+      // Always create/update estimate with current dates to ensure correct dates are shown
       const resp = await fetch('/api/estimates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1307,7 +1442,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
                 enabled: true,
               }
             : undefined,
-          // Include estimateId if we have a latest estimate for this post to preserve package info
+          // Include estimateId if we have a latest estimate for this post to update it with new dates
           estimateId: latestEstimate && (typeof latestEstimate.post === 'string' ? latestEstimate.post === postId : latestEstimate.post?.id === postId) 
             ? latestEstimate.id 
             : undefined,
@@ -1552,6 +1687,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             return pkg.maxNights >= selectedDuration || pkg.maxNights === 1 // Include per-night packages
           })
         }
+      }
+      
+      // Filter for per-hour packages (1 night duration) if toggle is on
+      // Allow packages that can accommodate 1-night stays (minNights <= 1)
+      if (showPerHourPackages) {
+        suitablePackages = suitablePackages.filter((pkg: any) => {
+          return pkg.minNights <= 1
+        })
       }
       
       // Sort packages by relevance and select top 3
@@ -2535,7 +2678,36 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               </Suggestions>
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md">
+              <Switch
+                id="per-hour-toggle"
+                checked={showPerHourPackages}
+                onCheckedChange={(checked) => {
+                  setShowPerHourPackages(checked)
+                  if (checked) {
+                    // Preserve existing start date if one is selected, otherwise default to tomorrow
+                    const today = new Date()
+                    today.setHours(0, 0, 0, 0)
+                    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+                    tomorrow.setHours(0, 0, 0, 0)
+                    
+                    // Use existing start date if it's valid and in the future, otherwise use tomorrow
+                    const newStartDate = (startDate && startDate >= today) ? startDate : tomorrow
+                    const newEndDate = new Date(newStartDate.getTime() + 24 * 60 * 60 * 1000) // 1 night
+                    
+                    setStartDate(newStartDate)
+                    setEndDate(newEndDate)
+                    setDuration(1)
+                    // Reset to allow new package suggestions
+                    packagesSuggestedRef.current = false
+                  }
+                }}
+              />
+              <Label htmlFor="per-hour-toggle" className="text-xs cursor-pointer">
+                per hour
+              </Label>
+            </div>
             <Button 
               size="sm" 
               variant="outline"
@@ -2545,6 +2717,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 const endDate = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000) // 3 nights
                 setStartDate(tomorrow)
                 setEndDate(endDate)
+                setShowPerHourPackages(false) // Turn off per-hour toggle
                 // Reset to allow new package suggestions
                 packagesSuggestedRef.current = false
               }}
@@ -2560,6 +2733,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 const endDate = new Date(nextWeek.getTime() + 5 * 24 * 60 * 60 * 1000) // 5 nights
                 setStartDate(nextWeek)
                 setEndDate(endDate)
+                setShowPerHourPackages(false) // Turn off per-hour toggle
                 // Reset to allow new package suggestions
                 packagesSuggestedRef.current = false
               }}
@@ -2889,6 +3063,25 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
             onSubmit={handlePromptSubmit} 
             className="mt-4"
           >
+            {dateSuggestions.length > 0 && (
+              <PromptInputHeader className="pb-2">
+                <Suggestions>
+                  {dateSuggestions.map((suggestion, idx) => (
+                    <Suggestion
+                      key={idx}
+                      suggestion={suggestion.label}
+                      onClick={(label) => {
+                        const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
+                        const toStr = format(suggestion.endDate, 'MMM d, yyyy')
+                        const nights = Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000))
+                        setInput(`Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`)
+                      }}
+                      className="text-xs"
+                    />
+                  ))}
+                </Suggestions>
+              </PromptInputHeader>
+            )}
             <PromptInputBody>
               <PromptInputTextarea
                 ref={textareaRef}

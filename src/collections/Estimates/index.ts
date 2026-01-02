@@ -4,7 +4,7 @@ import { isAdminField } from '@/access/isAdminField'
 import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 import { adminOrSelfOrGuests } from '../Bookings/access/adminOrSelfOrGuests'
-import { generateJwtToken, verifyJwtToken } from '@/utilities/token'
+import { generateJwtToken, verifyJwtToken, generateShortToken } from '@/utilities/token'
 
 export const Estimate: CollectionConfig = {
   slug: 'estimates',
@@ -84,12 +84,8 @@ export const Estimate: CollectionConfig = {
             })
           }
 
-          // Generate new token
-          const token = generateJwtToken({
-            estimateId: estimate.id,
-            customerId:
-              typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id,
-          })
+          // Generate short token for invite URL
+          const token = generateShortToken(10)
 
           // Update estimate with new token
           await req.payload.update({
@@ -112,6 +108,88 @@ export const Estimate: CollectionConfig = {
             { status: 500 },
           )
         }
+      },
+    },
+    // This endpoint is used to refresh the current token.
+    {
+      path: '/:estimateId/refresh-token',
+      method: 'post',
+      handler: async (req) => {
+        if (!req.user) {
+          return Response.json(
+            {
+              message: 'Unauthorized',
+            },
+            { status: 401 },
+          )
+        }
+
+        const _estimateId =
+          req.routeParams && 'estimateId' in req.routeParams && req.routeParams.estimateId
+
+        // This is not supposed to happen, but just in case
+        if (!_estimateId || typeof _estimateId !== 'string') {
+          return Response.json(
+            {
+              message: 'Estimate ID not provided',
+            },
+            { status: 400 },
+          )
+        }
+
+        const estimates = await req.payload.find({
+          collection: 'estimates',
+          where: {
+            and: [
+              {
+                id: {
+                  equals: _estimateId,
+                },
+              },
+              {
+                customer: {
+                  equals: req.user.id,
+                },
+              },
+            ],
+          },
+          limit: 1,
+          pagination: false,
+        })
+
+        if (estimates.docs.length === 0) {
+          return Response.json(
+            {
+              message: 'Estimate not found',
+            },
+            { status: 404 },
+          )
+        }
+
+        const estimate = estimates.docs[0]
+
+        if (!estimate) {
+          return Response.json(
+            {
+              message: 'Estimate not found',
+            },
+            { status: 404 },
+          )
+        }
+
+        // Generate short token for invite URL
+        const token = generateShortToken(10)
+
+        await req.payload.update({
+          collection: 'estimates',
+          id: _estimateId,
+          data: {
+            token,
+          },
+        })
+        return Response.json({
+          token,
+        })
       },
     },
     // This endpoint is used to accept the invite for the estimate
@@ -469,10 +547,8 @@ export const Estimate: CollectionConfig = {
     beforeChange: [
       async ({ data, req, operation }) => {
         if (operation === 'create' && !data.token) {
-          const token = generateJwtToken({
-            estimateId: data.id || '',
-            customerId: data.customer || '',
-          })
+          // Generate short token for invite URL
+          const token = generateShortToken(10)
           return { ...data, token }
         }
         return data

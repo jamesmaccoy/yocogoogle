@@ -1,6 +1,7 @@
 type BookingMetadata = {
   estimateId?: string
   postId?: string
+  bookingId?: string
   duration?: number
   startDate?: string
   endDate?: string
@@ -438,8 +439,16 @@ class YocoService {
 
       // Create checkout via Yoco Checkout API
       // Note: The Checkout API creates a checkout session, not a direct payment link
+      // Convert total from rands (Payload CMS format) to cents (Yoco API format)
+      const amountInCents = Math.round(total * 100)
+      
+      console.log('[Yoco Payment] Converting rands to cents:', {
+        totalReceived: total,
+        amountInCents
+      })
+      
       const requestBody = {
-        amount: Math.round(total * 100), // Amount in cents
+        amount: amountInCents, // Amount in cents (converted from rands)
         currency: 'ZAR',
         successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
         cancelUrl: `${baseUrl}/estimate?cancelled=true`,

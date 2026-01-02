@@ -39,21 +39,65 @@ export default async function Bookings() {
     getBookings('past', user),
   ])
 
-  const formattedUpcomingBookings = upcomingBookings.docs.map((booking) => ({
-    ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
-    fromDate: booking.fromDate,
-    toDate: booking.toDate,
-    guests: booking.guests,
-    id: booking.id,
-  }))
+  const formattedUpcomingBookings = upcomingBookings.docs.map((booking) => {
+    const duration = booking.fromDate && booking.toDate
+      ? Math.max(1, Math.round((new Date(booking.toDate).getTime() - new Date(booking.fromDate).getTime()) / (1000 * 60 * 60 * 24)))
+      : undefined
+    
+    const packageName = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.name
+          ? booking.selectedPackage.package.name
+          : booking.selectedPackage.customName || 'Package')
+      : booking.selectedPackage?.customName || null
+    
+    // Extract minNights from package to determine if it's hourly
+    const packageMinNights = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.minNights !== undefined
+          ? Number(booking.selectedPackage.package.minNights)
+          : null)
+      : null
+    
+    return {
+      ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
+      fromDate: booking.fromDate,
+      toDate: booking.toDate || undefined,
+      guests: booking.guests,
+      id: booking.id,
+      duration,
+      packageName,
+      packageMinNights,
+    }
+  })
 
-  const formattedPastBookings = pastBookings.docs.map((booking) => ({
-    ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
-    fromDate: booking.fromDate,
-    toDate: booking.toDate,
-    guests: booking.guests,
-    id: booking.id,
-  }))
+  const formattedPastBookings = pastBookings.docs.map((booking) => {
+    const duration = booking.fromDate && booking.toDate
+      ? Math.max(1, Math.round((new Date(booking.toDate).getTime() - new Date(booking.fromDate).getTime()) / (1000 * 60 * 60 * 24)))
+      : undefined
+    
+    const packageName = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.name
+          ? booking.selectedPackage.package.name
+          : booking.selectedPackage.customName || 'Package')
+      : booking.selectedPackage?.customName || null
+    
+    // Extract minNights from package to determine if it's hourly
+    const packageMinNights = booking.selectedPackage && typeof booking.selectedPackage === 'object' && booking.selectedPackage.package
+      ? (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.minNights !== undefined
+          ? Number(booking.selectedPackage.package.minNights)
+          : null)
+      : null
+    
+    return {
+      ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
+      fromDate: booking.fromDate,
+      toDate: booking.toDate || undefined,
+      guests: booking.guests,
+      id: booking.id,
+      duration,
+      packageName,
+      packageMinNights,
+    }
+  })
 
   console.log(upcomingBookings, pastBookings)
   const latestEstimate = await fetchLatestEstimate(user.id)
@@ -192,6 +236,7 @@ const getBookings = async (type: 'upcoming' | 'past', currentUser: User) => {
       guests: true,
       fromDate: true,
       toDate: true,
+      selectedPackage: true,
     },
   })
 

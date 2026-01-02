@@ -5,6 +5,7 @@ import type { Post } from '@/payload-types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Package, FileText } from 'lucide-react'
 import AnnualStatementClient from '@/app/(frontend)/bookings/annual-statement/page.client'
+import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 
 type ManagePageClientProps = {
   posts: Post[]
@@ -55,6 +56,9 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
           />
         </TabsContent>
       </Tabs>
+      
+      {/* AI Assistant */}
+      <AIAssistant />
     </div>
   )
 }

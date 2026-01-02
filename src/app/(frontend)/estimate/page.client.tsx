@@ -750,7 +750,7 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   return (
     <div className="container py-10">
       <h1 className="text-4xl font-bold tracking-tighter mb-8">
-        {postDetails ? `Trust deed statement for ${postDetails.title}` : "Trust deed booking statement"}
+        {postDetails ? `Trust deed statement for ${postDetails.title}` : "Booking statement"}
       </h1>
       {postDetails && (
         <p className="mb-6 text-sm uppercase tracking-wide text-muted-foreground">

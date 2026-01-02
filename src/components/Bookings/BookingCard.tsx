@@ -1,6 +1,6 @@
 import { type Media as MediaType, User } from '@/payload-types'
 import { formatDate } from 'date-fns'
-import { CalendarIcon, UsersIcon } from 'lucide-react'
+import { CalendarIcon, UsersIcon, Package } from 'lucide-react'
 import Link from 'next/link'
 import React, { FC } from 'react'
 import { Media } from '../Media'
@@ -9,11 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 type Props = {
   booking: {
     fromDate: string
-    toDate: string
+    toDate?: string | null | undefined
     guests: (string | User)[] | null | undefined
     id: string
     slug?: string | null | undefined
     title: string
+    duration?: number | undefined
+    packageName?: string | null
+    packageMinNights?: number | null
     meta?:
       | {
           title?: string | null | undefined
@@ -24,6 +27,10 @@ type Props = {
 }
 
 const BookingCard: FC<Props> = ({ booking }) => {
+  const duration = booking.duration ?? (booking.fromDate && booking.toDate
+    ? Math.max(1, Math.round((new Date(booking.toDate).getTime() - new Date(booking.fromDate).getTime()) / (1000 * 60 * 60 * 24)))
+    : undefined)
+  
   return (
     <Link key={booking.id} href={`/bookings/${booking.id}`}>
       <Card className="h-full hover:shadow-md transition-shadow">
@@ -45,11 +52,24 @@ const BookingCard: FC<Props> = ({ booking }) => {
           <div className="flex-1 min-w-0">
             <CardTitle className="text-xl mb-1">{booking.title}</CardTitle>
             <div className="space-y-1">
+              {booking.packageName && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Package className="size-4" />
+                  <div className="text-sm">{booking.packageName}</div>
+                </div>
+              )}
               <div className="flex items-center gap-2 text-muted-foreground">
                 <CalendarIcon className="size-4" />
                 <div className="text-sm">
-                  {formatDate(new Date(booking.fromDate), 'PPP')} -{' '}
-                  {formatDate(new Date(booking.toDate), 'PPP')}
+                  {formatDate(new Date(booking.fromDate), 'PPP')}
+                  {duration !== undefined && (() => {
+                    // Check if package is hourly (minNights <= 1)
+                    const isHourly = booking.packageMinNights !== null && booking.packageMinNights !== undefined && booking.packageMinNights <= 1
+                    if (isHourly && duration === 1) {
+                      return ' · hourly'
+                    }
+                    return ` · ${duration} ${duration === 1 ? 'night' : 'nights'}`
+                  })()}
                 </div>
               </div>
             </div>

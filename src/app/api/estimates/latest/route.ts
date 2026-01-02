@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import configPromise from '@payload-config'
+import { trackEstimateView } from '@/lib/metaConversions'
 
 const PACKAGE_RATES = {
     standard: 1,
@@ -78,6 +79,33 @@ export async function GET(req: NextRequest) {
       }
     }
     (estimate as any).packageType = packageType
+
+    // Track EstimateView event for Meta Pixel
+    try {
+      const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || 
+                       req.headers.get('x-real-ip') || 
+                       'unknown'
+      const userAgent = req.headers.get('user-agent') || 'unknown'
+      
+      const postData = estimate.post && typeof estimate.post === 'object' ? estimate.post : null
+      const customerData = estimate.customer && typeof estimate.customer === 'object' ? estimate.customer : null
+      
+      await trackEstimateView({
+        estimateId: estimate.id,
+        estimateValue: estimate.total,
+        postId: typeof estimate.post === 'string' ? estimate.post : postData?.id,
+        postTitle: postData?.title || estimate.title,
+        packageType: packageType || undefined,
+        userId: typeof estimate.customer === 'string' ? estimate.customer : customerData?.id,
+        userEmail: customerData?.email,
+        clientIp,
+        userAgent,
+        eventSourceUrl: req.url,
+      })
+    } catch (error) {
+      // Don't fail the request if tracking fails
+      console.error('Failed to track estimate view:', error)
+    }
   }
 
   return NextResponse.json(estimate)

@@ -173,10 +173,30 @@ export interface Booking {
   slug?: string | null;
   slugLock?: boolean | null;
   post: string | Post;
-  paymentStatus?: ('paid' | 'unpaid') | null;
+  paymentStatus?: ('paid' | 'unpaid' | 'cancelled') | null;
   fromDate: string;
-  toDate: string;
+  toDate?: string | null;
   packageType?: string | null;
+  /**
+   * Stored cleaning schedule plan for this booking
+   */
+  cleaningSchedule?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Whether cleaning was included in the booking or purchased as an addon
+   */
+  cleaningSource?: ('included' | 'addon') | null;
+  /**
+   * Transactions for addons purchased for this booking
+   */
+  addonTransactions?: (string | YocoTransaction)[] | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -241,6 +261,9 @@ export interface Package {
     | null;
   category?: ('standard' | 'hosted' | 'addon' | 'special') | null;
   entitlement?: ('standard' | 'pro') | null;
+  /**
+   * Minimum nights. Use 0.5 for hourly/half-day packages, 1 for nightly packages.
+   */
   minNights?: number | null;
   maxNights?: number | null;
   /**
@@ -856,6 +879,92 @@ export interface Form {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "yoco-transactions".
+ */
+export interface YocoTransaction {
+  id: string;
+  user: string | User;
+  /**
+   * Notification type (required for notifications)
+   */
+  type?:
+    | (
+        | 'booking_created'
+        | 'booking_updated'
+        | 'booking_cancelled'
+        | 'booking_rescheduled'
+        | 'addon_purchased'
+        | 'payment_received'
+        | 'estimate_created'
+        | 'estimate_confirmed'
+        | 'subscription_renewed'
+        | 'subscription_cancelled'
+      )
+    | null;
+  /**
+   * Notification title (required for notifications)
+   */
+  title?: string | null;
+  /**
+   * Notification description
+   */
+  description?: string | null;
+  /**
+   * Whether the notification has been read
+   */
+  read?: boolean | null;
+  /**
+   * URL to navigate to when notification is clicked
+   */
+  actionUrl?: string | null;
+  /**
+   * Transaction intent (optional for notification-only records)
+   */
+  intent?: ('booking' | 'subscription' | 'product' | 'notification') | null;
+  /**
+   * Transaction status (optional for notification-only records)
+   */
+  status?: ('pending' | 'completed' | 'failed' | 'cancelled') | null;
+  productId?: string | null;
+  /**
+   * Package name (used for both transactions and notifications)
+   */
+  packageName?: string | null;
+  /**
+   * Transaction amount (optional for notification-only records)
+   */
+  amount?: number | null;
+  currency?: string | null;
+  paymentLinkId?: string | null;
+  paymentUrl?: string | null;
+  entitlement?: ('none' | 'standard' | 'pro') | null;
+  plan?: ('free' | 'standard' | 'pro') | null;
+  periodDays?: number | null;
+  expiresAt?: string | null;
+  completedAt?: string | null;
+  relatedBooking?: (string | null) | Booking;
+  relatedEstimate?: (string | null) | Estimate;
+  /**
+   * Related transaction (for notification records)
+   */
+  relatedTransaction?: (string | null) | YocoTransaction;
+  /**
+   * Additional metadata (package info, changes, etc.)
+   */
+  metadata?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "estimates".
  */
 export interface Estimate {
@@ -901,38 +1010,6 @@ export interface AuthRequest {
   email: string;
   code: string;
   expiresAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "yoco-transactions".
- */
-export interface YocoTransaction {
-  id: string;
-  user: string | User;
-  intent: 'booking' | 'subscription' | 'product';
-  status: 'pending' | 'completed' | 'failed' | 'cancelled';
-  productId?: string | null;
-  packageName: string;
-  amount: number;
-  currency?: string | null;
-  paymentLinkId?: string | null;
-  paymentUrl?: string | null;
-  entitlement?: ('none' | 'standard' | 'pro') | null;
-  plan?: ('free' | 'standard' | 'pro') | null;
-  periodDays?: number | null;
-  expiresAt?: string | null;
-  completedAt?: string | null;
-  metadata?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1248,6 +1325,9 @@ export interface BookingsSelect<T extends boolean = true> {
   fromDate?: T;
   toDate?: T;
   packageType?: T;
+  cleaningSchedule?: T;
+  cleaningSource?: T;
+  addonTransactions?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1664,6 +1744,11 @@ export interface AuthRequestsSelect<T extends boolean = true> {
  */
 export interface YocoTransactionsSelect<T extends boolean = true> {
   user?: T;
+  type?: T;
+  title?: T;
+  description?: T;
+  read?: T;
+  actionUrl?: T;
   intent?: T;
   status?: T;
   productId?: T;
@@ -1677,6 +1762,9 @@ export interface YocoTransactionsSelect<T extends boolean = true> {
   periodDays?: T;
   expiresAt?: T;
   completedAt?: T;
+  relatedBooking?: T;
+  relatedEstimate?: T;
+  relatedTransaction?: T;
   metadata?: T;
   updatedAt?: T;
   createdAt?: T;

@@ -55,7 +55,7 @@ const fetchEstimateDetails = async (estimateId: string, currentUserId: string) =
         },
       ],
     },
-    depth: 2,
+    depth: 3, // Increased depth to include originalBooking and its paymentStatus
     pagination: false,
     limit: 1,
   })

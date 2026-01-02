@@ -1,5 +1,14 @@
-// Email notification service for estimate requests using Resend SMTP
-import { transporter } from './transporter'
+// Email notification service using Resend API
+import { Resend } from 'resend'
+
+// Initialize Resend client
+const resendApiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS
+if (!resendApiKey) {
+  console.error('❌ RESEND_API_KEY or SMTP_PASS environment variable is not set!')
+} else {
+  console.log('✅ Resend API key configured:', resendApiKey.substring(0, 10) + '...')
+}
+const resend = new Resend(resendApiKey)
 
 type BookingConfirmationEmailInput = {
   recipientEmail: string
@@ -9,6 +18,7 @@ type BookingConfirmationEmailInput = {
   toDate: string
   bookingId: string
   bookingUrl: string
+  packageName?: string
 }
 
 export interface EstimateRequestNotification {
@@ -24,7 +34,7 @@ export interface EstimateRequestNotification {
 
 export async function sendEstimateRequestNotification(data: EstimateRequestNotification): Promise<void> {
   try {
-    console.log('📧 Sending estimate request notification via Resend SMTP')
+    console.log('📧 Sending estimate request notification via Resend API')
     console.log('=====================================')
     console.log(`Host: ${data.hostName} (${data.hostEmail})`)
     console.log(`Customer: ${data.customerName} (${data.customerEmail})`)
@@ -33,34 +43,162 @@ export async function sendEstimateRequestNotification(data: EstimateRequestNotif
     console.log(`Estimate Request ID: ${data.estimateRequestId}`)
     console.log('=====================================')
     
-    // Send email using the configured Resend SMTP transporter
-    await transporter.sendMail({
-      from:
-        process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
-          ? {
-              name: process.env.EMAIL_FROM_NAME,
-              address: process.env.EMAIL_FROM_ADDRESS,
-            }
-          : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-      to:
-        data.hostName && data.hostEmail
-          ? {
-              name: data.hostName,
-              address: data.hostEmail,
-            }
-          : data.hostEmail,
-      subject: `New Estimate Request for ${data.propertyTitle}`,
-      html: generateEstimateRequestEmailHTML(data),
-      // Optional: Add text version for better email client compatibility
-      text: generateEstimateRequestEmailText(data),
+    // Validate recipient email
+    const hostEmail = data.hostEmail?.trim()
+    if (!hostEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostEmail)) {
+      throw new Error(`Invalid host email address: ${hostEmail}`)
+    }
+    
+    const fromField = getFromField()
+
+    console.log('📧 Email configuration:', {
+      from: fromField,
+      to: hostEmail,
     })
     
-    console.log('✅ Estimate request notification sent successfully')
+    // Send email using Resend API
+    // Use unique X-Entity-Ref-ID header to prevent Gmail from threading emails together
+    const uniqueEmailId = `${data.estimateRequestId}-${Date.now()}-${Math.random().toString(36).substring(7)}`
+    
+    const { data: emailData, error } = await resend.emails.send({
+      from: fromField,
+      to: hostEmail,
+      subject: `New Estimate Request for ${data.propertyTitle}`,
+      html: generateEstimateRequestEmailHTML(data),
+      text: generateEstimateRequestEmailText(data),
+      headers: {
+        'X-Entity-Ref-ID': uniqueEmailId,
+      },
+    })
+
+    if (error) {
+      console.error('❌ Resend API error:', error)
+      throw new Error(`Failed to send email: ${error.message}`)
+    }
+    
+    console.log('✅ Estimate request notification sent successfully via Resend:', emailData?.id)
     
   } catch (error) {
     console.error('❌ Failed to send estimate request notification:', error)
     throw error
   }
+}
+
+// Helper function to extract email from formatted string like "Name <email@example.com>" or just "email@example.com"
+function extractEmailAddress(input: string | undefined): string | null {
+  if (!input) return null
+  
+  const trimmed = input.trim()
+  
+  // Check if it's already just an email address
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (emailRegex.test(trimmed)) {
+    return trimmed
+  }
+  
+  // Try to extract email from format "Name <email@example.com>"
+  const match = trimmed.match(/<([^\s@]+@[^\s@]+\.[^\s@]+)>/)
+  if (match && match[1]) {
+    return match[1]
+  }
+  
+  return null
+}
+
+// Helper function to validate and format email address
+function getFromAddress(): string {
+  const fromAddressRaw = process.env.EMAIL_FROM_ADDRESS?.trim()
+  
+  // Extract email address (handles both "email@example.com" and "Name <email@example.com>" formats)
+  let fromAddress = extractEmailAddress(fromAddressRaw)
+  
+  // If we extracted noreply@simpleplek.co.za, use info@simpleplek.co.za instead
+  if (fromAddress === 'noreply@simpleplek.co.za') {
+    console.log('📧 Replacing noreply@simpleplek.co.za with info@simpleplek.co.za')
+    fromAddress = 'info@simpleplek.co.za'
+  }
+  
+  if (fromAddress) {
+    console.log('📧 Using EMAIL_FROM_ADDRESS from env:', fromAddress)
+    return fromAddress
+  }
+  
+  // Fallback to default if invalid or missing
+  console.warn('⚠️ Invalid or missing EMAIL_FROM_ADDRESS, using default info@simpleplek.co.za')
+  console.log('📧 EMAIL_FROM_ADDRESS raw value:', process.env.EMAIL_FROM_ADDRESS)
+  return 'info@simpleplek.co.za'
+}
+
+// Helper function to extract name from formatted string like "Name <email@example.com>"
+function extractNameFromFormattedString(input: string | undefined): string | null {
+  if (!input) return null
+  
+  const trimmed = input.trim()
+  
+  // Check if it's just an email (no name)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (emailRegex.test(trimmed)) {
+    return null
+  }
+  
+  // Try to extract name from format "Name <email@example.com>"
+  const match = trimmed.match(/^([^<]+)\s*<[^>]+>$/)
+  if (match && match[1]) {
+    return match[1].trim()
+  }
+  
+  return null
+}
+
+// Helper function to get formatted from field for Resend API
+function getFromField(): string {
+  const fromAddress = getFromAddress()
+  let fromName = process.env.EMAIL_FROM_NAME?.trim()
+  
+  // Clean up the name - remove any email formatting if it accidentally got in there
+  if (fromName) {
+    // Remove any email-like patterns from the name
+    const emailInName = fromName.match(/<[^>]+>/)
+    if (emailInName) {
+      // If name contains email formatting, extract just the name part
+      const nameMatch = fromName.match(/^([^<]+)\s*</)
+      if (nameMatch && nameMatch[1]) {
+        fromName = nameMatch[1].trim()
+        console.log('📧 Cleaned name (removed email formatting):', fromName)
+      } else {
+        // If we can't extract, use a default
+        fromName = 'Simpleplek'
+        console.log('📧 Using default name due to invalid format')
+      }
+    }
+  }
+  
+  // If EMAIL_FROM_NAME is not set or was invalid, try to extract name from EMAIL_FROM_ADDRESS
+  if (!fromName || fromName.length === 0) {
+    const extractedName = extractNameFromFormattedString(process.env.EMAIL_FROM_ADDRESS)
+    if (extractedName) {
+      fromName = extractedName
+      console.log('📧 Extracted name from EMAIL_FROM_ADDRESS:', fromName)
+    }
+  }
+  
+  // Ensure fromAddress is clean (no extra formatting)
+  const cleanAddress = fromAddress.trim()
+  
+  // Validate the address one more time
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(cleanAddress)) {
+    console.error('❌ Invalid from address format:', cleanAddress)
+    throw new Error(`Invalid from email address: ${cleanAddress}`)
+  }
+  
+  // Resend API format: "Name <email@example.com>" or just "email@example.com"
+  if (fromName && fromName.length > 0 && !emailRegex.test(fromName)) {
+    return `${fromName} <${cleanAddress}>`
+  }
+  
+  // If no valid name, just return the address
+  return cleanAddress
 }
 
 export async function sendBookingConfirmationEmail(
@@ -73,44 +211,73 @@ export async function sendBookingConfirmationEmail(
     throw new Error('Invalid booking dates supplied for confirmation email')
   }
 
+  // Validate recipient email
+  const recipientEmail = data.recipientEmail?.trim()
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    throw new Error(`Invalid recipient email address: ${recipientEmail}`)
+  }
+
   const summary = `Stay at ${data.propertyTitle}`
+  const descriptionParts = [`Stay at ${data.propertyTitle}`]
+  if (data.packageName) {
+    descriptionParts.push(`Package: ${data.packageName}`)
+  }
+  const description = descriptionParts.join(' - ')
+  
   const htmlBody = generateBookingConfirmationHTML({ ...data, summary, startDate, endDate })
   const textBody = generateBookingConfirmationText({ ...data, summary, startDate, endDate })
   const icsContent = buildBookingICS({
     summary,
-    description: `Stay at ${data.propertyTitle}`,
+    description,
     startDate,
     endDate,
     bookingId: data.bookingId,
     bookingUrl: data.bookingUrl,
   })
 
-  await transporter.sendMail({
-    from:
-      process.env.EMAIL_FROM_ADDRESS && process.env.EMAIL_FROM_NAME
-        ? {
-            name: process.env.EMAIL_FROM_NAME,
-            address: process.env.EMAIL_FROM_ADDRESS,
-          }
-        : process.env.EMAIL_FROM_ADDRESS || 'noreply@simpleplek.co.za',
-    to:
-      data.recipientName && data.recipientEmail
-        ? {
-            name: data.recipientName,
-            address: data.recipientEmail,
-          }
-        : data.recipientEmail,
+  const fromField = getFromField()
+  
+  // Always send a copy to info@simpleplek.co.za (BCC so customer doesn't see it)
+  const adminEmail = 'info@simpleplek.co.za'
+  const bcc = adminEmail !== recipientEmail ? [adminEmail] : undefined
+
+  console.log('📧 Email configuration:', {
+    from: fromField,
+    to: recipientEmail,
+    bcc: bcc || 'none (admin email matches recipient)',
+  })
+
+  // Send email using Resend API
+  // Use unique X-Entity-Ref-ID header to prevent Gmail from threading emails together
+  // Each email gets a unique ID based on booking ID and timestamp
+  const uniqueEmailId = `${data.bookingId}-${Date.now()}-${Math.random().toString(36).substring(7)}`
+  
+  console.log('📧 Attempting to send email via Resend API...')
+  const { data: emailResponse, error } = await resend.emails.send({
+    from: fromField,
+    to: recipientEmail,
+    bcc: bcc,
     subject: `Booking confirmed: ${data.propertyTitle}`,
     html: htmlBody,
     text: textBody,
+    headers: {
+      'X-Entity-Ref-ID': uniqueEmailId,
+    },
     attachments: [
       {
         filename: `booking-${data.bookingId}.ics`,
-        content: icsContent,
+        content: Buffer.from(icsContent).toString('base64'),
         contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
       },
     ],
   })
+
+  if (error) {
+    console.error('❌ Resend API error:', JSON.stringify(error, null, 2))
+    throw new Error(`Failed to send email: ${error.message || JSON.stringify(error)}`)
+  }
+
+  console.log('✅ Email sent successfully via Resend. Email ID:', emailResponse?.id)
 }
 
 function generateEstimateRequestEmailHTML(data: EstimateRequestNotification): string {
@@ -232,10 +399,10 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8f9fa; margin: 0; padding: 0;">
         <div style="max-width: 640px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08); border-radius: 18px; overflow: hidden;">
-          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #312e81 100%); padding: 32px 28px;">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">Your stay is confirmed!</h1>
+          <div style="background: linear-gradient(135deg,rgb(128, 201, 206) 0%,rgb(1, 156, 147) 100%); padding: 32px 28px;">
+            <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">We will see you at ${data.propertyTitle}!</h1>
             <p style="margin: 12px 0 0 0; color: rgba(255, 255, 255, 0.85); font-size: 16px;">
-              We’ve attached a calendar invite so you never miss the dates.
+              We’ve attached a calendar invite so you never miss the dates. We can’t wait to host you!
             </p>
           </div>
           <div style="padding: 32px 28px;">
@@ -252,6 +419,7 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
               <p style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px;"><strong>Property:</strong> ${escapeHtml(
                 data.propertyTitle,
               )}</p>
+              ${data.packageName ? `<p style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px;"><strong>Package:</strong> ${escapeHtml(data.packageName)}</p>` : ''}
               <p style="margin: 0; color: #1f2937; font-size: 16px;"><strong>Booking ID:</strong> ${escapeHtml(
                 data.bookingId,
               )}</p>
@@ -264,7 +432,7 @@ function generateBookingConfirmationHTML(data: BookingConfirmationTemplateInput)
               </a>
             </div>
             <p style="margin-top: 32px; font-size: 14px; color: #6b7280;">
-              Add the attached calendar invite to keep everything in sync. We can’t wait to host you!
+              Add the attached calendar invite to keep everything in sync.
             </p>
           </div>
           <div style="padding: 20px 28px; background-color: #111827;">
@@ -293,6 +461,7 @@ function generateBookingConfirmationText(data: BookingConfirmationTemplateInput)
     'Booking summary:',
     `- Dates: ${start} to ${end}`,
     `- Property: ${data.propertyTitle}`,
+    ...(data.packageName ? [`- Package: ${data.packageName}`] : []),
     `- Booking ID: ${data.bookingId}`,
     '',
     `View booking details: ${data.bookingUrl}`,
@@ -323,6 +492,14 @@ function buildBookingICS({
   const dtStamp = formatDate(new Date())
   const dtStart = formatDate(startDate)
   const dtEnd = formatDate(endDate)
+  const created = dtStamp // Use current time as created time
+  const lastModified = dtStamp // Use current time as last modified
+
+  // Build description with proper line breaks
+  const descriptionParts = [description]
+  descriptionParts.push(`Booking ID: ${bookingId}`)
+  descriptionParts.push(`View details: ${bookingUrl}`)
+  const fullDescription = descriptionParts.join('\\n')
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -336,8 +513,12 @@ function buildBookingICS({
     `DTSTART:${dtStart}`,
     `DTEND:${dtEnd}`,
     `SUMMARY:${escapeICSText(summary)}`,
-    `DESCRIPTION:${escapeICSText(`${description}\\nBooking ID: ${bookingId}\\n${bookingUrl}`)}`,
+    `DESCRIPTION:${escapeICSText(fullDescription)}`,
     `URL:${escapeICSText(bookingUrl)}`,
+    `CREATED:${created}`,
+    `LAST-MODIFIED:${lastModified}`,
+    'STATUS:CONFIRMED',
+    'SEQUENCE:0',
     'TRANSP:OPAQUE',
     'END:VEVENT',
     'END:VCALENDAR',

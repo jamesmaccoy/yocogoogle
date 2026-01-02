@@ -35,7 +35,8 @@ export default function RegisterPage() {
   const next = searchParams.get('next')
   
   // If registering from a guest invite URL, automatically set role to 'guest'
-  const isGuestInvite = Boolean(next?.includes('/guest/invite'))
+  // Support both old format (/guest/invite) and new short format (/i/)
+  const isGuestInvite = Boolean(next?.includes('/guest/invite') || next?.startsWith('/i/'))
   
   // Set default role based on whether this is a guest invite
   React.useEffect(() => {

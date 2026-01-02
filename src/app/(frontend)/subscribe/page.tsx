@@ -406,7 +406,7 @@ export default function SubscribePage() {
 
         <Card className="border-cyan-200">
           <CardHeader>
-            <Badge className="w-fit bg-purple-600 text-purple-100">Pro Hosting</Badge>
+            <Badge className="w-fit bg-cyan-300 text-cyan-900">Pro Hosting</Badge>
             <CardTitle className="text-2xl">Annual Pro Plek</CardTitle>
             <CardDescription>
               Unlock pro masterclasses, host pricing tools, and annual access to the Simple Plek garden network.
