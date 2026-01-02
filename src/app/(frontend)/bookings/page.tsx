@@ -5,6 +5,7 @@ import { Post, User } from '@/payload-types'
 import { getMeUser } from '@/utilities/getMeUser'
 import PageClient from './page.client'
 import BookingCard from '@/components/Bookings/BookingCard'
+import SuggestedPackages from '@/components/Bookings/SuggestedPackages'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -131,6 +132,8 @@ export default async function Bookings() {
             )}
           </div>
         </div>
+
+        <SuggestedPackages userId={user.id} />
 
         {upcomingBookings.docs.length === 0 && pastBookings.docs.length === 0 ? (
           <div className="text-center py-10">
