@@ -31,6 +31,7 @@ import {
 } from '@/utils/packageSuggestions'
 import { useSubscription } from '@/hooks/useSubscription'
 import { useRouter } from 'next/navigation'
+import { trackEstimateViewGoogleAds } from '@/lib/googleAdsTracking'
 
 // Helper function to generate MD5 hash (required for Gravatar)
 const md5 = (str: string): string => {
@@ -337,6 +338,22 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     : _postBaseRate * _bookingDuration
   
   const _postId = typeof data?.post === 'object' && data?.post?.id ? data.post.id : ''
+
+  // Track estimate view for Google Ads
+  useEffect(() => {
+    if (data?.id) {
+      const postData = typeof data.post === 'object' ? data.post : null
+      const packageType = (data as any).packageType || null
+      
+      trackEstimateViewGoogleAds({
+        estimateId: data.id,
+        estimateValue: _bookingTotal,
+        postId: _postId || undefined,
+        postTitle: postData?.title || data.title || undefined,
+        packageType: packageType || undefined,
+      })
+    }
+  }, [data?.id, _bookingTotal, _postId, data?.title, data?.post])
   const { packages, loading, error } = usePackages(_postId)
 
   // Payment states

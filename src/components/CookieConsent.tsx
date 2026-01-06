@@ -160,10 +160,17 @@ function initializeMetaPixel() {
     s.parentNode.insertBefore(t, s)
   }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js')
 
-  // Initialize pixel
-  ;(window as any).fbq('init', pixelId)
-  ;(window as any).fbq('track', 'PageView')
-  
-  console.log('Meta Pixel initialized after consent:', pixelId)
+  // Initialize pixel with error handling
+  try {
+    ;(window as any).fbq('init', pixelId, {
+      // Disable automatic event tracking to prevent custom endpoint issues
+      autoConfig: false,
+      // Use standard Facebook endpoints only
+    })
+    ;(window as any).fbq('track', 'PageView')
+    console.log('Meta Pixel initialized after consent:', pixelId)
+  } catch (error) {
+    console.warn('Meta Pixel initialization error (non-critical):', error)
+  }
 }
 

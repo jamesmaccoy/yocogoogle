@@ -8,7 +8,7 @@ import { homeStatic } from '@/endpoints/seed/home-static'
 import { draftMode } from 'next/headers'
 import { cache } from 'react'
 import type { RequiredDataFromCollectionSlug } from 'payload'
-import { GoogleAds } from '@/components/GoogleAds'
+// Google Ads is already loaded in layout.tsx - no need to import here
 
 export const revalidate = 600
 
@@ -44,7 +44,6 @@ export default async function HomeEditorialPage() {
 
   return (
     <>
-      <GoogleAds />
       <ScrollAnimationHero 
         featuredPosts={posts.docs} 
         heroMedia={heroMedia}

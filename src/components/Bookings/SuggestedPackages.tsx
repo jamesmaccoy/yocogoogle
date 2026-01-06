@@ -30,6 +30,8 @@ interface SuggestedPackage {
   purchasedAddonCount?: number // Number of addons already purchased for this booking
   totalAvailableAddons?: number // Total addons available for this booking
   purchasedAddons?: Array<{ name: string; features: string[] }> // Details of purchased addons
+  revenueCatId?: string // Revenue category ID for package identification
+  yocoId?: string // Yoco product ID for package identification
 }
 
 interface SuggestedPackagesProps {
@@ -201,13 +203,48 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
               const addonTransactions = firstBooking.addonTransactions || []
               purchasedAddonCount = addonTransactions.length
               
-              // Get details of purchased addons
+              // Get details of purchased addons from transactions
               purchasedAddons = addonTransactions
                 .map((tx: any) => {
                   if (typeof tx === 'object' && tx) {
+                    // Extract addon name from transaction
+                    const metadata = typeof tx.metadata === 'object' && tx.metadata !== null ? tx.metadata as Record<string, any> : {}
+                    const packageName = tx.packageName || metadata.packageName || metadata.package_id || ''
+                    const productName = tx.productName || metadata.productName || metadata.product_id || ''
+                    const addonName = packageName || productName || tx.title || 'Addon'
+                    
+                    // Extract features/description from transaction
+                    // Use description, title, or metadata features
+                    const features: string[] = []
+                    
+                    // First try to get features from metadata
+                    if (metadata.features && Array.isArray(metadata.features)) {
+                      features.push(...metadata.features.map((f: any) => {
+                        if (typeof f === 'string') return f
+                        if (typeof f === 'object' && f.feature) return f.feature
+                        return String(f)
+                      }))
+                    }
+                    
+                    // Then try description or title
+                    if (features.length === 0) {
+                      if (tx.description) {
+                        features.push(tx.description)
+                      } else if (tx.title && tx.title !== addonName) {
+                        features.push(tx.title)
+                      } else if (metadata.description) {
+                        features.push(String(metadata.description))
+                      }
+                    }
+                    
+                    // Fallback to addon name if no features found
+                    if (features.length === 0) {
+                      features.push(addonName)
+                    }
+                    
                     return {
-                      name: tx.packageName || tx.productName || 'Addon',
-                      features: tx.metadata?.features || []
+                      name: addonName,
+                      features: features
                     }
                   }
                   return null
@@ -219,6 +256,12 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
               totalAvailableAddons = addonPackages.length || 8 // Default to 8 if can't determine
             }
 
+            // For checkin service, ensure we have booking count and next booking date
+            const checkinBookingCount = isCheckinService && bookings.length > 0 ? bookings.length : (isCheckinService ? 1 : 0)
+            const checkinNextDate = isCheckinService && bookings.length > 0 
+              ? bookings[0]?.fromDate 
+              : (isCheckinService ? new Date().toISOString() : undefined)
+
             const packageData: SuggestedPackage = {
               id: pkg.id,
               name: pkg.name,
@@ -229,11 +272,11 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
               features: pkg.features,
               relatedPage: pkg.relatedPage,
               isActive: postBookings.length > 0 || isCheckinService,
-              bookingCount: postBookings.length || (isCheckinService ? 1 : 0),
+              bookingCount: isCheckinService ? checkinBookingCount : (postBookings.length || 0),
               guestCount,
-              nextBookingDate: postBookings.length > 0 
+              nextBookingDate: isCheckinService ? checkinNextDate : (postBookings.length > 0 
                 ? postBookings[0]?.fromDate 
-                : undefined,
+                : undefined),
               availableCount: pkg.maxConcurrentBookings || (isMarket ? 33 : undefined),
               participantsCount: isMarket ? 3 : undefined,
               bookingId: isAddon ? firstBookingId : undefined, // Tokenize addon to booking
@@ -249,19 +292,26 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
             
             const hasBookingsForPost = bookings.length > 0
             
-            if (hasBookingsForPost) {
-              // Post has upcoming bookings - show checkin service and addons as active
-              if (isCheckinService || isAddon || postBookings.length > 0) {
+            if (isCheckinService) {
+              // Checkin service - only add once (first one found)
+              if (!active.some(p => p.revenueCatId === 'per_night_luxury' || p.yocoId === 'per_night_luxury' || p.name?.toLowerCase().includes('checkin'))) {
                 active.push(packageData)
               }
-            } else if (isMarket) {
-              // Market/subscription packages - show as inactive
-              inactive.push(packageData)
-            } else if (isCheckinService && !hasBookingsForPost) {
-              // Checkin service available but no bookings - could show as active suggestion
+            } else if (isAddon && hasBookingsForPost) {
+              // Addons - will be aggregated into a single summary card later
               active.push(packageData)
+            } else if (isMarket) {
+              // Market/subscription packages - show as inactive (only add once)
+              if (!inactive.some(p => p.revenueCatId === 'monthly_subscription' || p.yocoId === 'monthly_subscription' || p.name?.toLowerCase().includes('market'))) {
+                inactive.push(packageData)
+              }
+            } else if (hasBookingsForPost && postBookings.length > 0) {
+              // Other packages with bookings - only if not already added
+              if (!active.some(p => p.id === packageData.id)) {
+                active.push(packageData)
+              }
             }
-            // Note: Addons without bookings are now skipped above
+            // Note: Addons without bookings are skipped above
           })
         })
 
@@ -287,58 +337,129 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
           return (a.name || '').localeCompare(b.name || '')
         })
 
-        // Prioritize: checkin service and addons for active, market for inactive
-        const checkinPackages = active.filter(p => p.name?.toLowerCase().includes('checkin'))
+        // Separate packages by type to avoid duplicates
+        const checkinPackages = active.filter(p => 
+          p.name?.toLowerCase().includes('checkin') || 
+          p.revenueCatId === 'per_night_luxury' || 
+          p.yocoId === 'per_night_luxury'
+        )
         const addonPackages = active.filter(p => p.category === 'addon')
-        const otherActive = active.filter(p => !p.name?.toLowerCase().includes('checkin') && p.category !== 'addon')
+        const otherActive = active.filter(p => 
+          !p.name?.toLowerCase().includes('checkin') && 
+          p.category !== 'addon' &&
+          p.revenueCatId !== 'per_night_luxury' &&
+          p.yocoId !== 'per_night_luxury'
+        )
         
-        const marketPackages = inactive.filter(p => p.name?.toLowerCase().includes('market'))
-        const otherInactive = inactive.filter(p => !p.name?.toLowerCase().includes('market'))
+        const marketPackages = inactive.filter(p => 
+          p.name?.toLowerCase().includes('market') ||
+          p.revenueCatId === 'monthly_subscription' ||
+          p.yocoId === 'monthly_subscription'
+        )
+        const otherInactive = inactive.filter(p => 
+          !p.name?.toLowerCase().includes('market') &&
+          p.revenueCatId !== 'monthly_subscription' &&
+          p.yocoId !== 'monthly_subscription'
+        )
 
-        // Create a special addon summary card if we have bookings with addons
-        const addonSummaryCard = addonPackages.length > 0 ? addonPackages[0] : null
+        // Create a single addon summary card aggregating all addons across all bookings
+        let addonSummaryCard: SuggestedPackage | null = null
+        if (addonPackages.length > 0 && addonPackages[0]) {
+          const firstAddon = addonPackages[0]
+          // Aggregate addon data from all bookings
+          const allPurchasedAddons: Array<{ name: string; features: string[] }> = []
+          let totalPurchasedCount = 0
+          let maxTotalAvailable = 0
+          
+          addonPackages.forEach((addon) => {
+            if (addon.purchasedAddons) {
+              allPurchasedAddons.push(...addon.purchasedAddons)
+              totalPurchasedCount += addon.purchasedAddonCount || 0
+              maxTotalAvailable = Math.max(maxTotalAvailable, addon.totalAvailableAddons || 8)
+            }
+          })
+          
+          // Deduplicate addons by name to avoid showing the same addon multiple times
+          const uniqueAddons = new Map<string, { name: string; features: string[] }>()
+          allPurchasedAddons.forEach((addon) => {
+            const key = addon.name.toLowerCase()
+            if (!uniqueAddons.has(key)) {
+              uniqueAddons.set(key, addon)
+            } else {
+              // Merge features if duplicate
+              const existing = uniqueAddons.get(key)!
+              const mergedFeatures = [...new Set([...existing.features, ...addon.features])]
+              uniqueAddons.set(key, { ...existing, features: mergedFeatures })
+            }
+          })
+          
+          const deduplicatedAddons = Array.from(uniqueAddons.values())
+          
+          // Use the first addon package as base, but update with aggregated transaction data
+          addonSummaryCard = {
+            ...firstAddon,
+            purchasedAddonCount: totalPurchasedCount || firstAddon.purchasedAddonCount || 0,
+            totalAvailableAddons: maxTotalAvailable || firstAddon.totalAvailableAddons || 8,
+            purchasedAddons: deduplicatedAddons.length > 0 ? deduplicatedAddons : (firstAddon.purchasedAddons || [])
+          }
+        }
 
+        // Set active packages: 1 checkin service, 1 addon summary
         setActivePackages([
           ...checkinPackages.slice(0, 1),
-          ...(addonSummaryCard ? [addonSummaryCard] : []),
-          ...otherActive.slice(0, 1)
+          ...(addonSummaryCard ? [addonSummaryCard] : [])
         ].slice(0, 2))
         
+        // Set inactive packages: 1 market package
         setInactivePackages([
-          ...marketPackages.slice(0, 1),
-          ...otherInactive.slice(0, 1)
+          ...marketPackages.slice(0, 1)
         ].slice(0, 1))
 
         // Track Meta Pixel and Google Tag events for addon suggestions
         if (typeof window !== 'undefined') {
-          // Meta Pixel - ViewContent event for addon suggestions
-          if ((window as any).fbq && addonPackages.length > 0) {
-            addonPackages.forEach((addon) => {
-              (window as any).fbq('track', 'ViewContent', {
-                content_name: addon.name,
-                content_category: 'addon',
-                content_ids: [addon.id],
-                value: addon.baseRate || 0,
-                currency: 'ZAR'
+          try {
+            // Meta Pixel - ViewContent event for addon suggestions
+            if ((window as any).fbq && typeof (window as any).fbq === 'function' && addonPackages.length > 0) {
+              addonPackages.forEach((addon) => {
+                try {
+                  (window as any).fbq('track', 'ViewContent', {
+                    content_name: addon.name,
+                    content_category: 'addon',
+                    content_ids: [addon.id],
+                    value: addon.baseRate || 0,
+                    currency: 'ZAR'
+                  })
+                } catch (fbqError) {
+                  // Silently fail - don't break the UI if tracking fails
+                  console.warn('Meta Pixel tracking error:', fbqError)
+                }
               })
-            })
-          }
+            }
 
-          // Google Tag - view_item event for addon suggestions
-          if ((window as any).gtag && addonPackages.length > 0) {
-            addonPackages.forEach((addon) => {
-              (window as any).gtag('event', 'view_item', {
-                currency: 'ZAR',
-                value: addon.baseRate || 0,
-                items: [{
-                  item_id: addon.id,
-                  item_name: addon.name,
-                  item_category: 'addon',
-                  price: addon.baseRate || 0,
-                  quantity: 1
-                }]
+            // Google Tag - view_item event for addon suggestions
+            if ((window as any).gtag && typeof (window as any).gtag === 'function' && addonPackages.length > 0) {
+              addonPackages.forEach((addon) => {
+                try {
+                  (window as any).gtag('event', 'view_item', {
+                    currency: 'ZAR',
+                    value: addon.baseRate || 0,
+                    items: [{
+                      item_id: addon.id,
+                      item_name: addon.name,
+                      item_category: 'addon',
+                      price: addon.baseRate || 0,
+                      quantity: 1
+                    }]
+                  })
+                } catch (gtagError) {
+                  // Silently fail - don't break the UI if tracking fails
+                  console.warn('Google Tag tracking error:', gtagError)
+                }
               })
-            })
+            }
+          } catch (error) {
+            // Silently fail - don't break the UI if tracking fails
+            console.warn('Analytics tracking error:', error)
           }
         }
       } catch (error) {
@@ -439,8 +560,9 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
         pkg.baseRate,
         {
           postId: pkg.postId,
-          bookingId: pkg.bookingId, // Tokenize addon to this booking
           intent: 'product',
+          // @ts-ignore - bookingId is used by payment link API but not in type definition
+          ...(pkg.bookingId && { bookingId: pkg.bookingId }), // Tokenize addon to this booking
         },
       )
 
@@ -460,7 +582,7 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
 
   const getTitle = () => {
     if (pkg.bookingCount && pkg.bookingCount > 0) {
-      return `${pkg.bookingCount} ${pkg.bookingCount === 1 ? 'Stay' : 'Stays'}`
+      return `${pkg.bookingCount} Stays`
     }
     if (pkg.category === 'addon') {
       // Show "X of Y Add-ons" format
@@ -480,7 +602,9 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
   const getDescription = () => {
     const lines: string[] = []
     
-    const isCheckin = pkg.name?.toLowerCase().includes('checkin')
+    const isCheckin = pkg.name?.toLowerCase().includes('checkin') || 
+                      pkg.revenueCatId === 'per_night_luxury' ||
+                      pkg.yocoId === 'per_night_luxury'
     const isAddon = pkg.category === 'addon'
     const isMarket = pkg.name?.toLowerCase().includes('market')
     
@@ -495,33 +619,47 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
     }
     
     if (isAddon) {
-      // Show purchased addon details if available
+      // Show purchased addon transaction summary
       if (pkg.purchasedAddons && pkg.purchasedAddons.length > 0) {
-        const addonDetails = pkg.purchasedAddons.flatMap((addon, idx) => {
+        // Display purchased addons from transactions
+        pkg.purchasedAddons.forEach((addon, idx) => {
+          // Show addon name and features from transaction
           if (addon.features && addon.features.length > 0) {
-            return addon.features.map((feature, fIdx) => {
-              const featureText = typeof feature === 'string' ? feature : feature.feature || ''
-              return `${idx + 1}X ${featureText}`
+            // Show each feature/item from the transaction
+            addon.features.forEach((feature: any, fIdx: number) => {
+              const featureText = typeof feature === 'string' ? feature : (feature?.feature || feature || '')
+              if (featureText) {
+                lines.push(`${idx + 1}X ${featureText}`)
+              }
             })
+          } else if (addon.name) {
+            // Fallback to addon name if no features
+            lines.push(`${idx + 1}X ${addon.name}`)
           }
-          return [`${idx + 1}X ${addon.name}`]
         })
-        lines.push(...addonDetails.slice(0, 3))
         
-        // Add additional addon if available
-        if (pkg.purchasedAddons.length > 0 && pkg.features) {
-          const availableAddons = pkg.features.filter((f: any) => {
-            const featureText = typeof f === 'string' ? f : f.feature || ''
-            return !pkg.purchasedAddons?.some(pa => 
-              pa.features.some(pf => pf === featureText)
+        // Limit to first 3 lines to avoid overflow
+        if (lines.length > 3) {
+          lines.splice(3)
+        }
+        
+        // If we have available addons that aren't purchased, suggest one
+        if (pkg.features && pkg.features.length > 0) {
+          const purchasedFeatureNames = new Set(
+            pkg.purchasedAddons.flatMap(pa => 
+              pa.features.map((f: any) => typeof f === 'string' ? f : (f?.feature || ''))
             )
-          })
-          if (availableAddons.length > 0) {
-            const extraFeature = availableAddons[0]
-            const extraText = typeof extraFeature === 'string' ? extraFeature : extraFeature.feature || ''
-            if (extraText) {
-              lines.push(`1X Include ${extraText}`)
-            }
+          )
+          
+          const availableAddons = pkg.features
+            .map((f: any) => {
+              const featureText = typeof f === 'string' ? f : f.feature || ''
+              return featureText
+            })
+            .filter((f: string) => f && !purchasedFeatureNames.has(f))
+          
+          if (availableAddons.length > 0 && lines.length < 3) {
+            lines.push(`1X Include ${availableAddons[0]}`)
           }
         }
       } else if (pkg.features) {
@@ -529,22 +667,12 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
         const featureTexts = pkg.features.slice(0, 3).map((f: any, idx: number) => {
           const feature = typeof f === 'string' ? f : f.feature || ''
           return `${idx + 1}X ${feature}`
-        }).join(', ')
-        if (featureTexts) {
-          lines.push(featureTexts)
-        }
-        // Add additional addon line if available
-        if (pkg.features.length > 3) {
-          const extraFeature = pkg.features[3]
-          const extraText = typeof extraFeature === 'string' ? extraFeature : extraFeature.feature || ''
-          if (extraText) {
-            lines.push(`1X Include ${extraText}`)
-          }
-        }
+        })
+        lines.push(...featureTexts)
       }
       
       // Empty state message if no addons
-      if ((!pkg.purchasedAddons || pkg.purchasedAddons.length === 0) && (!pkg.features || pkg.features.length === 0)) {
+      if (lines.length === 0) {
         lines.push('No addons available')
       }
     }

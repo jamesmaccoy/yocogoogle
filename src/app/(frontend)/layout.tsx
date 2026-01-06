@@ -14,6 +14,8 @@ import { mergeOpenGraph } from '@/utilities/mergeOpenGraph'
 import { draftMode } from 'next/headers'
 import Script from 'next/script'
 import { CookieConsent } from '@/components/CookieConsent'
+import { GoogleAdsTracking } from '@/components/GoogleAdsTracking'
+import { Suspense } from 'react'
 
 import './globals.css'
 import { getServerSideURL } from '@/utilities/getURL'
@@ -112,6 +114,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {children}
           <Footer />
           <CookieConsent />
+          <Suspense fallback={null}>
+            <GoogleAdsTracking />
+          </Suspense>
         </Providers>
       </body>
     </html>
