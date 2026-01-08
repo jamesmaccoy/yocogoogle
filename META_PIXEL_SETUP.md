@@ -76,6 +76,9 @@ Your Meta Pixel ID: `2659582847593179`
 - ✅ **Fixed**: Meta Pixel initialization disables custom domain endpoints (`autoConfig: false`)
 - ✅ **Fixed**: URL rewriting intercepts non-www requests and rewrites them to www before they're sent
   - This prevents the redirect and CORS error by ensuring requests go directly to www domain
+- ✅ **Fixed**: Created `/events/[...path]` route to handle Meta Pixel POST requests
+  - Meta Pixel POSTs to `/events/[hash]` (not `/api/events/[hash]`)
+  - Route now exists at `src/app/events/[...path]/route.ts`
 - **Optional**: Configure Meta Events Manager to disable custom domain endpoints (Settings → Advanced → Custom Domain)
 
 ### 5. Event Match Quality (EMQ) Issues
