@@ -8,17 +8,44 @@ import type { Post } from '@/payload-types'
 
 import { formatAuthors } from '@/utilities/formatAuthors'
 import { Media } from '@/components/Media'
+import { useSubscription } from '@/hooks/useSubscription'
+import { trackImageView } from '@/lib/imageTracking'
+import { useUserContext } from '@/context/UserContext'
+import { useEffect, useRef } from 'react'
 
 export const PostHero: React.FC<{
   post: Post
 }> = ({ post }) => {
   const { categories, heroImage, meta, populatedAuthors, publishedAt, title, slug } = post
+  const { isSubscribed, isLoading: isSubscriptionLoading } = useSubscription()
+  const { currentUser } = useUserContext()
+  const trackedRef = useRef(false)
 
   const hasAuthors =
     populatedAuthors && populatedAuthors.length > 0 && formatAuthors(populatedAuthors) !== ''
 
   // Prioritize heroImage (original behavior), fall back to meta.image for layout animation matching
   const displayImage = heroImage || meta?.image
+  
+  // Only show image if user has active subscription
+  // Don't show image while subscription status is loading to avoid flash
+  const shouldShowImage = !isSubscriptionLoading && isSubscribed && displayImage
+
+  // Track when non-subscribers would view the image (restricted content)
+  useEffect(() => {
+    if (!isSubscriptionLoading && !isSubscribed && displayImage && !trackedRef.current) {
+      trackedRef.current = true
+      // Track restricted image view attempt
+      trackImageView({
+        postId: post.id,
+        postTitle: title,
+        imageId: typeof displayImage === 'object' && displayImage !== null ? displayImage.id : undefined,
+        isRestricted: true,
+        userId: currentUser?.id,
+        userEmail: currentUser?.email,
+      })
+    }
+  }, [isSubscriptionLoading, isSubscribed, displayImage, post.id, title, currentUser])
 
   return (
     <div className="relative -mt-[10.4rem] flex items-end" style={{ paddingTop: '22rem' }}>
@@ -74,7 +101,7 @@ export const PostHero: React.FC<{
         transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
         style={{ zIndex: -1 }}
       >
-        {displayImage && typeof displayImage !== 'string' ? (
+        {shouldShowImage && typeof displayImage !== 'string' ? (
           <motion.div
             className="absolute inset-0 w-full h-full"
             layoutId={slug ? `post-image-content-${slug}` : undefined}
@@ -87,9 +114,13 @@ export const PostHero: React.FC<{
               resource={displayImage}
               postId={post.id}
               postTitle={title}
+              disableThrottling={true} // Subscribers see full image, no throttling needed
             />
           </motion.div>
-        ) : null}
+        ) : (
+          // Show gradient background for non-subscribers (no image)
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900" />
+        )}
         <div className="absolute pointer-events-none left-0 bottom-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent z-10" />
       </motion.div>
     </div>

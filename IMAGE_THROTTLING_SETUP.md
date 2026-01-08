@@ -7,9 +7,11 @@ Image throttling has been implemented to restrict post cover/meta images for non
 ## What's Implemented
 
 ### 1. Subscription-Based Image Access
-- ✅ Images are blurred and throttled for non-subscribers
+- ✅ **Post cover/meta images are completely hidden for non-subscribers** (not just blurred)
 - ✅ Subscribers with active subscriptions see full-quality images
-- ✅ Uses Vercel's free plan throttling + CSS blur for maximum effect
+- ✅ PostHero component checks subscription status and only renders image for subscribers
+- ✅ Other images (thumbnails, cards) are blurred for non-subscribers
+- ✅ Uses Vercel's free plan throttling + CSS blur for thumbnails
 - ✅ Only applies to post cover/meta images (not all images)
 
 ### 2. Image View Tracking
@@ -36,16 +38,25 @@ Image throttling has been implemented to restrict post cover/meta images for non
 - Passes post context to ImageMedia for tracking
 
 #### Updated Components
-- `PostHero`: Passes post ID and title to Media component
-- `Card`: Passes post ID and title for tracking
+- `PostHero`: **Completely hides image for non-subscribers**, only shows for subscribers
+- `Card`: Passes post ID and title for tracking (blurs thumbnails)
 - `SuggestedPackages`: Passes post context for package images
 - `EstimatePage`: Passes post context for estimate images
 
 ## How It Works
 
-### Image Throttling Logic
+### Image Access Logic
 
+#### PostHero (Post Cover Images)
 1. **Subscription Check**: Uses `useSubscription()` hook to check if user has active subscription
+2. **Access Decision**: 
+   - **Subscribers**: See full-quality image
+   - **Non-subscribers**: Image is completely hidden (not rendered)
+   - Shows gradient background instead of image
+3. **Tracking**: Tracks when non-subscribers visit post page (restricted content view)
+
+#### Other Images (Thumbnails, Cards)
+1. **Subscription Check**: Uses `useSubscription()` hook
 2. **Throttling Decision**: Only throttles if:
    - User is not subscribed
    - Post context is available (postId or postTitle)
@@ -134,11 +145,12 @@ Restricted image views are integrated with the estimate tracking system:
 
 ## Testing
 
-### Test Image Throttling
+### Test Image Access
 1. Log in as a non-subscriber
 2. Visit a post page (`/posts/[slug]`)
-3. Verify images are blurred with overlay message
-4. Subscribe and verify images are clear
+3. Verify post cover image is **completely hidden** (not rendered, shows gradient background)
+4. Verify thumbnails in cards are blurred with overlay message
+5. Subscribe and verify post cover image appears clearly
 
 ### Test Analytics Tracking
 1. Open browser console
