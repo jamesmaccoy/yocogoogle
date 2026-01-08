@@ -62,7 +62,21 @@ Your Meta Pixel ID: `2659582847593179`
    - This might be related to Meta Business verification
    - Verify your domain in Meta Business Settings → Brand Safety → Domains
 
-### 4. Event Match Quality (EMQ) Issues
+### 4. CORS Error with Custom Domain Endpoints
+**Problem**: `Access to fetch at 'https://simpleplek.co.za/events/...' from origin 'https://www.simpleplek.co.za' has been blocked by CORS policy`
+
+**Root Cause**: 
+- Meta Pixel tries to POST to `/events/[hash]` endpoint
+- Domain mismatch: pixel tries non-www (`simpleplek.co.za`) but site is www (`www.simpleplek.co.za`)
+- 307 redirect from non-www to www causes CORS error
+
+**Solutions**:
+- ✅ **Fixed**: Events endpoint now handles CORS properly for both www and non-www domains
+- ✅ **Fixed**: CORS headers include both `https://www.simpleplek.co.za` and `https://simpleplek.co.za`
+- ✅ **Fixed**: Meta Pixel initialization disables custom domain endpoints (`autoConfig: false`)
+- **Optional**: Configure Meta Events Manager to disable custom domain endpoints (Settings → Advanced → Custom Domain)
+
+### 5. Event Match Quality (EMQ) Issues
 **Problem**: No Event Match Quality score available
 
 **Solutions**:
@@ -134,13 +148,21 @@ META_ACCESS_TOKEN=your_access_token_here
   - Invalid pixel ID → Verify pixel ID matches
   - Missing required fields → Check event data structure
 
+### CORS Errors
+- **Error**: `Access to fetch at 'https://simpleplek.co.za/events/...' has been blocked by CORS policy`
+- **Fix**: ✅ Already fixed - events endpoint now handles CORS for both www and non-www
+- **Fix**: If still occurring, check Meta Events Manager → Settings → Advanced → Custom Domain (disable if enabled)
+- **Fix**: Ensure both `https://www.simpleplek.co.za` and `https://simpleplek.co.za` are verified in Meta Business Settings
+
 ## Next Steps
 
 1. ✅ Pixel ID is now hardcoded (will work immediately)
-2. ⏳ Set `META_ACCESS_TOKEN` environment variable
-3. ⏳ Fix SSL certificate for simpleplek.co.za
-4. ⏳ Test pixel with Facebook Pixel Helper
-5. ⏳ Verify events in Meta Events Manager
+2. ✅ CORS issues fixed for www/non-www domain mismatch
+3. ⏳ Set `META_ACCESS_TOKEN` environment variable
+4. ⏳ Fix SSL certificate for simpleplek.co.za
+5. ⏳ Test pixel with Facebook Pixel Helper
+6. ⏳ Verify events in Meta Events Manager
+7. ⏳ (Optional) Disable custom domain endpoints in Meta Events Manager if CORS issues persist
 
 ## Support Resources
 

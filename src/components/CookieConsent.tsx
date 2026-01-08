@@ -162,13 +162,21 @@ function initializeMetaPixel() {
 
   // Initialize pixel with error handling
   try {
+    // Get current domain to ensure we use the correct one
+    const currentDomain = typeof window !== 'undefined' ? window.location.hostname : ''
+    
     ;(window as any).fbq('init', pixelId, {
       // Disable automatic event tracking to prevent custom endpoint issues
       autoConfig: false,
-      // Use standard Facebook endpoints only
+      // Explicitly disable custom domain endpoint to prevent CORS issues
+      // This ensures events go directly to Facebook's servers, not to /events/[hash]
+      // Setting agent to undefined prevents Meta Pixel from using custom endpoints
+      agent: undefined,
     })
+    
+    // Track PageView
     ;(window as any).fbq('track', 'PageView')
-    console.log('Meta Pixel initialized after consent:', pixelId)
+    console.log('Meta Pixel initialized after consent:', pixelId, 'on domain:', currentDomain)
   } catch (error) {
     console.warn('Meta Pixel initialization error (non-critical):', error)
   }
