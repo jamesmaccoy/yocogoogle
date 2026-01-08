@@ -68,12 +68,14 @@ Your Meta Pixel ID: `2659582847593179`
 **Root Cause**: 
 - Meta Pixel tries to POST to `/events/[hash]` endpoint
 - Domain mismatch: pixel tries non-www (`simpleplek.co.za`) but site is www (`www.simpleplek.co.za`)
-- 307 redirect from non-www to www causes CORS error
+- 307 redirect from non-www to www causes CORS error (redirects strip CORS headers)
 
 **Solutions**:
 - ✅ **Fixed**: Events endpoint now handles CORS properly for both www and non-www domains
 - ✅ **Fixed**: CORS headers include both `https://www.simpleplek.co.za` and `https://simpleplek.co.za`
 - ✅ **Fixed**: Meta Pixel initialization disables custom domain endpoints (`autoConfig: false`)
+- ✅ **Fixed**: URL rewriting intercepts non-www requests and rewrites them to www before they're sent
+  - This prevents the redirect and CORS error by ensuring requests go directly to www domain
 - **Optional**: Configure Meta Events Manager to disable custom domain endpoints (Settings → Advanced → Custom Domain)
 
 ### 5. Event Match Quality (EMQ) Issues

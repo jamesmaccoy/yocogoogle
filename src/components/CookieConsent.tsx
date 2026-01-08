@@ -165,13 +165,58 @@ function initializeMetaPixel() {
     // Get current domain to ensure we use the correct one
     const currentDomain = typeof window !== 'undefined' ? window.location.hostname : ''
     
+    // Fix Meta Pixel custom endpoint CORS issues by rewriting non-www to www
+    // This prevents CORS errors when Meta Pixel tries to POST to /events/ on wrong domain
+    if (typeof window !== 'undefined') {
+      // Override fetch to rewrite non-www URLs to www
+      const originalFetch = window.fetch
+      window.fetch = function(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+        let url: string
+        if (typeof input === 'string') {
+          url = input
+        } else if (input instanceof URL) {
+          url = input.href
+        } else {
+          url = input.url
+        }
+        
+        // Rewrite non-www to www for /events/ endpoints to prevent CORS issues
+        if (url.includes('/events/') && url.includes('simpleplek.co.za') && !url.includes('www.')) {
+          const rewrittenUrl = url.replace('https://simpleplek.co.za', 'https://www.simpleplek.co.za')
+          console.log('Meta Pixel: Rewriting non-www to www:', url, '→', rewrittenUrl)
+          
+          if (typeof input === 'string') {
+            return originalFetch.call(this, rewrittenUrl, init)
+          } else if (input instanceof URL) {
+            return originalFetch.call(this, new URL(rewrittenUrl), init)
+          } else {
+            return originalFetch.call(this, { ...input, url: rewrittenUrl }, init)
+          }
+        }
+        
+        return originalFetch.apply(this, arguments as any)
+      }
+      
+      // Also intercept XMLHttpRequest
+      const originalXHROpen = XMLHttpRequest.prototype.open
+      XMLHttpRequest.prototype.open = function(method: string, url: string | URL, ...rest: any[]) {
+        let urlString = typeof url === 'string' ? url : url.toString()
+        
+        // Rewrite non-www to www for /events/ endpoints
+        if (urlString.includes('/events/') && urlString.includes('simpleplek.co.za') && !urlString.includes('www.')) {
+          urlString = urlString.replace('https://simpleplek.co.za', 'https://www.simpleplek.co.za')
+          console.log('Meta Pixel: Rewriting XHR non-www to www:', url, '→', urlString)
+        }
+        
+        return originalXHROpen.apply(this, [method, urlString, ...rest] as any)
+      }
+    }
+    
     ;(window as any).fbq('init', pixelId, {
       // Disable automatic event tracking to prevent custom endpoint issues
       autoConfig: false,
       // Explicitly disable custom domain endpoint to prevent CORS issues
       // This ensures events go directly to Facebook's servers, not to /events/[hash]
-      // Setting agent to undefined prevents Meta Pixel from using custom endpoints
-      agent: undefined,
     })
     
     // Track PageView
