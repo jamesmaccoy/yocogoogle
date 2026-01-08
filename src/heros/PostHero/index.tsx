@@ -84,7 +84,9 @@ export const PostHero: React.FC<{
               fill 
               priority 
               imgClassName="object-cover" 
-              resource={displayImage} 
+              resource={displayImage}
+              postId={post.id}
+              postTitle={title}
             />
           </motion.div>
         ) : null}

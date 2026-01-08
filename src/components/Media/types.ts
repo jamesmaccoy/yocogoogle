@@ -19,4 +19,8 @@ export interface Props {
   size?: string // for NextImage only
   src?: StaticImageData // for static media
   videoClassName?: string
+  // Post context for image throttling and tracking
+  postId?: string
+  postTitle?: string
+  disableThrottling?: boolean // Allow opt-out for specific images
 }

@@ -709,7 +709,13 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
       <div className="relative">
         {image && typeof image !== 'string' && (
           <div className="relative w-full h-48 overflow-hidden">
-            <Media resource={image} size="50vw" className="w-full h-full object-cover" />
+            <Media 
+              resource={image} 
+              size="50vw" 
+              className="w-full h-full object-cover"
+              postId={typeof pkg.post === 'object' ? pkg.post.id : undefined}
+              postTitle={typeof pkg.post === 'object' ? pkg.post.title : undefined}
+            />
           </div>
         )}
         <CardContent className="p-4">

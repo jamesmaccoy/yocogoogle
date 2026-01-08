@@ -196,6 +196,42 @@ export async function trackEstimateView(params: {
 }
 
 /**
+ * Helper: Track ImageView event (especially for restricted content)
+ * This ties into estimate tracking - when non-subscribers view images, it's valuable conversion data
+ */
+export async function trackImageView(params: {
+  postId?: string
+  postTitle?: string
+  imageId?: string
+  isRestricted?: boolean
+  userId?: string
+  userEmail?: string
+  clientIp?: string
+  userAgent?: string
+  eventSourceUrl?: string
+}): Promise<void> {
+  await sendMetaEvent({
+    eventName: 'ViewContent',
+    userData: {
+      ...(params.userId && { externalId: params.userId }),
+      ...(params.userEmail && { email: params.userEmail }),
+      ...(params.clientIp && { clientIpAddress: params.clientIp }),
+      ...(params.userAgent && { clientUserAgent: params.userAgent }),
+    },
+    customData: {
+      ...(params.postId && { contentIds: [params.postId] }),
+      ...(params.postTitle && { contentName: params.postTitle }),
+      contentCategory: params.isRestricted ? 'restricted_image' : 'image',
+      contentType: 'image',
+      // Track restricted views as potential conversions (value 0 indicates interest without purchase)
+      ...(params.isRestricted && { value: 0, currency: 'ZAR' }),
+    },
+    eventSourceUrl: params.eventSourceUrl,
+    actionSource: 'website',
+  })
+}
+
+/**
  * Helper: Track Purchase/Booking conversion event
  */
 export async function trackBookingConversion(params: {

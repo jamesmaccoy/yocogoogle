@@ -802,6 +802,8 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                       <Media
                         resource={typeof data?.post === 'object' && data?.post?.meta?.image ? data.post.meta.image : undefined}
                         className="w-full h-full object-cover"
+                        postId={typeof data?.post === 'object' ? data.post.id : undefined}
+                        postTitle={typeof data?.post === 'object' ? data.post.title : undefined}
                       />
                     </div>
                   )}
