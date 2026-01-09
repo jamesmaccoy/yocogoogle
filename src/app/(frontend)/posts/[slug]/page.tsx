@@ -48,30 +48,31 @@ export default async function Post({ params: paramsPromise }: Args) {
   const url = '/posts/' + slug
   const post = await queryPostBySlug({ slug })
 
-  if (!post) return <PayloadRedirects url={url} />
+  if (!post || !post.id) return <PayloadRedirects url={url} />
+
+  // Type guard: post is guaranteed to have id at this point
+  const postWithId: Post = post
 
   return (
     <article className="pt-16 pb-16">
-      <PageClient post={post as any} />
+      <PageClient post={postWithId as any} />
 
       {/* Allows redirects for valid pages too */}
       <PayloadRedirects disableNotFound url={url} />
 
       {draft && <LivePreviewListener />}
 
-      <PostHeroWrapper post={post} />
+      <PostHeroWrapper post={postWithId} />
 
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
         <Suspense fallback={<div className="w-full max-w-2xl mx-auto p-4">Loading booking assistant...</div>}>
-          {post && (
-            <SmartEstimateBlock 
-              postId={post.id} 
-              baseRate={typeof post.baseRate === 'number' ? post.baseRate : 0}
-              postTitle={post.title}
-              postDescription={post.meta?.description || ''}
-            />
-          )}
+          <SmartEstimateBlock 
+            postId={postWithId.id} 
+            baseRate={typeof postWithId.baseRate === 'number' ? postWithId.baseRate : 0}
+            postTitle={postWithId.title}
+            postDescription={postWithId.meta?.description || ''}
+          />
         </Suspense>
           <div className="text-center py-8">
             <h2 className="text-2xl font-semibold mb-4">Article Content Available in AI Assistant</h2>
@@ -80,10 +81,10 @@ export default async function Post({ params: paramsPromise }: Args) {
               Ask questions, get summaries, or explore specific topics from the article.
             </p>
           </div>
-          {post.relatedPosts && post.relatedPosts.length > 0 && (
+          {postWithId.relatedPosts && postWithId.relatedPosts.length > 0 && (
             <RelatedPosts
               className="mt-12 max-w-[52rem] lg:grid lg:grid-cols-subgrid col-start-1 col-span-3 grid-rows-[2fr]"
-              docs={post.relatedPosts.filter((post) => typeof post === 'object')}
+              docs={postWithId.relatedPosts.filter((post) => typeof post === 'object')}
             />
           )}
         </div>
@@ -96,7 +97,7 @@ export async function generateMetadata({ params: paramsPromise }: Args): Promise
   const { slug = '' } = await paramsPromise
   const post = await queryPostBySlug({ slug })
 
-  if (!post) {
+  if (!post || !post.id) {
     return {
       title: 'Post not found',
       description: 'The requested post could not be found.',
