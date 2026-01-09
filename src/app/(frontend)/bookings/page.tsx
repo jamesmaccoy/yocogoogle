@@ -4,7 +4,7 @@ import React from 'react'
 import { Post, User } from '@/payload-types'
 import { getMeUser } from '@/utilities/getMeUser'
 import PageClient from './page.client'
-import BookingCard from '@/components/Bookings/BookingCard'
+import { BookingCarousel } from '@/components/Bookings/BookingCarousel'
 import SuggestedPackages from '@/components/Bookings/SuggestedPackages'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -58,8 +58,10 @@ export default async function Bookings() {
           : null)
       : null
     
+    const post = typeof booking.post === 'object' ? booking.post : null
+    
     return {
-      ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
+      ...(post as Pick<Post, 'meta' | 'slug' | 'title'>),
       fromDate: booking.fromDate,
       toDate: booking.toDate || undefined,
       guests: booking.guests,
@@ -67,6 +69,9 @@ export default async function Bookings() {
       duration,
       packageName,
       packageMinNights,
+      total: booking.total,
+      paymentStatus: booking.paymentStatus,
+      addons: [], // Will be populated if needed
     }
   })
 
@@ -88,8 +93,10 @@ export default async function Bookings() {
           : null)
       : null
     
+    const post = typeof booking.post === 'object' ? booking.post : null
+    
     return {
-      ...(booking.post as Pick<Post, 'meta' | 'slug' | 'title'>),
+      ...(post as Pick<Post, 'meta' | 'slug' | 'title'>),
       fromDate: booking.fromDate,
       toDate: booking.toDate || undefined,
       guests: booking.guests,
@@ -97,6 +104,9 @@ export default async function Bookings() {
       duration,
       packageName,
       packageMinNights,
+      total: booking.total,
+      paymentStatus: booking.paymentStatus,
+      addons: [], // Will be populated if needed
     }
   })
 
@@ -144,27 +154,21 @@ export default async function Bookings() {
           </div>
         ) : (
           <>
-            <div>
-              {upcomingBookings.docs.length > 0 && (
-                <h2 className="text-4xl font-medium tracking-tighter my-6">Upcoming stays</h2>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-                {formattedUpcomingBookings.map((booking) => (
-                  <BookingCard key={booking.id} booking={booking} />
-                ))}
-              </div>
-            </div>
-
-            {pastBookings.docs.length > 0 && (
-              <h2 className="text-4xl font-medium tracking-tighter my-6">Past stays</h2>
+            {upcomingBookings.docs.length > 0 && (
+              <BookingCarousel
+                title="Upcoming Bookings"
+                bookings={formattedUpcomingBookings}
+              />
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-              {formattedPastBookings.map((booking) => (
-                <BookingCard key={booking.id} booking={booking} />
-              ))}
-            </div>
+            {pastBookings.docs.length > 0 && (
+              <div className="opacity-80 hover:opacity-100 transition-opacity duration-300">
+                <BookingCarousel
+                  title="Past Bookings"
+                  bookings={formattedPastBookings}
+                />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -233,14 +237,17 @@ const getBookings = async (type: 'upcoming' | 'past', currentUser: User) => {
     where: whereQuery,
     depth: 2,
     sort: '-fromDate',
-    select: {
-      slug: true,
-      post: true,
-      guests: true,
-      fromDate: true,
-      toDate: true,
-      selectedPackage: true,
-    },
+      select: {
+        slug: true,
+        post: true,
+        guests: true,
+        fromDate: true,
+        toDate: true,
+        selectedPackage: true,
+        total: true,
+        paymentStatus: true,
+        addonTransactions: true,
+      },
   })
 
   return bookings

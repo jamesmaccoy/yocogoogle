@@ -3,12 +3,14 @@
 import React, { useEffect, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Toggle } from '@/components/ui/toggle'
 import { Media } from '@/components/Media'
 import { type Media as MediaType, Post, Package } from '@/payload-types'
 import Link from 'next/link'
 import { formatDate } from 'date-fns'
 import { useYoco } from '@/providers/Yoco'
 import { useUserContext } from '@/context/UserContext'
+import TrackingInsights from './TrackingInsights'
 
 interface SuggestedPackage {
   id: string
@@ -30,15 +32,17 @@ interface SuggestedPackage {
   purchasedAddonCount?: number // Number of addons already purchased for this booking
   totalAvailableAddons?: number // Total addons available for this booking
   purchasedAddons?: Array<{ name: string; features: string[] }> // Details of purchased addons
+  availableAddonPackages?: Array<{ id: string; name: string; baseRate?: number | null; features?: Array<{ feature: string }> }> // All available addon packages for toggles
   revenueCatId?: string // Revenue category ID for package identification
   yocoId?: string // Yoco product ID for package identification
 }
 
 interface SuggestedPackagesProps {
   userId: string
+  showInsights?: boolean // Optional: show tracking insights
 }
 
-export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
+export default function SuggestedPackages({ userId, showInsights = false }: SuggestedPackagesProps) {
   const [activePackages, setActivePackages] = useState<SuggestedPackage[]>([])
   const [inactivePackages, setInactivePackages] = useState<SuggestedPackage[]>([])
   const [loading, setLoading] = useState(true)
@@ -395,12 +399,31 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
           
           const deduplicatedAddons = Array.from(uniqueAddons.values())
           
+          // Fetch all available addon packages for the addon card
+          let availableAddonPackages: Array<{ id: string; name: string; baseRate?: number | null; features?: Array<{ feature: string }> }> = []
+          if (firstAddon.postId) {
+            try {
+              const addonsRes = await fetch(`/api/packages/addons/${firstAddon.postId}`)
+              const addonsData = await addonsRes.json()
+              const allAddons = addonsData.addons || []
+              availableAddonPackages = allAddons.map((pkg: any) => ({
+                id: pkg.id,
+                name: pkg.name,
+                baseRate: pkg.baseRate,
+                features: pkg.features || []
+              }))
+            } catch (error) {
+              console.error('Error fetching available addon packages:', error)
+            }
+          }
+          
           // Use the first addon package as base, but update with aggregated transaction data
           addonSummaryCard = {
             ...firstAddon,
             purchasedAddonCount: totalPurchasedCount || firstAddon.purchasedAddonCount || 0,
             totalAvailableAddons: maxTotalAvailable || firstAddon.totalAvailableAddons || 8,
-            purchasedAddons: deduplicatedAddons.length > 0 ? deduplicatedAddons : (firstAddon.purchasedAddons || [])
+            purchasedAddons: deduplicatedAddons.length > 0 ? deduplicatedAddons : (firstAddon.purchasedAddons || []),
+            availableAddonPackages
           }
         }
 
@@ -484,6 +507,12 @@ export default function SuggestedPackages({ userId }: SuggestedPackagesProps) {
 
   return (
     <div className="space-y-10">
+      {showInsights && (
+        <div>
+          <h2 className="text-4xl font-medium tracking-tighter my-6 text-teal-400">Your Insights</h2>
+          <TrackingInsights userId={userId} />
+        </div>
+      )}
       {activePackages.length > 0 && (
         <div>
           <h2 className="text-4xl font-medium tracking-tighter my-6 text-teal-400">Active</h2>
@@ -516,6 +545,28 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
   const { createPaymentLinkFromDatabase } = useYoco()
   const { currentUser } = useUserContext()
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedAddons, setSelectedAddons] = useState<Set<string>>(new Set())
+  
+  const isAddon = pkg.category === 'addon'
+  
+  // Initialize selected addons with purchased addons
+  useEffect(() => {
+    if (isAddon && pkg.purchasedAddons) {
+      const purchasedIds = new Set<string>()
+      pkg.purchasedAddons.forEach((addon) => {
+        // Try to match by name with available packages
+        if (pkg.availableAddonPackages) {
+          const matching = pkg.availableAddonPackages.find(
+            (ap) => ap.name.toLowerCase() === addon.name.toLowerCase()
+          )
+          if (matching) {
+            purchasedIds.add(matching.id)
+          }
+        }
+      })
+      setSelectedAddons(purchasedIds)
+    }
+  }, [isAddon, pkg.purchasedAddons, pkg.availableAddonPackages])
   
   const formatPrice = (price?: number | null) => {
     if (!price) return 'R0'
@@ -523,11 +574,19 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
   }
 
   const getButtonText = () => {
+    const isCheckin = pkg.name?.toLowerCase().includes('checkin') || 
+                      pkg.revenueCatId === 'per_night_luxury' ||
+                      pkg.yocoId === 'per_night_luxury'
+    
     if (pkg.category === 'addon') {
       return `Include the special addon - ${formatPrice(pkg.baseRate)}`
     }
-    if (pkg.name?.includes('Checkin') || pkg.name?.includes('checkin')) {
-      return `🛎️ CHECKIN SERVICE - ${formatPrice(pkg.baseRate)}`
+    if (isCheckin) {
+      // For checkin service, include addon info if available
+      const addonInfo = pkg.purchasedAddons && pkg.purchasedAddons.length > 0
+        ? ` + ${pkg.purchasedAddonCount || 0} Add-ons`
+        : ''
+      return `🛎️ CHECKIN SERVICE - ${formatPrice(pkg.baseRate)}${addonInfo}`
     }
     if (pkg.name?.includes('Market') || pkg.name?.includes('market')) {
       return `JOIN THE MARKET - ${formatPrice(pkg.baseRate)}`
@@ -618,62 +677,32 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
       lines.push(`You have invited ${pkg.guestCount} guests`)
     }
     
+    // For checkin service, don't show addon info in description (it's in button)
+    // For addon card, show purchased addons
     if (isAddon) {
       // Show purchased addon transaction summary
       if (pkg.purchasedAddons && pkg.purchasedAddons.length > 0) {
         // Display purchased addons from transactions
-        pkg.purchasedAddons.forEach((addon, idx) => {
+        pkg.purchasedAddons.forEach((addon) => {
           // Show addon name and features from transaction
           if (addon.features && addon.features.length > 0) {
             // Show each feature/item from the transaction
-            addon.features.forEach((feature: any, fIdx: number) => {
+            addon.features.forEach((feature: any) => {
               const featureText = typeof feature === 'string' ? feature : (feature?.feature || feature || '')
               if (featureText) {
-                lines.push(`${idx + 1}X ${featureText}`)
+                lines.push(`✓ ${featureText}`)
               }
             })
           } else if (addon.name) {
             // Fallback to addon name if no features
-            lines.push(`${idx + 1}X ${addon.name}`)
+            lines.push(`✓ ${addon.name}`)
           }
         })
-        
-        // Limit to first 3 lines to avoid overflow
-        if (lines.length > 3) {
-          lines.splice(3)
-        }
-        
-        // If we have available addons that aren't purchased, suggest one
-        if (pkg.features && pkg.features.length > 0) {
-          const purchasedFeatureNames = new Set(
-            pkg.purchasedAddons.flatMap(pa => 
-              pa.features.map((f: any) => typeof f === 'string' ? f : (f?.feature || ''))
-            )
-          )
-          
-          const availableAddons = pkg.features
-            .map((f: any) => {
-              const featureText = typeof f === 'string' ? f : f.feature || ''
-              return featureText
-            })
-            .filter((f: string) => f && !purchasedFeatureNames.has(f))
-          
-          if (availableAddons.length > 0 && lines.length < 3) {
-            lines.push(`1X Include ${availableAddons[0]}`)
-          }
-        }
-      } else if (pkg.features) {
-        // No purchased addons - show available addon suggestions
-        const featureTexts = pkg.features.slice(0, 3).map((f: any, idx: number) => {
-          const feature = typeof f === 'string' ? f : f.feature || ''
-          return `${idx + 1}X ${feature}`
-        })
-        lines.push(...featureTexts)
       }
       
       // Empty state message if no addons
       if (lines.length === 0) {
-        lines.push('No addons available')
+        lines.push('No addons purchased yet')
       }
     }
     
@@ -695,7 +724,6 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
   }
 
   // For addons, handle payment directly; for others, link to post
-  const isAddon = pkg.category === 'addon'
   const href = !isAddon 
     ? (postSlug 
         ? `/posts/${postSlug}?package=${pkg.id}`
@@ -707,17 +735,37 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
   return (
     <Card className="h-full hover:shadow-md transition-shadow">
       <div className="relative">
-        {image && typeof image !== 'string' && (
+        {image && typeof image !== 'string' ? (
           <div className="relative w-full h-48 overflow-hidden">
             <Media 
               resource={image} 
               size="50vw" 
               className="w-full h-full object-cover"
-              postId={typeof pkg.post === 'object' ? pkg.post.id : undefined}
-              postTitle={typeof pkg.post === 'object' ? pkg.post.title : undefined}
+              postId={post?.id}
+              postTitle={post?.title}
             />
           </div>
-        )}
+        ) : isAddon ? (
+          // Show basket icon for addon cards without image
+          <div className="relative w-full h-48 bg-teal-500 flex items-center justify-center">
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              width="64" 
+              height="64" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="white" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              className="w-16 h-16"
+            >
+              <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <path d="M16 10a4 4 0 0 1-8 0"></path>
+            </svg>
+          </div>
+        ) : null}
         <CardContent className="p-4">
           <h3 className="text-xl font-semibold mb-2 text-teal-400">{getTitle()}</h3>
           <div className="space-y-1 mb-4 text-sm text-muted-foreground">
@@ -725,6 +773,50 @@ function PackageSuggestionCard({ package: pkg }: { package: SuggestedPackage }) 
               <p key={idx}>{line}</p>
             ))}
           </div>
+          
+          {/* Show toggles for available addon packages (lower priced ones) */}
+          {isAddon && pkg.availableAddonPackages && pkg.availableAddonPackages.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {/* Sort by price and show lower priced packages */}
+              {pkg.availableAddonPackages
+                .filter((ap) => ap.baseRate && ap.baseRate > 0)
+                .sort((a, b) => (a.baseRate || 0) - (b.baseRate || 0))
+                .slice(0, 5) // Show up to 5 lower priced addons
+                .map((addonPkg) => {
+                  const isSelected = selectedAddons.has(addonPkg.id)
+                  const featureText = addonPkg.features && addonPkg.features.length > 0
+                    ? (typeof addonPkg.features[0] === 'string' 
+                        ? addonPkg.features[0] 
+                        : addonPkg.features[0]?.feature || addonPkg.name)
+                    : addonPkg.name
+                  
+                  return (
+                    <div key={addonPkg.id} className="flex items-center justify-between gap-2 p-2 rounded-md border border-border/50 hover:bg-muted/50">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{featureText}</p>
+                        <p className="text-xs text-muted-foreground">{formatPrice(addonPkg.baseRate)}</p>
+                      </div>
+                      <Toggle
+                        pressed={isSelected}
+                        onPressedChange={(pressed) => {
+                          const newSelected = new Set(selectedAddons)
+                          if (pressed) {
+                            newSelected.add(addonPkg.id)
+                          } else {
+                            newSelected.delete(addonPkg.id)
+                          }
+                          setSelectedAddons(newSelected)
+                        }}
+                        aria-label={`Toggle ${featureText}`}
+                      >
+                        {isSelected ? '✓' : '+'}
+                      </Toggle>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+          
           {isAddon && pkg.bookingId ? (
             <Button 
               className="w-full" 
