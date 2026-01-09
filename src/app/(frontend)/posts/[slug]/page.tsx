@@ -64,12 +64,14 @@ export default async function Post({ params: paramsPromise }: Args) {
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
         <Suspense fallback={<div className="w-full max-w-2xl mx-auto p-4">Loading booking assistant...</div>}>
-          <SmartEstimateBlock 
-            postId={post.id} 
-            baseRate={typeof post.baseRate === 'number' ? post.baseRate : 0}
-            postTitle={post.title}
-            postDescription={post.meta?.description || ''}
-          />
+          {post && (
+            <SmartEstimateBlock 
+              postId={post.id} 
+              baseRate={typeof post.baseRate === 'number' ? post.baseRate : 0}
+              postTitle={post.title}
+              postDescription={post.meta?.description || ''}
+            />
+          )}
         </Suspense>
           <div className="text-center py-8">
             <h2 className="text-2xl font-semibold mb-4">Article Content Available in AI Assistant</h2>
@@ -94,6 +96,13 @@ export async function generateMetadata({ params: paramsPromise }: Args): Promise
   const { slug = '' } = await paramsPromise
   const post = await queryPostBySlug({ slug })
 
+  if (!post) {
+    return {
+      title: 'Post not found',
+      description: 'The requested post could not be found.',
+    }
+  }
+
   return generateMeta({ doc: post })
 }
 
@@ -116,5 +125,12 @@ const queryPostBySlug = cache(async ({ slug }: { slug: string }) => {
     },
   })
 
-  return result.docs?.[0] || null
+  const post = result.docs?.[0]
+  
+  // Ensure post has required fields before returning
+  if (!post || !post.id) {
+    return null
+  }
+
+  return post
 })
