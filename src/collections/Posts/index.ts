@@ -114,7 +114,11 @@ export const Posts: CollectionConfig<'posts'> = {
               admin: {
                 position: 'sidebar',
               },
-              filterOptions: ({ id }) => {
+              filterOptions: (context) => {
+                const id = context?.id
+                if (!id) {
+                  return {}
+                }
                 return {
                   id: {
                     not_in: [id],
