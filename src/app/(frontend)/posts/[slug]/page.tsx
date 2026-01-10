@@ -130,7 +130,7 @@ const queryPostBySlug = cache(async ({ slug }: { slug: string }) => {
   const result = await payload.find({
     collection: 'posts',
     draft,
-    depth: 2,
+    depth: 1, // Reduced from 2 to avoid nested relationship issues during static generation
     limit: 1,
     overrideAccess: draft,
     pagination: false,
