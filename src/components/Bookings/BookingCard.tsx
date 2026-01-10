@@ -2,11 +2,11 @@
 
 import { type Media as MediaType, User } from '@/payload-types'
 import { formatDate } from 'date-fns'
-import { Calendar, MapPin, CheckCircle, XCircle, Clock, Package } from 'lucide-react'
+import { Calendar, MapPin, CheckCircle, XCircle, Clock } from 'lucide-react'
 import Link from 'next/link'
 import React, { FC } from 'react'
 import { Media } from '../Media'
-import { Card, CardContent } from '../ui/card'
+import { Card } from '../ui/card'
 import { Button } from '../ui/button'
 import { AddonToggle } from './AddonToggle'
 
@@ -42,10 +42,6 @@ type Props = {
 }
 
 const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
-  const duration = booking.duration ?? (booking.fromDate && booking.toDate
-    ? Math.max(1, Math.round((new Date(booking.toDate).getTime() - new Date(booking.fromDate).getTime()) / (1000 * 60 * 60 * 24)))
-    : undefined)
-
   // Determine booking status
   const getBookingStatus = (): BookingStatus => {
     if (booking.paymentStatus === 'cancelled') return 'cancelled'
@@ -64,46 +60,49 @@ const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
   const status = getBookingStatus()
   const isActive = status === 'upcoming' || status === 'active'
 
-  const statusConfig = {
-    upcoming: {
-      label: 'Upcoming',
-      icon: <Clock className="w-3 h-3 mr-1" />,
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    },
-    active: {
-      label: 'Active',
-      icon: <CheckCircle className="w-3 h-3 mr-1" />,
-      className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    },
-    completed: {
-      label: 'Completed',
-      icon: <CheckCircle className="w-3 h-3 mr-1" />,
-      className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-    },
-    cancelled: {
-      label: 'Cancelled',
-      icon: <XCircle className="w-3 h-3 mr-1" />,
-      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-    },
+  const statusColors = {
+    upcoming: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    completed: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   }
 
-  const statusInfo = statusConfig[status]
+  const statusIcons = {
+    upcoming: <Clock className="w-3 h-3 mr-1" />,
+    active: <CheckCircle className="w-3 h-3 mr-1" />,
+    completed: <CheckCircle className="w-3 h-3 mr-1" />,
+    cancelled: <XCircle className="w-3 h-3 mr-1" />,
+  }
+
   const formatPrice = (price?: number) => {
     if (!price) return 'R0'
     return `R${price.toLocaleString('en-ZA')}`
   }
 
+  // Get image URL
+  const imageUrl = booking.meta?.image && typeof booking.meta.image !== 'string' 
+    ? (typeof booking.meta.image === 'object' && 'url' in booking.meta.image 
+        ? booking.meta.image.url 
+        : null)
+    : null
+
   return (
     <Card
       className={`
-        h-full overflow-hidden transition-all duration-300 hover:shadow-md
-        ${isActive ? 'border-l-4 border-l-teal-500' : 'opacity-90 grayscale-[0.3] hover:grayscale-0'}
+        h-full overflow-hidden transition-all duration-300 hover:shadow-md p-0
+        ${isActive ? 'border-l-4 border-l-green-500' : 'opacity-90 grayscale-[0.3] hover:grayscale-0'}
         min-w-[300px] max-w-[350px] w-full snap-center flex flex-col
       `}
     >
       {/* Image Header */}
       <div className="relative h-40 w-full bg-muted">
-        {booking.meta?.image && typeof booking.meta.image !== 'string' ? (
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={booking.title}
+            className="w-full h-full object-cover"
+          />
+        ) : booking.meta?.image && typeof booking.meta.image !== 'string' ? (
           <Media 
             resource={booking.meta.image} 
             size="50vw" 
@@ -112,20 +111,18 @@ const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
             postTitle={booking.title}
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-teal-100 to-teal-200 dark:from-teal-900/20 dark:to-teal-800/20 flex items-center justify-center">
-            <Package className="w-12 h-12 text-teal-400 opacity-50" />
-          </div>
+          <div className="w-full h-full bg-gradient-to-br from-teal-100 to-teal-200 dark:from-teal-900/20 dark:to-teal-800/20" />
         )}
         <div
-          className={`absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-medium flex items-center ${statusInfo.className}`}
+          className={`absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-medium flex items-center ${statusColors[status]}`}
         >
-          {statusInfo.icon}
-          {statusInfo.label}
+          {statusIcons[status]}
+          {status.charAt(0).toUpperCase() + status.slice(1)}
         </div>
       </div>
 
       {/* Content */}
-      <CardContent className="p-5 flex-1 flex flex-col">
+      <div className="p-5 flex-1 flex flex-col">
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-foreground mb-1 line-clamp-1">
             {booking.title}
@@ -136,15 +133,8 @@ const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
           </div>
           <div className="flex items-center text-muted-foreground text-sm">
             <Calendar className="w-3.5 h-3.5 mr-1" />
-            {formatDate(new Date(booking.fromDate), 'PPP')}
-            {booking.toDate && ` - ${formatDate(new Date(booking.toDate), 'PPP')}`}
-            {duration !== undefined && (() => {
-              const isHourly = booking.packageMinNights !== null && booking.packageMinNights !== undefined && booking.packageMinNights <= 1
-              if (isHourly && duration === 1) {
-                return ' · hourly'
-              }
-              return ` · ${duration} ${duration === 1 ? 'night' : 'nights'}`
-            })()}
+            {new Date(booking.fromDate).toLocaleDateString()} -{' '}
+            {booking.toDate ? new Date(booking.toDate).toLocaleDateString() : 'TBD'}
           </div>
         </div>
 
@@ -185,7 +175,7 @@ const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
             </Button>
           </Link>
         </div>
-      </CardContent>
+      </div>
     </Card>
   )
 }

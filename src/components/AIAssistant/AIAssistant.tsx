@@ -232,13 +232,13 @@ export const AIAssistant = () => {
   const { isSubscribed } = useSubscription()
   const router = useRouter()
   const pathname = usePathname()
-  
+
   // Determine if user has basic, pro, or enterprise subscription
   const userRole = Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean)
   const isHostOrAdmin = userRole.includes('host') || userRole.includes('admin')
   const subscriptionPlan = currentUser?.subscriptionStatus?.plan || 'none'
   const hasStandardOrPro = isSubscribed && (subscriptionPlan === 'basic' || subscriptionPlan === 'pro' || subscriptionPlan === 'enterprise' || isHostOrAdmin)
-  
+
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
     if (!usage || typeof usage !== 'object') return null
 
@@ -291,7 +291,7 @@ export const AIAssistant = () => {
       console.warn('Failed to persist AI token usage', error)
     }
   }
-  
+
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -300,10 +300,10 @@ export const AIAssistant = () => {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [packageSuggestions, setPackageSuggestions] = useState<PackageSuggestion[]>([])
-const [dateSuggestions, setDateSuggestions] = useState<
-  Array<{ startDate: Date; endDate: Date; label: string }>
->([])
-const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleSuggestion[]>([])
+  const [dateSuggestions, setDateSuggestions] = useState<
+    Array<{ startDate: Date; endDate: Date; label: string }>
+  >([])
+  const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleSuggestion[]>([])
   const [currentContext, setCurrentContext] = useState<any>(null)
   const [lastUsage, setLastUsage] = useState<TokenUsageDetails | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
@@ -466,7 +466,7 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
         // Spread them across different months for variety
         const durations = [3, 5, 7]
         const todayNormalized = normalizeDate(today)
-        
+
         // Target dates spread across months: 1 week, 1 month, 2 months from now
         const targetDates = [
           new Date(todayNormalized.getTime() + 7 * 24 * 60 * 60 * 1000),   // ~1 week
@@ -479,7 +479,7 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
             // Look for available dates around the target date (±7 days)
             const searchWindow = 7
             let found = false
-            
+
             for (let offset = 0; offset <= searchWindow && !found; offset++) {
               // Try dates before and after target
               for (const direction of [-1, 1]) {
@@ -749,10 +749,10 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
         window.location.href = '/login'
         return
       }
-      
+
       setIsOpen(true)
       setCurrentContext(event.detail)
-      
+
       // If there's a predefined message, send it automatically
       if (event.detail?.message) {
         setInput(event.detail.message)
@@ -777,10 +777,10 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
     window.addEventListener('openAIAssistant', handleOpenAIAssistant as EventListener)
     // Ensure we also pick up contexts that are set on the window 'load' event
     window.addEventListener('load', checkContext)
-    
+
     // Check for context after a short delay to ensure it's set
     const timeoutId = setTimeout(checkContext, 100)
-    
+
     return () => {
       window.removeEventListener('openAIAssistant', handleOpenAIAssistant as EventListener)
       window.removeEventListener('load', checkContext)
@@ -1009,7 +1009,7 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
             hostContext: isHostOrAdmin
           }),
         })
-        
+
         if (res.ok) {
           const data = await res.json()
           if (activeThreadRef.current !== threadId) return
@@ -1030,8 +1030,7 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
                   `- Multiplier: ${s.details.multiplier}x\n` +
                   `- Entitlement: ${s.details.customerTierRequired}\n` +
                   `- Base Rate: ${s.baseRate ? `R${s.baseRate}` : 'Not set'}\n` +
-                  `- Features: ${
-                    s.features && s.features.length > 0 ? s.features.join(', ') : s.details.features || 'Standard features'
+                  `- Features: ${s.features && s.features.length > 0 ? s.features.join(', ') : s.details.features || 'Standard features'
                   }`,
               )
               .join('\n\n')
@@ -1067,17 +1066,17 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
         // Handle package renaming with enhanced suggestions
         const currentName = currentContext?.currentName || 'this package'
         const postId = currentContext?.postId
-        
+
         // Call the general chat API with package renaming context
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message: `I want to rename my "${currentName}" package. ${messageToSend}. Please suggest a better name, description, and key features that would appeal to guests. Make it specific to this property and the package type.`,
             context: 'package-rename'
           }),
         })
-        
+
         if (res.ok) {
           const data = await res.json()
           if (activeThreadRef.current !== threadId) return
@@ -1110,19 +1109,19 @@ const [scheduleSuggestions, setScheduleSuggestions] = useState<CleaningScheduleS
         const currentCategory = currentContext?.currentCategory || 'unknown'
         const postId = currentContext?.postId
         const packageId = currentContext?.packageId
-        
+
         // Call the general chat API with package update context
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             message: `I want to update my "${currentName}" package (currently ${currentCategory} category). ${messageToSend}. Please suggest appropriate changes including category, name, description, features, and base rate if needed. Make it specific to this property and the requested changes.`,
             context: 'package-update',
             packageId,
             postId
           }),
         })
-        
+
         if (res.ok) {
           const data = await res.json()
           if (activeThreadRef.current !== threadId) return
@@ -1313,14 +1312,14 @@ ${limitedContentText}
         }
         appendMessageToThread(threadId, assistantMessage)
         speakSafely(baseContent)
-      } else if (messageToSend.toLowerCase().includes('debug packages') || 
-                 messageToSend.toLowerCase().includes('debug') ||
-                 messageToSend.toLowerCase().includes('show packages')) {
+      } else if (messageToSend.toLowerCase().includes('debug packages') ||
+        messageToSend.toLowerCase().includes('debug') ||
+        messageToSend.toLowerCase().includes('show packages')) {
         // Handle debug packages request
         try {
           // Get postId from context
           const postId = currentContext?.post?.id || currentContext?.property?.id
-          
+
           if (postId) {
             const response = await fetch(`/api/packages/post/${postId}`)
             if (response.ok) {
@@ -1329,9 +1328,9 @@ ${limitedContentText}
               const packages = data.packages || []
 
               // Get user's subscription status for entitlement info
-              const userEntitlement = currentUser?.role === 'admin' ? 'pro' : 
-                                     currentUser?.subscriptionStatus?.plan || 'none'
-              
+              const userEntitlement = currentUser?.role === 'admin' ? 'pro' :
+                currentUser?.subscriptionStatus?.plan || 'none'
+
               const debugInfo = `
 **Debug Package Information:**
 - Total packages found: ${packages.length}
@@ -1340,8 +1339,8 @@ ${limitedContentText}
 - Entitlement level: ${userEntitlement}
 
 **Available Packages:**
-${packages.map((pkg: any, index: number) => 
-  `${index + 1}. **${pkg.name}**
+${packages.map((pkg: any, index: number) =>
+                `${index + 1}. **${pkg.name}**
      - Category: ${pkg.category || 'N/A'}
      - Entitlement: ${pkg.entitlement || 'N/A'}
      - Enabled: ${pkg.isEnabled ? 'Yes' : 'No'}
@@ -1349,7 +1348,7 @@ ${packages.map((pkg: any, index: number) =>
      - Multiplier: ${pkg.multiplier}x
      - RevenueCat ID: ${pkg.revenueCatId || 'N/A'}
      - Features: ${pkg.features?.length || 0} features`
-).join('\n\n')}
+              ).join('\n\n')}
 
 **Filtering Logic:**
 - Non-subscribers see: hosted, special packages only
@@ -1357,7 +1356,7 @@ ${packages.map((pkg: any, index: number) =>
 - Pro subscribers see: all packages
 - Addon packages are filtered out (booking page only)
               `
-              
+
               const assistantMessage: Message = {
                 role: 'assistant',
                 content: debugInfo,
@@ -1387,8 +1386,8 @@ ${packages.map((pkg: any, index: number) =>
           speakSafely('Error fetching debug information.')
         }
       } else if (
-        (messageToSend.toLowerCase().includes('both') && 
-         (messageToSend.toLowerCase().includes('available') || messageToSend.toLowerCase().includes('availability'))) ||
+        (messageToSend.toLowerCase().includes('both') &&
+          (messageToSend.toLowerCase().includes('available') || messageToSend.toLowerCase().includes('availability'))) ||
         messageToSend.toLowerCase().includes('when are both') ||
         messageToSend.toLowerCase().includes('simultaneously') ||
         messageToSend.toLowerCase().includes('at the same time')
@@ -1409,7 +1408,7 @@ Please extract the property/post names mentioned. Respond ONLY with a JSON array
 
           const chatData = await chatResponse.json()
           const extractionText = chatData.message || chatData.response || '[]'
-          
+
           // Try to parse JSON from the response
           let postIdentifiers: string[] = []
           try {
@@ -1454,7 +1453,7 @@ Please extract the property/post names mentioned. Respond ONLY with a JSON array
                   return data.docs[0].id
                 }
               }
-              
+
               // Try to find by title/name
               const titleResponse = await fetch(`/api/posts/search?title=${encodeURIComponent(identifier)}`, {
                 credentials: 'include',
@@ -1496,28 +1495,28 @@ Please extract the property/post names mentioned. Respond ONLY with a JSON array
           }
 
           const availabilityData = await availabilityResponse.json()
-          
+
           // Process the data to find when both are available
           const unavailableInAnyPost = new Set(availabilityData.unavailableInAnyPost || [])
-          
+
           // Get post details
           const postDetails = availabilityData.posts || []
           const postNames = postDetails.map((p: any) => p.title).join(' and ')
-          
+
           // Calculate available date ranges (simplified - show next 90 days)
           const today = new Date()
           today.setHours(0, 0, 0, 0)
           const futureDate = new Date(today)
           futureDate.setDate(futureDate.getDate() + 90)
-          
+
           const availableRanges: Array<{ start: Date; end: Date }> = []
           let currentRangeStart: Date | null = null
-          
+
           const checkDate = new Date(today)
           while (checkDate <= futureDate) {
             const dateStr = checkDate.toISOString()
             const isUnavailable = unavailableInAnyPost.has(dateStr)
-            
+
             if (!isUnavailable && !currentRangeStart) {
               // Start of available range
               currentRangeStart = new Date(checkDate)
@@ -1529,10 +1528,10 @@ Please extract the property/post names mentioned. Respond ONLY with a JSON array
               })
               currentRangeStart = null
             }
-            
+
             checkDate.setDate(checkDate.getDate() + 1)
           }
-          
+
           // If we ended in an available range, close it
           if (currentRangeStart) {
             availableRanges.push({
@@ -1543,24 +1542,24 @@ Please extract the property/post names mentioned. Respond ONLY with a JSON array
 
           // Format the response
           let responseText = `I checked availability for **${postNames}**. Here's when both properties are available simultaneously:\n\n`
-          
+
           if (availableRanges.length === 0) {
             responseText += '❌ **No overlapping availability found** in the next 90 days. Both properties have conflicting bookings.\n\n'
           } else {
             responseText += `✅ **Found ${availableRanges.length} available period${availableRanges.length > 1 ? 's' : ''}** when both properties are free:\n\n`
-            
+
             availableRanges.slice(0, 10).forEach((range, idx) => {
               const startStr = format(range.start, 'MMM d, yyyy')
               const endStr = format(range.end, 'MMM d, yyyy')
               const nights = Math.ceil((range.end.getTime() - range.start.getTime()) / (24 * 60 * 60 * 1000))
               responseText += `${idx + 1}. **${startStr}** to **${endStr}** (${nights} night${nights !== 1 ? 's' : ''})\n`
             })
-            
+
             if (availableRanges.length > 10) {
               responseText += `\n...and ${availableRanges.length - 10} more period${availableRanges.length - 10 > 1 ? 's' : ''}.\n`
             }
           }
-          
+
           responseText += `\n💡 **Tip:** Both properties can sleep 2 people each, so booking both together gives you capacity for 4 guests!`
 
           const assistantMessage: Message = {
@@ -1632,9 +1631,9 @@ If I mentioned specific bookings or dates, please reference them.`,
       } else if (
         (currentContext?.context === 'estimate-details' || currentContext?.context === 'booking-details') &&
         (messageToSend.toLowerCase().includes('other properties') ||
-         messageToSend.toLowerCase().includes('suggest other') ||
-         messageToSend.toLowerCase().includes('find other') ||
-         messageToSend.toLowerCase().includes('available for my dates'))
+          messageToSend.toLowerCase().includes('suggest other') ||
+          messageToSend.toLowerCase().includes('find other') ||
+          messageToSend.toLowerCase().includes('available for my dates'))
       ) {
         // Handle property suggestions for estimates or bookings
         try {
@@ -1643,7 +1642,7 @@ If I mentioned specific bookings or dates, please reference them.`,
           let toDate: string | undefined
           let currentPostId: string | undefined
           let currentPostCategories: string[] = []
-          
+
           if (context.context === 'estimate-details') {
             fromDate = context.estimate?.fromDate
             toDate = context.estimate?.toDate
@@ -1652,7 +1651,7 @@ If I mentioned specific bookings or dates, please reference them.`,
             if (context?.post && typeof context.post === 'object') {
               const postCategories = (context.post as any).categories
               if (Array.isArray(postCategories)) {
-                currentPostCategories = postCategories.map((c: any) => 
+                currentPostCategories = postCategories.map((c: any) =>
                   typeof c === 'object' ? (c.id || c.slug || c.title) : c
                 ).filter(Boolean)
               }
@@ -1665,13 +1664,13 @@ If I mentioned specific bookings or dates, please reference them.`,
             if (context?.property && typeof context.property === 'object') {
               const propertyCategories = (context.property as any).categories
               if (Array.isArray(propertyCategories)) {
-                currentPostCategories = propertyCategories.map((c: any) => 
+                currentPostCategories = propertyCategories.map((c: any) =>
                   typeof c === 'object' ? (c.id || c.slug || c.title) : c
                 ).filter(Boolean)
               }
             }
           }
-          
+
           if (!fromDate || !toDate) {
             const assistantMessage: Message = {
               role: 'assistant',
@@ -1681,40 +1680,40 @@ If I mentioned specific bookings or dates, please reference them.`,
             speakSafely('I need dates to find other available properties.')
             return
           }
-          
+
           // Fetch all posts
           const postsResponse = await fetch('/api/posts?limit=100&depth=2', {
             credentials: 'include',
           })
-          
+
           if (!postsResponse.ok) {
             throw new Error('Failed to fetch posts')
           }
-          
+
           const postsData = await postsResponse.json()
           const allPosts = postsData.docs || []
-          
+
           // Filter out current post if specified
-          let otherPosts = currentPostId 
+          let otherPosts = currentPostId
             ? allPosts.filter((p: any) => p.id !== currentPostId)
             : allPosts
-          
+
           // Filter by same categories if we have categories from current post
           if (currentPostCategories.length > 0) {
             const categoryFiltered = otherPosts.filter((p: any) => {
-              const postCategories = Array.isArray(p.categories) 
+              const postCategories = Array.isArray(p.categories)
                 ? p.categories.map((c: any) => typeof c === 'object' ? (c.id || c.slug || c.title) : c).filter(Boolean)
                 : []
               // Check if any category matches
               return postCategories.some((catId: string) => currentPostCategories.includes(catId))
             })
-            
+
             // If we found category matches, use those; otherwise use all posts
             if (categoryFiltered.length > 0) {
               otherPosts = categoryFiltered
             }
           }
-          
+
           if (otherPosts.length === 0) {
             const assistantMessage: Message = {
               role: 'assistant',
@@ -1724,7 +1723,7 @@ If I mentioned specific bookings or dates, please reference them.`,
             speakSafely('No other properties found.')
             return
           }
-          
+
           // Check availability for each post
           const availabilityChecks = await Promise.all(
             otherPosts.slice(0, 20).map(async (post: any) => {
@@ -1734,16 +1733,16 @@ If I mentioned specific bookings or dates, please reference them.`,
                   { credentials: 'include' }
                 )
                 if (!availResponse.ok) return { post, available: false, error: true }
-                
+
                 const availData = await availResponse.json()
                 const unavailableDates = new Set(availData.unavailableDates || [])
-                
+
                 // Check if the date range overlaps with unavailable dates
                 const from = new Date(fromDate)
                 const to = new Date(toDate)
                 const checkDate = new Date(from)
                 let isAvailable = true
-                
+
                 while (checkDate < to && isAvailable) {
                   const dateStr = checkDate.toISOString()
                   if (unavailableDates.has(dateStr)) {
@@ -1752,22 +1751,22 @@ If I mentioned specific bookings or dates, please reference them.`,
                   }
                   checkDate.setDate(checkDate.getDate() + 1)
                 }
-                
+
                 return { post, available: isAvailable, error: false }
               } catch (e) {
                 return { post, available: false, error: true }
               }
             })
           )
-          
+
           const availablePosts = availabilityChecks
             .filter((result: any) => result.available && !result.error)
             .map((result: any) => result.post)
-          
+
           // Format response with available properties
           const fromStr = format(new Date(fromDate), 'MMM d, yyyy')
           const toStr = format(new Date(toDate), 'MMM d, yyyy')
-          
+
           if (availablePosts.length === 0) {
             const assistantMessage: Message = {
               role: 'assistant',
@@ -1777,12 +1776,12 @@ If I mentioned specific bookings or dates, please reference them.`,
             speakSafely('No other properties are available for those dates.')
             return
           }
-          
+
           // Build property list with links
           const propertyList = availablePosts.map((p: any, idx: number) => {
             const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
             const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${postUrl}` : postUrl
-            const categories = Array.isArray(p.categories) 
+            const categories = Array.isArray(p.categories)
               ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
               : 'None'
             return `${idx + 1}. **[${p.title}](${postUrl})** - [View Property](${postUrl})
@@ -1813,7 +1812,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
 
           // Ensure links are included even if AI didn't add them
           if (!baseContent.includes('[') || !baseContent.includes('](')) {
-            const linksSection = '\n\n**Available Properties:**\n\n' + 
+            const linksSection = '\n\n**Available Properties:**\n\n' +
               availablePosts.map((p: any) => {
                 const postUrl = p.slug ? `/posts/${p.slug}` : `/posts/${p.id}`
                 return `- [${p.title}](${postUrl})`
@@ -1833,7 +1832,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               slug: p.slug || p.id,
               description: p.meta?.description || '',
               baseRate: p.baseRate,
-              categories: Array.isArray(p.categories) 
+              categories: Array.isArray(p.categories)
                 ? p.categories.map((c: any) => typeof c === 'object' ? (c.title || c.slug) : c).join(', ')
                 : 'None',
             })),
@@ -1937,7 +1936,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               <p className="text-xs text-muted-foreground">Ask me about packages, bookings, or use "debug packages" to see entitlements</p>
             )}
           </div>
-          
+
           <Conversation className="h-[300px]">
             <ConversationContent className="p-4">
               {/* Quick Actions */}
@@ -1945,9 +1944,9 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                 <div className="mb-4 p-3 bg-muted/50 rounded-lg">
                   <p className="text-xs text-muted-foreground mb-2">Quick Actions:</p>
                   <div className="flex flex-wrap gap-1">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="text-xs h-6 px-2"
                       onClick={() => {
                         setInput('show me available packages')
@@ -1956,9 +1955,9 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                     >
                       Show Packages
                     </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="text-xs h-6 px-2"
                       onClick={() => {
                         setInput('help me understand my entitlements')
@@ -2018,7 +2017,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                 const bookingId = currentContext?.booking?.id
                                 const fromISO = currentContext?.booking?.fromDate
                                 const toISO = currentContext?.booking?.toDate
-                                
+
                                 if (bookingId) {
                                   // Scroll to the reschedule section on the booking page
                                   const rescheduleSection = document.getElementById('booking-reschedule')
@@ -2038,7 +2037,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                 } else {
                                   const from = fromISO ? new Date(fromISO) : null
                                   const to = toISO ? new Date(toISO) : null
-                                  const dateInfo = from && to 
+                                  const dateInfo = from && to
                                     ? `Current dates: ${format(from, 'MMM d')} - ${format(to, 'MMM d, yyyy')}. `
                                     : ''
                                   const msg = `Help me reschedule my booking. ${dateInfo}I want to change the dates but keep the same package and duration. Show me available dates and guide me through the reschedule process.`
@@ -2113,18 +2112,18 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                             const fromDate = currentContext.estimate?.fromDate
                             const toDate = currentContext.estimate?.toDate
                             const currentPostId = currentContext?.post?.id
-                            
+
                             if (!fromDate || !toDate) {
                               setInput('Find other properties available for my dates')
                               handleSubmit(new Event('submit') as any)
                               return
                             }
-                            
+
                             const from = new Date(fromDate)
                             const to = new Date(toDate)
                             const fromStr = format(from, 'MMM d, yyyy')
                             const toStr = format(to, 'MMM d, yyyy')
-                            
+
                             const msg = `Find other properties available from ${fromStr} to ${toStr}${currentPostId ? ` (excluding the current property)` : ''}. Show me properties that are available for these exact dates.`
                             setInput(msg)
                             handleSubmit(new Event('submit') as any)
@@ -2140,7 +2139,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                   </div>
                 </div>
               )}
-              
+
               {messages.map((message, index) => (
                 <React.Fragment key={index}>
                   <Message from={message.role}>
@@ -2166,7 +2165,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                               const suggestions = message.propertySuggestions!
                               const fromDateParam = new Date(suggestions.fromDate).toISOString().split('T')[0]
                               const toDateParam = new Date(suggestions.toDate).toISOString().split('T')[0]
-                              
+
                               return suggestions.properties.map((property, idx) => {
                                 const basePostUrl = property.slug ? `/posts/${property.slug}` : `/posts/${property.id}`
                                 // Add date parameters to the URL
@@ -2174,8 +2173,8 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                 return (
                                   <div key={property.id} className="border-b pb-4 last:border-0 last:pb-0">
                                     <h4 className="font-semibold mb-2">
-                                      <a 
-                                        href={postUrl} 
+                                      <a
+                                        href={postUrl}
                                         className="text-primary hover:underline"
                                       >
                                         {idx + 1}. {property.title}
@@ -2219,21 +2218,21 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       const reasoningLines =
                         overlappingGroups.length > 0
                           ? overlappingGroups.flatMap((group) => {
-                              const lines: string[] = []
-                              if (group.properties.length > 1) {
-                                const propertyList = group.properties
-                                  .map((p) => p.propertyTitle)
-                                  .join(', ')
-                                lines.push(`${group.properties.length} properties check out on ${group.date}: ${propertyList}`)
-                              }
-                              if (group.sameDayCheckins && group.sameDayCheckins.length > 0) {
-                                const checkinList = group.sameDayCheckins
-                                  .map((c) => c.propertyTitle)
-                                  .join(', ')
-                                lines.push(`⚠️ Critical: ${group.sameDayCheckins.length} ${group.sameDayCheckins.length === 1 ? 'property' : 'properties'} checking in on ${group.date}: ${checkinList}. Clean checkout properties before check-in time.`)
-                              }
-                              return lines
-                            })
+                            const lines: string[] = []
+                            if (group.properties.length > 1) {
+                              const propertyList = group.properties
+                                .map((p) => p.propertyTitle)
+                                .join(', ')
+                              lines.push(`${group.properties.length} properties check out on ${group.date}: ${propertyList}`)
+                            }
+                            if (group.sameDayCheckins && group.sameDayCheckins.length > 0) {
+                              const checkinList = group.sameDayCheckins
+                                .map((c) => c.propertyTitle)
+                                .join(', ')
+                              lines.push(`⚠️ Critical: ${group.sameDayCheckins.length} ${group.sameDayCheckins.length === 1 ? 'property' : 'properties'} checking in on ${group.date}: ${checkinList}. Clean checkout properties before check-in time.`)
+                            }
+                            return lines
+                          })
                           : ['No overlapping same-day checkouts detected. Cleaners can move sequentially.']
 
                       return (
@@ -2259,75 +2258,116 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                     {message.cleaningSchedule.sameDayCheckouts.map((checkoutGroup, groupIdx) => {
                                       const totalCount = checkoutGroup.properties.length + (checkoutGroup.sameDayCheckins?.length || 0)
                                       const hasOverlap = (checkoutGroup.sameDayCheckins?.length || 0) > 0
-                                      
-                                      return (
-                                      <QueueSection key={checkoutGroup.date} defaultOpen={groupIdx === 0}>
-                                        <QueueSectionTrigger>
-                                          <QueueSectionLabel
-                                            label={checkoutGroup.date}
-                                            count={totalCount}
-                                            icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
-                                          />
-                                        </QueueSectionTrigger>
-                                        <QueueSectionContent>
-                                          {hasOverlap && (
-                                            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800">
-                                              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                                                ⚠️ Critical: {checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'} checking out, {checkoutGroup.sameDayCheckins?.length} {checkoutGroup.sameDayCheckins?.length === 1 ? 'property' : 'properties'} checking in on the same day
-                                              </p>
-                                            </div>
-                                          )}
-                                          <QueueList>
-                                            {checkoutGroup.properties.map((property, propIdx) => {
-                                              const windowLabel =
-                                                property.nextCheckin?.timeWindowHours !== undefined
-                                                  ? property.nextCheckin.timeWindowHours < 24
-                                                    ? `${property.nextCheckin.timeWindowHours} hr`
-                                                    : property.nextCheckin.timeWindowDays === 1
-                                                    ? '1 day'
-                                                    : `${property.nextCheckin.timeWindowDays} days`
-                                                  : 'Awaiting next booking'
 
-                                              return (
-                                                <QueueItem key={property.id ?? `${checkoutGroup.date}-${propIdx}`}>
+                                      return (
+                                        <QueueSection key={checkoutGroup.date} defaultOpen={groupIdx === 0}>
+                                          <QueueSectionTrigger>
+                                            <QueueSectionLabel
+                                              label={checkoutGroup.date}
+                                              count={totalCount}
+                                              icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />}
+                                            />
+                                          </QueueSectionTrigger>
+                                          <QueueSectionContent>
+                                            {hasOverlap && (
+                                              <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800">
+                                                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                                  ⚠️ Critical: {checkoutGroup.properties.length} {checkoutGroup.properties.length === 1 ? 'property' : 'properties'} checking out, {checkoutGroup.sameDayCheckins?.length} {checkoutGroup.sameDayCheckins?.length === 1 ? 'property' : 'properties'} checking in on the same day
+                                                </p>
+                                              </div>
+                                            )}
+                                            <QueueList>
+                                              {checkoutGroup.properties.map((property, propIdx) => {
+                                                const windowLabel =
+                                                  property.nextCheckin?.timeWindowHours !== undefined
+                                                    ? property.nextCheckin.timeWindowHours < 24
+                                                      ? `${property.nextCheckin.timeWindowHours} hr`
+                                                      : property.nextCheckin.timeWindowDays === 1
+                                                        ? '1 day'
+                                                        : `${property.nextCheckin.timeWindowDays} days`
+                                                    : 'Awaiting next booking'
+
+                                                return (
+                                                  <QueueItem key={property.id ?? `${checkoutGroup.date}-${propIdx}`}>
+                                                    <QueueItemIndicator completed={false} />
+                                                    <div className="flex-1">
+                                                      <QueueItemContent>{property.propertyTitle}</QueueItemContent>
+                                                      <QueueItemDescription>
+                                                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                                          <span className="inline-flex items-center gap-1">
+                                                            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                                                            Checkout {property.checkoutDate}
+                                                          </span>
+                                                          {property.nextCheckin && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                                              Next {property.nextCheckin.date}
+                                                            </span>
+                                                          )}
+                                                          {property.proximityCategories.length > 0 && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                              <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                                              {property.proximityCategories.join(', ')}
+                                                            </span>
+                                                          )}
+                                                          {property.nextCheckin && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                                              {windowLabel}
+                                                            </span>
+                                                          )}
+                                                          <span className="inline-flex items-center gap-1">
+                                                            Sleeps {property.sleepCapacity}
+                                                          </span>
+                                                        </div>
+                                                      </QueueItemDescription>
+                                                    </div>
+                                                    {property.propertySlug && (
+                                                      <QueueItemActions>
+                                                        <QueueItemAction asChild>
+                                                          <a
+                                                            href={`/posts/${property.propertySlug}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                          >
+                                                            Open
+                                                          </a>
+                                                        </QueueItemAction>
+                                                      </QueueItemActions>
+                                                    )}
+                                                  </QueueItem>
+                                                )
+                                              })}
+                                              {checkoutGroup.sameDayCheckins && checkoutGroup.sameDayCheckins.map((checkin, checkinIdx) => (
+                                                <QueueItem key={checkin.id ?? `checkin-${checkoutGroup.date}-${checkinIdx}`}>
                                                   <QueueItemIndicator completed={false} />
                                                   <div className="flex-1">
-                                                    <QueueItemContent>{property.propertyTitle}</QueueItemContent>
+                                                    <QueueItemContent>
+                                                      {checkin.propertyTitle} <span className="text-xs text-muted-foreground">(Check-in)</span>
+                                                    </QueueItemContent>
                                                     <QueueItemDescription>
                                                       <div className="flex flex-wrap gap-x-4 gap-y-1">
                                                         <span className="inline-flex items-center gap-1">
                                                           <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                                                          Checkout {property.checkoutDate}
+                                                          Check-in {checkin.checkinDate}
                                                         </span>
-                                                        {property.nextCheckin && (
-                                                          <span className="inline-flex items-center gap-1">
-                                                            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                                                            Next {property.nextCheckin.date}
-                                                          </span>
-                                                        )}
-                                                        {property.proximityCategories.length > 0 && (
+                                                        {checkin.proximityCategories.length > 0 && (
                                                           <span className="inline-flex items-center gap-1">
                                                             <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                                                            {property.proximityCategories.join(', ')}
-                                                          </span>
-                                                        )}
-                                                        {property.nextCheckin && (
-                                                          <span className="inline-flex items-center gap-1">
-                                                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                                                            {windowLabel}
+                                                            {checkin.proximityCategories.join(', ')}
                                                           </span>
                                                         )}
                                                         <span className="inline-flex items-center gap-1">
-                                                          Sleeps {property.sleepCapacity}
+                                                          Sleeps {checkin.sleepCapacity}
                                                         </span>
                                                       </div>
                                                     </QueueItemDescription>
                                                   </div>
-                                                  {property.propertySlug && (
+                                                  {checkin.propertySlug && (
                                                     <QueueItemActions>
                                                       <QueueItemAction asChild>
                                                         <a
-                                                          href={`/posts/${property.propertySlug}`}
+                                                          href={`/posts/${checkin.propertySlug}`}
                                                           target="_blank"
                                                           rel="noopener noreferrer"
                                                         >
@@ -2337,51 +2377,10 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                                     </QueueItemActions>
                                                   )}
                                                 </QueueItem>
-                                              )
-                                            })}
-                                            {checkoutGroup.sameDayCheckins && checkoutGroup.sameDayCheckins.map((checkin, checkinIdx) => (
-                                              <QueueItem key={checkin.id ?? `checkin-${checkoutGroup.date}-${checkinIdx}`}>
-                                                <QueueItemIndicator completed={false} />
-                                                <div className="flex-1">
-                                                  <QueueItemContent>
-                                                    {checkin.propertyTitle} <span className="text-xs text-muted-foreground">(Check-in)</span>
-                                                  </QueueItemContent>
-                                                  <QueueItemDescription>
-                                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                                                      <span className="inline-flex items-center gap-1">
-                                                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                                                        Check-in {checkin.checkinDate}
-                                                      </span>
-                                                      {checkin.proximityCategories.length > 0 && (
-                                                        <span className="inline-flex items-center gap-1">
-                                                          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                                                          {checkin.proximityCategories.join(', ')}
-                                                        </span>
-                                                      )}
-                                                      <span className="inline-flex items-center gap-1">
-                                                        Sleeps {checkin.sleepCapacity}
-                                                      </span>
-                                                    </div>
-                                                  </QueueItemDescription>
-                                                </div>
-                                                {checkin.propertySlug && (
-                                                  <QueueItemActions>
-                                                    <QueueItemAction asChild>
-                                                      <a
-                                                        href={`/posts/${checkin.propertySlug}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                      >
-                                                        Open
-                                                      </a>
-                                                    </QueueItemAction>
-                                                  </QueueItemActions>
-                                                )}
-                                              </QueueItem>
-                                            ))}
-                                          </QueueList>
-                                        </QueueSectionContent>
-                                      </QueueSection>
+                                              ))}
+                                            </QueueList>
+                                          </QueueSectionContent>
+                                        </QueueSection>
                                       )
                                     })}
                                   </Queue>
@@ -2421,12 +2420,11 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                                                       <div className="font-medium text-primary">
                                                         <span className="font-medium">Cleaning window:</span>{' '}
                                                         {property.nextCheckin.timeWindowHours < 24
-                                                          ? `${property.nextCheckin.timeWindowHours} hour${
-                                                              property.nextCheckin.timeWindowHours !== 1 ? 's' : ''
-                                                            }`
+                                                          ? `${property.nextCheckin.timeWindowHours} hour${property.nextCheckin.timeWindowHours !== 1 ? 's' : ''
+                                                          }`
                                                           : property.nextCheckin.timeWindowDays === 1
-                                                          ? '1 day'
-                                                          : `${property.nextCheckin.timeWindowDays} days`}
+                                                            ? '1 day'
+                                                            : `${property.nextCheckin.timeWindowDays} days`}
                                                       </div>
                                                     )}
                                                     {property.nextCheckin.packageName && (
@@ -2521,7 +2519,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
-          
+
           {/* Package Suggestions Display */}
           {packageSuggestions.length > 0 && (
             <div className="border-t p-4 max-h-[200px] overflow-y-auto">
@@ -2541,13 +2539,13 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                       {suggestion.baseRate && ` • R${suggestion.baseRate}`}
                     </div>
                     <div className="mt-2">
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         className="text-xs h-6 px-2"
                         onClick={() => {
                           // Dispatch event to apply this suggestion
-                          const event = new CustomEvent('applyPackageSuggestion', { 
-                            detail: { 
+                          const event = new CustomEvent('applyPackageSuggestion', {
+                            detail: {
                               suggestion,
                               postId: currentContext?.postId
                             }
@@ -2569,7 +2567,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
               </div>
             </div>
           )}
-          
+
           <div className="border-t p-4">
             {!isLoggedIn && (
               <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -2581,60 +2579,60 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                 </Button>
               </div>
             )}
-            <PromptInput 
-              onSubmit={handlePromptSubmit} 
+            <PromptInput
+              onSubmit={handlePromptSubmit}
               className="mt-2"
             >
               {(scheduleSuggestions.length > 0 ||
                 (currentContext?.context === 'post-article' && !isHostOrAdmin && dateSuggestions.length > 0)) && (
-                <PromptInputHeader className="pb-2 space-y-2">
-                  {scheduleSuggestions.length > 0 && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Suggested checkout schedules</p>
-                      <Suggestions>
-                        {scheduleSuggestions.map((suggestion, idx) => {
-                          // Format as day abbreviations like "Tues-Fri" for cleaner display
-                          const fromDay = format(new Date(suggestion.fromCheckoutDate + 'T00:00:00Z'), 'EEE')
-                          const toDay = format(new Date(suggestion.toCheckoutDate + 'T00:00:00Z'), 'EEE')
-                          const label = `${fromDay}-${toDay}`
-                          return (
+                  <PromptInputHeader className="pb-2 space-y-2">
+                    {scheduleSuggestions.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Suggested checkout schedules</p>
+                        <Suggestions>
+                          {scheduleSuggestions.map((suggestion, idx) => {
+                            // Format as day abbreviations like "Tues-Fri" for cleaner display
+                            const fromDay = format(new Date(suggestion.fromCheckoutDate + 'T00:00:00Z'), 'EEE')
+                            const toDay = format(new Date(suggestion.toCheckoutDate + 'T00:00:00Z'), 'EEE')
+                            const label = `${fromDay}-${toDay}`
+                            return (
+                              <Suggestion
+                                key={`${suggestion.label}-${idx}`}
+                                suggestion={label}
+                                className="text-xs"
+                                onClick={() => handleScheduleSuggestionClick(suggestion)}
+                              />
+                            )
+                          })}
+                        </Suggestions>
+                      </div>
+                    )}
+                    {!isHostOrAdmin && currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Stay date ideas</p>
+                        <Suggestions>
+                          {dateSuggestions.map((suggestion, idx) => (
                             <Suggestion
-                              key={`${suggestion.label}-${idx}`}
-                              suggestion={label}
+                              key={idx}
+                              suggestion={suggestion.label}
+                              onClick={(label) => {
+                                const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
+                                const toStr = format(suggestion.endDate, 'MMM d, yyyy')
+                                const nights = Math.ceil(
+                                  (suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000),
+                                )
+                                setInput(
+                                  `Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`,
+                                )
+                              }}
                               className="text-xs"
-                              onClick={() => handleScheduleSuggestionClick(suggestion)}
                             />
-                          )
-                        })}
-                      </Suggestions>
-                    </div>
-                  )}
-                  {!isHostOrAdmin && currentContext?.context === 'post-article' && dateSuggestions.length > 0 && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Stay date ideas</p>
-                      <Suggestions>
-                        {dateSuggestions.map((suggestion, idx) => (
-                          <Suggestion
-                            key={idx}
-                            suggestion={suggestion.label}
-                            onClick={(label) => {
-                              const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
-                              const toStr = format(suggestion.endDate, 'MMM d, yyyy')
-                              const nights = Math.ceil(
-                                (suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000),
-                              )
-                              setInput(
-                                `Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`,
-                              )
-                            }}
-                            className="text-xs"
-                          />
-                        ))}
-                      </Suggestions>
-                    </div>
-                  )}
-                </PromptInputHeader>
-              )}
+                          ))}
+                        </Suggestions>
+                      </div>
+                    )}
+                  </PromptInputHeader>
+                )}
               <PromptInputBody>
                 <PromptInputTextarea
                   ref={textareaRef}
@@ -2642,7 +2640,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
                   placeholder={
                     !isLoggedIn ? "Please log in to use AI Assistant..." :
-                    isListening ? "I'm listening..." : 'Type your message...'
+                      isListening ? "I'm listening..." : 'Type your message...'
                   }
                   disabled={isLoading || isListening || !isLoggedIn}
                   className="pr-12"
@@ -2658,9 +2656,9 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
                     textareaRef={textareaRef}
                   />
                 </PromptInputTools>
-                <PromptInputSubmit 
-                  status={isLoading ? 'streaming' : 'ready'} 
-                  disabled={!input.trim() || isListening || !isLoggedIn} 
+                <PromptInputSubmit
+                  status={isLoading ? 'streaming' : 'ready'}
+                  disabled={!input.trim() || isListening || !isLoggedIn}
                 />
               </PromptInputFooter>
             </PromptInput>
