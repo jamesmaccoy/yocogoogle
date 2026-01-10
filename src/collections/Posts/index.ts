@@ -114,17 +114,25 @@ export const Posts: CollectionConfig<'posts'> = {
               admin: {
                 position: 'sidebar',
               },
-              filterOptions: (context) => {
-                const id = context?.id
-                if (!id) {
-                  return {}
-                }
-                return {
-                  id: {
-                    not_in: [id],
-                  },
-                }
-              },
+              // Temporarily disabled filterOptions to fix static generation issue
+              // filterOptions will be re-enabled once Payload fixes the context issue during static generation
+              // filterOptions: (context) => {
+              //   // Safely handle context that might be undefined or missing id during static generation
+              //   if (!context || typeof context !== 'object') {
+              //     return {}
+              //   }
+              //   
+              //   const id = (context as any)?.id
+              //   if (!id || (typeof id !== 'string' && typeof id !== 'number')) {
+              //     return {}
+              //   }
+              //   
+              //   return {
+              //     id: {
+              //       not_in: [String(id)],
+              //     },
+              //   }
+              // },
               hasMany: true,
               relationTo: 'posts',
             },
