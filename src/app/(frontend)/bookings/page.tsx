@@ -15,6 +15,9 @@ import { Estimate } from '@/payload-types'
 // import { fetchLatestEstimate } from '@/utilities/fetchLatestEstimate'
 // import { BookingsList } from './BookingsList'
 
+// Force dynamic rendering since this page uses cookies for authentication
+export const dynamic = 'force-dynamic'
+
 const fetchLatestEstimate = async (userId: string) => {
   const payload = await getPayload({ config: configPromise });
   const estimates = await payload.find({

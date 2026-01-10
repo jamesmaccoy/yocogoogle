@@ -50,22 +50,34 @@ export default async function Post({ params: paramsPromise }: Args) {
 
   if (!post || !post.id) return <PayloadRedirects url={url} />
 
-  // Extract values to ensure they're available during static generation
+  // Extract values to ensure they're available
   const postId = post.id
   const postTitle = post.title || ''
   const postBaseRate = typeof post.baseRate === 'number' ? post.baseRate : 0
   const postDescription = post.meta?.description || ''
 
+  // Ensure all required post properties are available
+  const postForClient = {
+    id: postId,
+    title: postTitle,
+    content: post.content,
+    meta: post.meta,
+    baseRate: postBaseRate,
+    relatedPosts: post.relatedPosts,
+    heroImage: (post as any).heroImage || null,
+    categories: (post as any).categories || [],
+  }
+
   return (
     <article className="pt-16 pb-16">
-      <PageClient post={post as any} />
+      <PageClient post={postForClient as any} />
 
       {/* Allows redirects for valid pages too */}
       <PayloadRedirects disableNotFound url={url} />
 
       {draft && <LivePreviewListener />}
 
-      <PostHeroWrapper post={post} />
+      <PostHeroWrapper post={post as Post} />
 
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
@@ -132,9 +144,19 @@ const queryPostBySlug = cache(async ({ slug }: { slug: string }) => {
   const post = result.docs?.[0]
   
   // Ensure post has required fields before returning
-  if (!post || !post.id) {
+  if (!post) {
     return null
   }
 
-  return post
+  // Explicitly check and ensure id exists
+  const postId = (post as any).id
+  if (!postId || typeof postId !== 'string') {
+    return null
+  }
+
+  // Return post with guaranteed id
+  return {
+    ...post,
+    id: postId,
+  } as Post
 })
