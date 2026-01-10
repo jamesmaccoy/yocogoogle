@@ -50,28 +50,31 @@ export default async function Post({ params: paramsPromise }: Args) {
 
   if (!post || !post.id) return <PayloadRedirects url={url} />
 
-  // Type guard: post is guaranteed to have id at this point
-  const postWithId: Post = post
+  // Extract values to ensure they're available during static generation
+  const postId = post.id
+  const postTitle = post.title || ''
+  const postBaseRate = typeof post.baseRate === 'number' ? post.baseRate : 0
+  const postDescription = post.meta?.description || ''
 
   return (
     <article className="pt-16 pb-16">
-      <PageClient post={postWithId as any} />
+      <PageClient post={post as any} />
 
       {/* Allows redirects for valid pages too */}
       <PayloadRedirects disableNotFound url={url} />
 
       {draft && <LivePreviewListener />}
 
-      <PostHeroWrapper post={postWithId} />
+      <PostHeroWrapper post={post} />
 
       <div className="flex flex-col items-center gap-4 pt-8">
         <div className="container">
         <Suspense fallback={<div className="w-full max-w-2xl mx-auto p-4">Loading booking assistant...</div>}>
           <SmartEstimateBlock 
-            postId={postWithId.id} 
-            baseRate={typeof postWithId.baseRate === 'number' ? postWithId.baseRate : 0}
-            postTitle={postWithId.title}
-            postDescription={postWithId.meta?.description || ''}
+            postId={postId} 
+            baseRate={postBaseRate}
+            postTitle={postTitle}
+            postDescription={postDescription}
           />
         </Suspense>
           <div className="text-center py-8">
@@ -81,10 +84,10 @@ export default async function Post({ params: paramsPromise }: Args) {
               Ask questions, get summaries, or explore specific topics from the article.
             </p>
           </div>
-          {postWithId.relatedPosts && postWithId.relatedPosts.length > 0 && (
+          {post.relatedPosts && post.relatedPosts.length > 0 && (
             <RelatedPosts
               className="mt-12 max-w-[52rem] lg:grid lg:grid-cols-subgrid col-start-1 col-span-3 grid-rows-[2fr]"
-              docs={postWithId.relatedPosts.filter((post) => typeof post === 'object')}
+              docs={post.relatedPosts.filter((relatedPost) => typeof relatedPost === 'object')}
             />
           )}
         </div>

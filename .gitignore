@@ -6,6 +6,11 @@ node_modules
 .next
 .vercel
 
+# Lock files (using pnpm)
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+
 # Payload default media upload directory
 public/media/
 
