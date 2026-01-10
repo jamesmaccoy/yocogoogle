@@ -312,6 +312,10 @@ export interface Post {
   };
   relatedPosts?: (string | Post)[] | null;
   categories?: (string | Category)[] | null;
+  /**
+   * Feature this post on the editorial home page
+   */
+  featured?: boolean | null;
   meta?: {
     title?: string | null;
     /**
@@ -1509,6 +1513,7 @@ export interface PostsSelect<T extends boolean = true> {
   content?: T;
   relatedPosts?: T;
   categories?: T;
+  featured?: T;
   meta?:
     | T
     | {

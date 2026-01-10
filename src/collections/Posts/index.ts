@@ -49,7 +49,7 @@ export const Posts: CollectionConfig<'posts'> = {
     },
   },
   admin: {
-    defaultColumns: ['title', 'slug', 'updatedAt'],
+    defaultColumns: ['title', 'slug', 'featured', 'updatedAt'],
     livePreview: {
       url: ({ data, req }) => {
         const path = generatePreviewPath({
@@ -132,6 +132,16 @@ export const Posts: CollectionConfig<'posts'> = {
               },
               hasMany: true,
               relationTo: 'categories',
+            },
+            {
+              name: 'featured',
+              type: 'checkbox',
+              label: 'Featured',
+              defaultValue: false,
+              admin: {
+                position: 'sidebar',
+                description: 'Feature this post on the editorial home page',
+              },
             },
           ],
           label: 'Meta',

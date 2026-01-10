@@ -80,9 +80,18 @@ export default async function Page({ params: paramsPromise }: Args) {
       overrideAccess: false,
       sort: '-publishedAt',
       where: {
-        _status: {
-          equals: 'published',
-        },
+        and: [
+          {
+            _status: {
+              equals: 'published',
+            },
+          },
+          {
+            featured: {
+              equals: true,
+            },
+          },
+        ],
       },
     })
 
