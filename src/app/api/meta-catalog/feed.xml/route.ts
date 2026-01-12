@@ -23,6 +23,7 @@ interface MetaCatalogProduct {
   image_link: string
   brand?: string
   category?: string
+  internal_label?: string // Internal label for organizing products (comma-separated)
   custom_label_0?: string
   custom_label_1?: string
   custom_label_2?: string
@@ -113,6 +114,15 @@ export async function GET(request: NextRequest) {
               ? `${postTitle} - ${packageName}`
               : `Package - ${packageName}`
 
+            // Build internal labels for packages
+            const packageLabels: string[] = []
+            if (pkg.category) packageLabels.push(`category-${pkg.category}`)
+            if (pkg.minNights) packageLabels.push(`min-nights-${pkg.minNights}`)
+            if (pkg.maxNights) packageLabels.push(`max-nights-${pkg.maxNights}`)
+            if (postId) packageLabels.push(`post-${postId}`)
+            if (pkg.isEnabled) packageLabels.push('enabled')
+            const packageInternalLabel = packageLabels.join(',')
+
             return {
               id: packageId,
               title: validTitle,
@@ -125,6 +135,7 @@ export async function GET(request: NextRequest) {
               image_link: absoluteImageUrl,
               brand: 'Simpleplek',
               category: pkg.category || 'accommodation',
+              internal_label: packageInternalLabel, // Internal labels for filtering and product sets
               custom_label_0: pkg.category || 'standard',
               custom_label_1: pkg.minNights?.toString() || '0',
               custom_label_2: pkg.maxNights?.toString() || '7',
@@ -275,6 +286,7 @@ function generateXMLFeed(products: MetaCatalogProduct[]): string {
     <g:currency>${product.currency}</g:currency>
     <g:brand>${escapeXML(product.brand || 'Simpleplek')}</g:brand>
     <g:product_type>${escapeXML(product.category || 'standard')}</g:product_type>
+    <g:internal_label>${escapeXML(product.internal_label || '')}</g:internal_label>
     <g:custom_label_0>${escapeXML(product.custom_label_0 || '')}</g:custom_label_0>
     <g:custom_label_1>${escapeXML(product.custom_label_1 || '')}</g:custom_label_1>
     <g:custom_label_2>${escapeXML(product.custom_label_2 || '')}</g:custom_label_2>

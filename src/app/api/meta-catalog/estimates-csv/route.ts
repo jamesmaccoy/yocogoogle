@@ -29,6 +29,7 @@ interface MetaCSVProduct {
   image_link: string
   brand: string
   product_type: string
+  internal_label?: string // Internal label for organizing products (comma-separated, up to 5000 labels)
   custom_label_0?: string // Package type
   custom_label_1?: string // Duration
   custom_label_2?: string // Post ID
@@ -53,6 +54,8 @@ export async function GET(request: NextRequest) {
 
     // Use provided userId or authenticated user's ID
     // If neither, return all estimates (for admin) or empty catalog
+    // NOTE: For Meta Commerce Manager, the feed should be publicly accessible
+    // Meta's crawler will access this URL without authentication
     const targetUserId = userId || user?.id
 
     const payload = await getPayload({ config: configPromise })
@@ -72,11 +75,27 @@ export async function GET(request: NextRequest) {
       depth: 2, // Include post and customer data
     })
 
-    // Transform estimates to Meta CSV format
+    console.log(`[Meta CSV Feed] Found ${estimates.docs.length} estimates for userId: ${targetUserId || 'all'}`)
+
+    // Transform estimates to Meta CSV format with validation
     const catalogProducts: MetaCSVProduct[] = estimates.docs
       .filter((estimate) => {
         // Only include estimates with valid post and total
-        return estimate.post && estimate.total && estimate.total > 0
+        const hasPost = !!estimate.post
+        const hasValidTotal = estimate.total && estimate.total > 0
+        const hasEstimateId = !!estimate.id
+        
+        if (!hasPost) {
+          console.warn(`Estimate ${estimate.id} skipped: missing post`)
+        }
+        if (!hasValidTotal) {
+          console.warn(`Estimate ${estimate.id} skipped: invalid total (${estimate.total})`)
+        }
+        if (!hasEstimateId) {
+          console.warn(`Estimate skipped: missing ID`)
+        }
+        
+        return hasPost && hasValidTotal && hasEstimateId
       })
       .map((estimate) => {
         const post = typeof estimate.post === 'object' ? estimate.post : null
@@ -125,31 +144,66 @@ export async function GET(request: NextRequest) {
         const description = estimate.description || 
           `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
 
-        // Ensure image URL is absolute HTTPS
-        const absoluteImageUrl = imageUrl.startsWith('http')
-          ? imageUrl
+        // Ensure image URL is absolute HTTPS (Meta requires accessible images)
+        let absoluteImageUrl = imageUrl.startsWith('http')
+          ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
           : imageUrl.startsWith('//')
           ? `https:${imageUrl}`
           : `https://${request.nextUrl.host}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
         
-        // Ensure link URL is absolute HTTPS
-        const absoluteLink = estimateLink.startsWith('http')
-          ? estimateLink
+        // Validate image URL format (Meta requires valid image URLs)
+        if (!absoluteImageUrl.match(/^https:\/\/.+\..+/)) {
+          console.warn(`Invalid image URL for estimate ${estimateId}: ${absoluteImageUrl}`)
+          // Use a default image if invalid
+          absoluteImageUrl = `https://${request.nextUrl.host}/placeholder-image.jpg`
+        }
+        
+        // Ensure link URL is absolute HTTPS (Meta requires valid product URLs)
+        let absoluteLink = estimateLink.startsWith('http')
+          ? estimateLink.replace(/^http:/, 'https:') // Force HTTPS
           : `https://${request.nextUrl.host}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+        
+        // Validate link URL format
+        if (!absoluteLink.match(/^https:\/\/.+\..+/)) {
+          console.warn(`Invalid link URL for estimate ${estimateId}: ${absoluteLink}`)
+        }
         
         // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
         const priceValue = (estimate.total || 0).toFixed(2)
         const formattedPrice = `${priceValue} ZAR`
         
-        // Ensure description is not empty and has minimum length
-        const validDescription = description && description.trim().length > 0
+        // Ensure description is not empty and has minimum length (Meta requires meaningful descriptions)
+        let validDescription = description && description.trim().length > 0
           ? description.trim()
           : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation`
         
-        // Ensure title is not empty
-        const validTitle = postTitle && postTitle.trim().length > 0
+        // Ensure description is not too short (Meta prefers descriptions with substance)
+        if (validDescription.length < 10) {
+          validDescription = `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay`
+        }
+        
+        // Ensure title is not empty and meaningful (Meta requires non-empty titles)
+        let validTitle = postTitle && postTitle.trim().length > 0
           ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
           : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+        
+        // Ensure title is not too short
+        if (validTitle.length < 3) {
+          validTitle = `Accommodation - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+        }
+        
+        // Validate all required fields before adding to catalog
+        if (!estimateId || !validTitle || !validDescription || !formattedPrice || !absoluteLink || !absoluteImageUrl) {
+          console.error(`Estimate ${estimateId} missing required fields:`, {
+            id: estimateId,
+            title: validTitle,
+            description: validDescription,
+            price: formattedPrice,
+            link: absoluteLink,
+            image: absoluteImageUrl
+          })
+          return null // Will be filtered out
+        }
 
         return {
           id: `estimate-${estimateId}`,
@@ -169,9 +223,15 @@ export async function GET(request: NextRequest) {
           custom_label_3: estimateId,
         }
       })
+      .filter((product): product is MetaCSVProduct => product !== null) // Remove any null products
+
+    console.log(`[Meta CSV Feed] Generated ${catalogProducts.length} valid products from ${estimates.docs.length} estimates`)
 
     // Return CSV format
     if (format === 'csv' || !format || format === '') {
+      if (catalogProducts.length === 0) {
+        console.warn('[Meta CSV Feed] No valid products generated - returning empty CSV with headers only')
+      }
       return generateCSVResponse(catalogProducts)
     }
 
@@ -194,6 +254,7 @@ export async function GET(request: NextRequest) {
  */
 function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
   // Meta Commerce Manager CSV headers (required fields first)
+  // Meta requires these fields in this exact order for best compatibility
   const headers = [
     'id',
     'title',
@@ -206,16 +267,43 @@ function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
     'image_link',
     'brand',
     'product_type',
+    'internal_label', // Internal labels for organizing and filtering products
     'custom_label_0',
     'custom_label_1',
     'custom_label_2',
     'custom_label_3',
   ]
 
+  // Validate each product before adding to CSV
+  const validProducts = products.filter(product => {
+    // Check all required fields
+    const hasId = !!product.id && product.id.trim().length > 0
+    const hasTitle = !!product.title && product.title.trim().length > 0
+    const hasDescription = !!product.description && product.description.trim().length > 0
+    const hasPrice = !!product.price && product.price.trim().length > 0
+    const hasLink = !!product.link && product.link.startsWith('https://')
+    const hasImageLink = !!product.image_link && product.image_link.startsWith('https://')
+    
+    if (!hasId || !hasTitle || !hasDescription || !hasPrice || !hasLink || !hasImageLink) {
+      console.warn(`[Meta CSV Feed] Invalid product skipped:`, {
+        id: product.id,
+        hasId,
+        hasTitle,
+        hasDescription,
+        hasPrice,
+        hasLink,
+        hasImageLink
+      })
+      return false
+    }
+    
+    return true
+  })
+
   // Create CSV rows
   const csvRows = [
     headers.join(','), // Header row
-    ...products.map(product => 
+    ...validProducts.map(product => 
       headers.map(header => {
         const value = product[header as keyof MetaCSVProduct] || ''
         // Escape commas, quotes, and newlines in CSV values
@@ -230,6 +318,8 @@ function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
 
   // If no products, return header row only (Meta needs valid CSV format)
   const csvContent = csvRows.length > 1 ? csvRows.join('\n') : headers.join(',')
+  
+  console.log(`[Meta CSV Feed] Generated CSV with ${validProducts.length} valid products (${products.length - validProducts.length} filtered out)`)
 
   return new NextResponse(csvContent, {
     status: 200,
@@ -237,6 +327,7 @@ function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="meta-catalog-estimates.csv"',
       'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+      'Access-Control-Allow-Origin': '*', // Allow Meta's crawler to access
     },
   })
 }

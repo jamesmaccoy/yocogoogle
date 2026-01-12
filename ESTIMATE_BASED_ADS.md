@@ -115,27 +115,63 @@ Your Meta ads are now automatically generated from user estimates. When users cr
 
 #### Troubleshooting Catalog Feed Setup
 
-If Meta shows "URL does not link to supported file":
+**If Meta shows "URL does not link to supported file":**
 
 1. **Test the URL first**: Open the feed URL directly in your browser
-   - Should download/view an XML file
+   - Should download/view an XML/CSV file
    - Should NOT redirect or show an error page
    - Example: `https://www.simpleplek.co.za/api/meta-catalog/estimates?userId=YOUR_USER_ID&format=xml`
 
-2. **Verify XML format**: The URL should return valid XML (RSS 2.0 format)
-   - Check Content-Type header is `application/xml`
+2. **Verify format**: The URL should return valid XML (RSS 2.0) or CSV
+   - XML: Check Content-Type header is `application/xml`
+   - CSV: Check Content-Type header is `text/csv`
    - XML should start with `<?xml version="1.0" encoding="UTF-8"?>`
 
 3. **Check URL accessibility**:
-   - URL must be publicly accessible (no authentication required)
+   - URL must be publicly accessible (no authentication required for Meta's crawler)
    - URL must use HTTPS (not HTTP)
    - No redirects or error pages
 
 4. **Try alternative endpoint**:
    - Use `/api/meta-catalog/feed.xml?userId=YOUR_USER_ID` instead
-   - This endpoint is specifically designed for Meta catalog feeds
+   - Or use CSV: `/api/meta-catalog/estimates-csv?userId=YOUR_USER_ID&format=csv`
 
-5. **If no userId provided**: The endpoint returns an empty but valid XML feed
+**If Meta shows "0 items" or "Not uploaded":**
+
+1. **Validate your feed**: Use the validation endpoint
+   ```
+   https://www.simpleplek.co.za/api/meta-catalog/validate?userId=YOUR_USER_ID
+   ```
+   This will show:
+   - How many estimates were found
+   - How many are valid products
+   - Specific issues with each product
+   - Sample products from your feed
+
+2. **Check for common issues**:
+   - **Empty feed**: Ensure you have estimates with valid posts and totals
+   - **Missing images**: All products must have valid image URLs
+   - **Invalid URLs**: All links and image URLs must be absolute HTTPS URLs
+   - **Price format**: Must be "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
+
+3. **Check server logs**: Look for validation warnings
+   - Products with missing fields will be logged
+   - Invalid URLs will be logged
+   - Filtered products will be logged
+
+4. **Test feed manually**:
+   ```bash
+   # Test CSV feed
+   curl "https://www.simpleplek.co.za/api/meta-catalog/estimates-csv?userId=YOUR_USER_ID&format=csv" | head -5
+   
+   # Should show CSV headers and at least one product row
+   ```
+
+5. **Ensure estimates exist**:
+   - Visit `/api/meta-catalog/validate?userId=YOUR_USER_ID` to see how many estimates you have
+   - Estimates must have: valid post, total > 0, valid dates
+
+**If no userId provided**: The endpoint returns an empty but valid feed
    - This allows Meta to validate the format
    - You'll need to add `?userId=YOUR_USER_ID` to get actual products
 

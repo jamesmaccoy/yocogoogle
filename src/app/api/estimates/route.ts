@@ -351,6 +351,19 @@ export async function GET(request: NextRequest) {
               ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
               : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
 
+            // Build internal labels for organizing products in Meta Commerce Manager
+            const internalLabels: string[] = []
+            if (packageType) internalLabels.push(`package-${packageType}`)
+            if (duration) internalLabels.push(`duration-${duration}`)
+            if (postId) internalLabels.push(`post-${postId}`)
+            if (estimate.status) {
+              internalLabels.push(`status-${estimate.status}`)
+            }
+            if (estimate.paymentStatus) {
+              internalLabels.push(`payment-${estimate.paymentStatus}`)
+            }
+            const internalLabel = internalLabels.join(',')
+
             return {
               id: `estimate-${estimateId}`,
               title: validTitle,
@@ -363,6 +376,7 @@ export async function GET(request: NextRequest) {
               image_link: absoluteImageUrl,
               brand: 'Simpleplek',
               product_type: packageType || 'accommodation',
+              internal_label: internalLabel, // Internal labels for filtering and product sets
               custom_label_0: packageType || '',
               custom_label_1: duration.toString(),
               custom_label_2: postId || '',
@@ -372,8 +386,8 @@ export async function GET(request: NextRequest) {
         
         const metaHeaders = [
           'id', 'title', 'description', 'availability', 'condition', 'price', 'currency',
-          'link', 'image_link', 'brand', 'product_type', 'custom_label_0',
-          'custom_label_1', 'custom_label_2', 'custom_label_3'
+          'link', 'image_link', 'brand', 'product_type', 'internal_label',
+          'custom_label_0', 'custom_label_1', 'custom_label_2', 'custom_label_3'
         ]
         
         const csvRows = [

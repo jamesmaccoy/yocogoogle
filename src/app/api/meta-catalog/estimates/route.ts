@@ -23,6 +23,7 @@ interface MetaCatalogProduct {
   image_link: string
   brand?: string
   category?: string
+  internal_label?: string // Internal label for organizing products (comma-separated)
   custom_label_0?: string // Package type
   custom_label_1?: string // Duration
   custom_label_2?: string // Post ID
@@ -248,6 +249,7 @@ function generateXMLFeed(products: MetaCatalogProduct[]): string {
     <g:currency>${product.currency}</g:currency>
     <g:brand>${escapeXML(product.brand || 'Simpleplek')}</g:brand>
     <g:product_type>${escapeXML(product.category || 'standard')}</g:product_type>
+    <g:internal_label>${escapeXML(product.internal_label || '')}</g:internal_label>
     <g:custom_label_0>${escapeXML(product.custom_label_0 || '')}</g:custom_label_0>
     <g:custom_label_1>${escapeXML(product.custom_label_1 || '')}</g:custom_label_1>
     <g:custom_label_2>${escapeXML(product.custom_label_2 || '')}</g:custom_label_2>
