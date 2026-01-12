@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { getPayload } from 'payload'
 import { Estimate } from '@/payload-types'
+import { EstimateAds } from '@/components/MetaAds/EstimateAds'
 // import { fetchLatestEstimate } from '@/utilities/fetchLatestEstimate'
 // import { BookingsList } from './BookingsList'
 
@@ -147,6 +148,7 @@ export default async function Bookings() {
   return (
     <>
       <PageClient />
+      <EstimateAds estimate={latestEstimate} />
       <div className="my-10 container space-y-10">
         <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:justify-end">
           <div>

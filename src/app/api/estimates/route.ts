@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     const format = searchParams.get('format') || 'csv' // Default to CSV for Google Sheets
+    const metaFormat = searchParams.get('meta') === 'true' // Meta Commerce Manager format
     const limit = parseInt(searchParams.get('limit') || '1000', 10)
     const depth = parseInt(searchParams.get('depth') || '2', 10)
 
@@ -250,11 +251,95 @@ export async function GET(request: NextRequest) {
           status: 200,
           headers: {
             'Content-Type': 'text/csv',
-            'Content-Disposition': 'attachment; filename="estimates.csv"',
+            'Content-Disposition': `attachment; filename="${metaFormat ? 'meta-catalog-estimates.csv' : 'estimates.csv'}"`,
           },
         })
       }
 
+      // Meta Commerce Manager format
+      if (metaFormat) {
+        const metaProducts = estimates.docs
+          .filter((estimate: any) => estimate.post && estimate.total && estimate.total > 0)
+          .map((estimate: any) => {
+            const post = typeof estimate.post === 'object' ? estimate.post : null
+            const postId = typeof estimate.post === 'string' ? estimate.post : post?.id || ''
+            const postTitle = post?.title || 'Property'
+            const estimateId = estimate.id
+            
+            // Calculate duration
+            const duration = estimate.fromDate && estimate.toDate
+              ? Math.max(1, Math.round(
+                  (new Date(estimate.toDate).getTime() - new Date(estimate.fromDate).getTime()) /
+                    (1000 * 60 * 60 * 24)
+                ))
+              : 1
+            
+            const packageType = estimate.packageType || 'standard'
+            
+            // Get post image
+            const postImage = post?.meta?.image && typeof post.meta.image === 'object'
+              ? post.meta.image
+              : null
+            
+            const imageUrl = postImage?.url
+              ? postImage.url.startsWith('http')
+                ? postImage.url
+                : `${baseUrl}${postImage.url}`
+              : `${baseUrl}/placeholder-image.jpg`
+            
+            const estimateLink = `${baseUrl}/estimate/${estimateId}`
+            const description = estimate.description || 
+              `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
+            
+            return {
+              id: `estimate-${estimateId}`,
+              title: `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`,
+              description: description,
+              availability: 'in stock',
+              condition: 'new',
+              price: `${(estimate.total || 0).toFixed(2)}`,
+              currency: 'ZAR',
+              link: estimateLink,
+              image_link: imageUrl,
+              brand: 'Simpleplek',
+              product_type: packageType,
+              custom_label_0: packageType,
+              custom_label_1: duration.toString(),
+              custom_label_2: postId || '',
+              custom_label_3: estimateId,
+            }
+          })
+        
+        const metaHeaders = [
+          'id', 'title', 'description', 'availability', 'condition', 'price', 'currency',
+          'link', 'image_link', 'brand', 'product_type', 'custom_label_0',
+          'custom_label_1', 'custom_label_2', 'custom_label_3'
+        ]
+        
+        const csvRows = [
+          metaHeaders.join(','),
+          ...metaProducts.map(product =>
+            metaHeaders.map(header => {
+              const value = product[header as keyof typeof product] || ''
+              const stringValue = String(value)
+              if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                return `"${stringValue.replace(/"/g, '""')}"`
+              }
+              return stringValue
+            }).join(',')
+          )
+        ]
+        
+        return new NextResponse(csvRows.join('\n'), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Cache-Control': 'no-cache',
+          },
+        })
+      }
+
+      // Default Google Ads format
       // Get headers from first estimate (guaranteed to exist due to check above)
       const firstEstimate = transformedEstimates[0]
       if (!firstEstimate) {
