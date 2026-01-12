@@ -189,6 +189,28 @@ export async function GET(request: NextRequest) {
       const packageDesc = packageData?.description || null
       const total = estimate.total || 0
 
+      // Get post meta image - use OG size (1200x630) if available, perfect for Meta Commerce Manager
+      const postImage = post?.meta?.image && typeof post.meta.image === 'object'
+        ? post.meta.image
+        : null
+
+      // Prefer OG image size for Meta (1200x630 optimized for social media)
+      let imageUrl = `${baseUrl}/placeholder-image.jpg`
+      if (postImage) {
+        // Check for OG size first (optimized for Meta/social media)
+        const ogImageUrl = (postImage as any)?.sizes?.og?.url
+        if (ogImageUrl) {
+          imageUrl = ogImageUrl.startsWith('http')
+            ? ogImageUrl
+            : `${baseUrl}${ogImageUrl}`
+        } else if (postImage.url) {
+          // Fall back to regular image URL
+          imageUrl = postImage.url.startsWith('http')
+            ? postImage.url
+            : `${baseUrl}${postImage.url}`
+        }
+      }
+
       // Generate Google Ads assets
       const headlines = generateHeadlines(postTitle, packageName, postMetaDesc || undefined)
       const descriptions = generateDescriptions(postMetaDesc, packageDesc, postTitle, packageName, total)
@@ -203,6 +225,7 @@ export async function GET(request: NextRequest) {
         postTitle: postTitle,
         postSlug: postSlug,
         postMetaDescription: postMetaDesc || '',
+        postImageUrl: imageUrl, // Add image URL to CSV export
         clickThroughUrl: clickThroughUrl,
         // Google Ads Assets
         finalUrl: clickThroughUrl, // Google Ads uses "Final URL" field
