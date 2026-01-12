@@ -143,26 +143,48 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Build estimate URL - link to estimate detail page
+        // Build estimate URL - link to estimate detail page (ensure absolute HTTPS)
         const estimateLink = `${request.nextUrl.origin}/estimate/${estimateId}`
-
-        // Build description
-        const description = estimate.description || 
-          `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'}`
+        
+        // Ensure image URL is absolute HTTPS
+        const absoluteImageUrl = imageUrl.startsWith('http')
+          ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
+          : imageUrl.startsWith('//')
+          ? `https:${imageUrl}`
+          : `${request.nextUrl.origin}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
+        
+        // Ensure link URL is absolute HTTPS
+        const absoluteLink = estimateLink.startsWith('http')
+          ? estimateLink.replace(/^http:/, 'https:') // Force HTTPS
+          : `https://${request.nextUrl.host}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+        
+        // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
+        const priceValue = (estimate.total || 0).toFixed(2)
+        const formattedPrice = `${priceValue} ZAR`
+        
+        // Ensure description is not empty and has minimum length (Meta requires meaningful descriptions)
+        const validDescription = estimate.description && estimate.description.trim().length > 0
+          ? estimate.description.trim()
+          : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay`
+        
+        // Ensure title is not empty and meaningful
+        const validTitle = postTitle && postTitle.trim().length > 0
+          ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+          : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
 
         return {
           id: `estimate-${estimateId}`,
-          title: `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`,
-          description: description,
+          title: validTitle,
+          description: validDescription,
           availability: 'in stock',
           condition: 'new',
-          price: `${(estimate.total || 0).toFixed(2)} ZAR`,
+          price: formattedPrice,
           currency: 'ZAR',
-          link: estimateLink,
-          image_link: imageUrl,
+          link: absoluteLink,
+          image_link: absoluteImageUrl,
           brand: 'Simpleplek',
-          category: packageType,
-          custom_label_0: packageType,
+          category: packageType || 'accommodation',
+          custom_label_0: packageType || '',
           custom_label_1: duration.toString(),
           custom_label_2: postId || '',
           custom_label_3: estimateId,

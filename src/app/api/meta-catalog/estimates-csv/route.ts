@@ -125,19 +125,45 @@ export async function GET(request: NextRequest) {
         const description = estimate.description || 
           `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
 
+        // Ensure image URL is absolute HTTPS
+        const absoluteImageUrl = imageUrl.startsWith('http')
+          ? imageUrl
+          : imageUrl.startsWith('//')
+          ? `https:${imageUrl}`
+          : `https://${request.nextUrl.host}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
+        
+        // Ensure link URL is absolute HTTPS
+        const absoluteLink = estimateLink.startsWith('http')
+          ? estimateLink
+          : `https://${request.nextUrl.host}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+        
+        // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
+        const priceValue = (estimate.total || 0).toFixed(2)
+        const formattedPrice = `${priceValue} ZAR`
+        
+        // Ensure description is not empty and has minimum length
+        const validDescription = description && description.trim().length > 0
+          ? description.trim()
+          : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation`
+        
+        // Ensure title is not empty
+        const validTitle = postTitle && postTitle.trim().length > 0
+          ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+          : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+
         return {
           id: `estimate-${estimateId}`,
-          title: `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`,
-          description: description,
+          title: validTitle,
+          description: validDescription,
           availability: 'in stock',
           condition: 'new',
-          price: `${(estimate.total || 0).toFixed(2)}`,
+          price: formattedPrice,
           currency: 'ZAR',
-          link: estimateLink,
-          image_link: imageUrl,
+          link: absoluteLink,
+          image_link: absoluteImageUrl,
           brand: 'Simpleplek',
-          product_type: packageType,
-          custom_label_0: packageType,
+          product_type: packageType || 'accommodation',
+          custom_label_0: packageType || '',
           custom_label_1: duration.toString(),
           custom_label_2: postId || '',
           custom_label_3: estimateId,

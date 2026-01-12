@@ -90,19 +90,41 @@ export async function GET(request: NextRequest) {
             const currency = 'ZAR'
 
             const packageLink = `${request.nextUrl.origin}/posts/${postSlug}?packageId=${packageId}`
+            
+            // Ensure image URL is absolute HTTPS
+            const absoluteImageUrl = imageUrl.startsWith('http')
+              ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
+              : imageUrl.startsWith('//')
+              ? `https:${imageUrl}`
+              : `${request.nextUrl.origin}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
+            
+            // Ensure link URL is absolute HTTPS
+            const absoluteLink = packageLink.startsWith('http')
+              ? packageLink.replace(/^http:/, 'https:') // Force HTTPS
+              : `https://${request.nextUrl.host}${packageLink.startsWith('/') ? packageLink : `/${packageLink}`}`
+            
+            // Ensure description is not empty
+            const validDescription = packageDescription && packageDescription.trim().length > 0
+              ? packageDescription.trim()
+              : `${packageName} package for ${postTitle}`
+            
+            // Ensure title is not empty
+            const validTitle = postTitle && postTitle.trim().length > 0
+              ? `${postTitle} - ${packageName}`
+              : `Package - ${packageName}`
 
             return {
               id: packageId,
-              title: `${postTitle} - ${packageName}`,
-              description: packageDescription,
+              title: validTitle,
+              description: validDescription,
               availability: pkg.isEnabled ? 'in stock' : 'out of stock',
               condition: 'new',
               price: `${baseRate.toFixed(2)} ${currency}`,
               currency: currency,
-              link: packageLink,
-              image_link: imageUrl,
+              link: absoluteLink,
+              image_link: absoluteImageUrl,
               brand: 'Simpleplek',
-              category: pkg.category || 'standard',
+              category: pkg.category || 'accommodation',
               custom_label_0: pkg.category || 'standard',
               custom_label_1: pkg.minNights?.toString() || '0',
               custom_label_2: pkg.maxNights?.toString() || '7',
@@ -169,20 +191,46 @@ export async function GET(request: NextRequest) {
             }
 
             const estimateLink = `${request.nextUrl.origin}/estimate/${estimateId}`
+            
+            // Ensure image URL is absolute HTTPS
+            const absoluteImageUrl = imageUrl.startsWith('http')
+              ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
+              : imageUrl.startsWith('//')
+              ? `https:${imageUrl}`
+              : `${request.nextUrl.origin}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
+            
+            // Ensure link URL is absolute HTTPS
+            const absoluteLink = estimateLink.startsWith('http')
+              ? estimateLink.replace(/^http:/, 'https:') // Force HTTPS
+              : `https://${request.nextUrl.host}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+            
+            // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
+            const priceValue = (estimate.total || 0).toFixed(2)
+            const formattedPrice = `${priceValue} ZAR`
+            
+            // Ensure description is not empty and has minimum length
+            const validDescription = estimate.description && estimate.description.trim().length > 0
+              ? estimate.description.trim()
+              : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay`
+            
+            // Ensure title is not empty
+            const validTitle = postTitle && postTitle.trim().length > 0
+              ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+              : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
 
             return {
               id: `estimate-${estimateId}`,
-              title: `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`,
-              description: estimate.description || `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'}`,
+              title: validTitle,
+              description: validDescription,
               availability: 'in stock',
               condition: 'new',
-              price: `${(estimate.total || 0).toFixed(2)} ZAR`,
+              price: formattedPrice,
               currency: 'ZAR',
-              link: estimateLink,
-              image_link: imageUrl,
+              link: absoluteLink,
+              image_link: absoluteImageUrl,
               brand: 'Simpleplek',
-              category: packageType,
-              custom_label_0: packageType,
+              category: packageType || 'accommodation',
+              custom_label_0: packageType || '',
               custom_label_1: duration.toString(),
               custom_label_2: postId || '',
               custom_label_3: estimateId,
