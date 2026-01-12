@@ -4,8 +4,8 @@ import configPromise from '@payload-config'
 import { getMeUser } from '@/utilities/getMeUser'
 
 /**
- * Meta Commerce Manager CSV Feed for Estimates
- * Generates a CSV file compatible with Meta Commerce Manager data feed import
+ * Meta Commerce Manager Destinations Catalog CSV Feed for Estimates
+ * Generates a CSV file compatible with Meta Commerce Manager Destinations catalog format
  * 
  * Usage:
  * - For all estimates: /api/meta-catalog/estimates-csv?format=csv
@@ -13,27 +13,27 @@ import { getMeUser } from '@/utilities/getMeUser'
  * - For Google Sheets: Import this CSV URL directly into Google Sheets
  * - For Meta: Upload CSV file or use scheduled feed URL
  * 
+ * Meta Destinations Catalog Required Fields:
+ * - destination_id: Unique identifier for the destination
+ * - name: Destination name
+ * - address: Full address (street, city, state, postal code, country)
+ * - url: Website link to the destination
+ * - image: Image URL
+ * - type: Destination type (e.g., "hotel", "accommodation")
+ * - product_tags: Comma-separated tags (format: "tag1,tag2,tag3")
+ * 
  * Meta accepts CSV, TSV, XML (RSS/ATOM), or XLSX files up to 4 GB
  * See: https://www.facebook.com/business/help/384041892421495
  */
 
-interface MetaCSVProduct {
-  id: string
-  title: string
-  description: string
-  availability: string
-  condition: string
-  price: string
-  currency: string
-  link: string
-  image_link: string
-  brand: string
-  product_type: string
-  internal_label?: string // Internal label for organizing products (comma-separated, up to 5000 labels)
-  custom_label_0?: string // Package type
-  custom_label_1?: string // Duration
-  custom_label_2?: string // Post ID
-  custom_label_3?: string // Estimate ID
+interface MetaDestination {
+  destination_id: string
+  name: string
+  address: string
+  url: string
+  image: string
+  type: string
+  product_tags?: string // Comma-separated tags without spaces or special formatting
 }
 
 export async function GET(request: NextRequest) {
@@ -91,8 +91,8 @@ export async function GET(request: NextRequest) {
       console.log(`[Meta CSV Feed] Fallback: Found ${estimates.docs.length} total estimates`)
     }
 
-    // Transform estimates to Meta CSV format with validation
-    const catalogProducts: MetaCSVProduct[] = estimates.docs
+    // Transform estimates to Meta Destinations catalog format with validation
+    const catalogDestinations: MetaDestination[] = estimates.docs
       .filter((estimate) => {
         // Only include estimates with valid post and total
         const hasPost = !!estimate.post
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
         
         return hasPost && hasValidTotal && hasEstimateId
       })
-      .map((estimate): MetaCSVProduct | null => {
+      .map((estimate): MetaDestination | null => {
         const post = typeof estimate.post === 'object' ? estimate.post : null
         const postId = typeof estimate.post === 'string' ? estimate.post : post?.id
         const postSlug = post?.slug || postId
@@ -128,6 +128,9 @@ export async function GET(request: NextRequest) {
 
         // Get package type
         const packageType = estimate.packageType || 'standard'
+        const packageName = (estimate as any).selectedPackage?.package && typeof (estimate as any).selectedPackage.package === 'object'
+          ? ((estimate as any).selectedPackage.package as any).name || packageType
+          : packageType
 
         // Get post meta image - use OG size (1200x630) if available, perfect for Meta Commerce Manager
         const postImage = post?.meta?.image && typeof post.meta.image === 'object'
@@ -151,12 +154,10 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Build estimate URL - link to estimate detail page
-        const estimateLink = `${request.nextUrl.origin}/estimate/${estimateId}`
-
-        // Build description from estimate notes or generate from post title and duration
-        const description = estimate.notes || 
-          `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
+        // Build post URL - link to post page (not estimate, as destinations are properties)
+        const postUrl = postSlug 
+          ? `${request.nextUrl.origin}/${postSlug}`
+          : `${request.nextUrl.origin}/post/${postId}`
 
         // Ensure image URL is absolute HTTPS (Meta requires accessible images)
         let absoluteImageUrl = imageUrl.startsWith('http')
@@ -172,96 +173,94 @@ export async function GET(request: NextRequest) {
           absoluteImageUrl = `https://${request.nextUrl.host}/placeholder-image.jpg`
         }
         
-        // Ensure link URL is absolute HTTPS (Meta requires valid product URLs)
-        let absoluteLink = estimateLink.startsWith('http')
-          ? estimateLink.replace(/^http:/, 'https:') // Force HTTPS
-          : `https://${request.nextUrl.host}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+        // Ensure link URL is absolute HTTPS (Meta requires valid URLs)
+        let absoluteUrl = postUrl.startsWith('http')
+          ? postUrl.replace(/^http:/, 'https:') // Force HTTPS
+          : `https://${request.nextUrl.host}${postUrl.startsWith('/') ? postUrl : `/${postUrl}`}`
         
         // Validate link URL format
-        if (!absoluteLink.match(/^https:\/\/.+\..+/)) {
-          console.warn(`Invalid link URL for estimate ${estimateId}: ${absoluteLink}`)
+        if (!absoluteUrl.match(/^https:\/\/.+\..+/)) {
+          console.warn(`Invalid URL for estimate ${estimateId}: ${absoluteUrl}`)
         }
         
-        // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
-        const priceValue = (estimate.total || 0).toFixed(2)
-        const formattedPrice = `${priceValue} ZAR`
+        // Build destination name (required field)
+        const destinationName = postTitle && postTitle.trim().length > 0
+          ? postTitle.trim()
+          : `Property ${postId || estimateId}`
         
-        // Ensure description is not empty and has minimum length (Meta requires meaningful descriptions)
-        let validDescription = description && description.trim().length > 0
-          ? description.trim()
-          : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation`
+        // Build address (required field) - using placeholder since address is not stored in Post
+        // Format: "Street Address, City, State/Province, Postal Code, Country"
+        // Note: If you need specific addresses, add an address field to the Post collection
+        // For now, using a generic South African address format
+        const address = `${postTitle || 'Property'}, South Africa`
         
-        // Ensure description is not too short (Meta prefers descriptions with substance)
-        if (validDescription.length < 10) {
-          validDescription = `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay`
+        // Build product tags (comma-separated, no spaces, no special characters)
+        // Format: "tag1,tag2,tag3" (no emojis or special formatting)
+        const tags: string[] = []
+        if (packageType) {
+          // Clean package name - remove emojis and special characters
+          const cleanPackageName = packageName.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()
+          tags.push(`package-${cleanPackageName}`)
         }
-        
-        // Ensure title is not empty and meaningful (Meta requires non-empty titles)
-        let validTitle = postTitle && postTitle.trim().length > 0
-          ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
-          : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
-        
-        // Ensure title is not too short
-        if (validTitle.length < 3) {
-          validTitle = `Accommodation - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
+        tags.push(`duration-${duration}`)
+        if (postId) {
+          tags.push(`post-${postId}`)
         }
+        if (estimate.status) {
+          tags.push(`status-${estimate.status}`)
+        }
+        if (estimate.paymentStatus) {
+          tags.push(`payment-${estimate.paymentStatus}`)
+        }
+        const productTags = tags.join(',')
         
         // Validate all required fields before adding to catalog
-        if (!estimateId || !validTitle || !validDescription || !formattedPrice || !absoluteLink || !absoluteImageUrl) {
+        if (!estimateId || !destinationName || !address || !absoluteUrl || !absoluteImageUrl) {
           console.error(`Estimate ${estimateId} missing required fields:`, {
-            id: estimateId,
-            title: validTitle,
-            description: validDescription,
-            price: formattedPrice,
-            link: absoluteLink,
+            destination_id: estimateId,
+            name: destinationName,
+            address,
+            url: absoluteUrl,
             image: absoluteImageUrl
           })
           return null // Will be filtered out
         }
 
         return {
-          id: `estimate-${estimateId}`,
-          title: validTitle,
-          description: validDescription,
-          availability: 'in stock',
-          condition: 'new',
-          price: formattedPrice,
-          currency: 'ZAR',
-          link: absoluteLink,
-          image_link: absoluteImageUrl,
-          brand: 'Simpleplek',
-          product_type: packageType || 'accommodation',
-          custom_label_0: packageType || '',
-          custom_label_1: duration.toString(),
-          custom_label_2: postId || '',
-          custom_label_3: estimateId,
-        } as MetaCSVProduct
+          destination_id: `estimate-${estimateId}`, // Unique identifier
+          name: destinationName, // Required: destination name
+          address: address, // Required: full address
+          url: absoluteUrl, // Required: website link
+          image: absoluteImageUrl, // Required: image URL
+          type: 'accommodation', // Required: destination type
+          product_tags: productTags, // Optional: comma-separated tags
+        }
       })
-      .filter((product): product is MetaCSVProduct => product !== null) // Remove any null products
+      .filter((destination): destination is MetaDestination => destination !== null) // Remove any null destinations
 
-    console.log(`[Meta CSV Feed] Generated ${catalogProducts.length} valid products from ${estimates.docs.length} estimates`)
+    console.log(`[Meta CSV Feed] Generated ${catalogDestinations.length} valid destinations from ${estimates.docs.length} estimates`)
 
     // Return CSV format
     if (format === 'csv' || !format || format === '') {
-      if (catalogProducts.length === 0) {
+      if (catalogDestinations.length === 0) {
         // Meta rejects empty CSV files. Return an error response instead.
-        console.error('[Meta CSV Feed] No valid products generated - Meta requires non-empty CSV files')
+        console.error('[Meta CSV Feed] No valid destinations generated - Meta requires non-empty CSV files')
         return NextResponse.json(
           {
-            error: 'No valid products found',
+            error: 'No valid destinations found',
             message: 'Meta Commerce Manager requires non-empty CSV files. Please ensure there are valid estimates with posts and totals.',
             total: 0,
           },
           { status: 404 }
         )
       }
-      return generateCSVResponse(catalogProducts)
+      return generateDestinationsCSVResponse(catalogDestinations)
     }
 
     // Default: JSON format
     return NextResponse.json({
-      products: catalogProducts,
-      total: catalogProducts.length,
+      destinations: catalogDestinations,
+      total: catalogDestinations.length,
       userId: targetUserId,
     })
   } catch (error) {
@@ -279,50 +278,42 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Generate CSV response for Meta Commerce Manager
- * Meta requires specific field order and format
+ * Generate CSV response for Meta Commerce Manager Destinations Catalog
+ * Meta requires specific field order and format for Destinations catalog
  */
-function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
-  // Meta Commerce Manager CSV headers (required fields first)
-  // Meta requires these fields in this exact order for best compatibility
+function generateDestinationsCSVResponse(destinations: MetaDestination[]): NextResponse {
+  // Meta Destinations Catalog CSV headers (required fields first)
+  // Required fields: destination_id, name, address, url, image, type
+  // Optional fields: product_tags
   const headers = [
-    'id',
-    'title',
-    'description',
-    'availability',
-    'condition',
-    'price',
-    'currency',
-    'link',
-    'image_link',
-    'brand',
-    'product_type',
-    'internal_label', // Internal labels for organizing and filtering products
-    'custom_label_0',
-    'custom_label_1',
-    'custom_label_2',
-    'custom_label_3',
+    'destination_id',
+    'name',
+    'address',
+    'url',
+    'image',
+    'type',
+    'product_tags',
   ]
 
-  // Validate each product before adding to CSV
-  const validProducts = products.filter(product => {
+  // Validate each destination before adding to CSV
+  const validDestinations = destinations.filter(destination => {
     // Check all required fields
-    const hasId = !!product.id && product.id.trim().length > 0
-    const hasTitle = !!product.title && product.title.trim().length > 0
-    const hasDescription = !!product.description && product.description.trim().length > 0
-    const hasPrice = !!product.price && product.price.trim().length > 0
-    const hasLink = !!product.link && product.link.startsWith('https://')
-    const hasImageLink = !!product.image_link && product.image_link.startsWith('https://')
+    const hasDestinationId = !!destination.destination_id && destination.destination_id.trim().length > 0
+    const hasName = !!destination.name && destination.name.trim().length > 0
+    const hasAddress = !!destination.address && destination.address.trim().length > 0
+    const hasUrl = !!destination.url && destination.url.startsWith('https://')
+    const hasImage = !!destination.image && destination.image.startsWith('https://')
+    const hasType = !!destination.type && destination.type.trim().length > 0
     
-    if (!hasId || !hasTitle || !hasDescription || !hasPrice || !hasLink || !hasImageLink) {
-      console.warn(`[Meta CSV Feed] Invalid product skipped:`, {
-        id: product.id,
-        hasId,
-        hasTitle,
-        hasDescription,
-        hasPrice,
-        hasLink,
-        hasImageLink
+    if (!hasDestinationId || !hasName || !hasAddress || !hasUrl || !hasImage || !hasType) {
+      console.warn(`[Meta CSV Feed] Invalid destination skipped:`, {
+        destination_id: destination.destination_id,
+        hasDestinationId,
+        hasName,
+        hasAddress,
+        hasUrl,
+        hasImage,
+        hasType
       })
       return false
     }
@@ -333,9 +324,9 @@ function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
   // Create CSV rows
   const csvRows = [
     headers.join(','), // Header row
-    ...validProducts.map(product => 
+    ...validDestinations.map(destination => 
       headers.map(header => {
-        const value = product[header as keyof MetaCSVProduct] || ''
+        const value = destination[header as keyof MetaDestination] || ''
         // Escape commas, quotes, and newlines in CSV values
         const stringValue = String(value)
         if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
@@ -346,16 +337,16 @@ function generateCSVResponse(products: MetaCSVProduct[]): NextResponse {
     )
   ]
 
-  // If no products, return header row only (Meta needs valid CSV format)
+  // If no destinations, return header row only (Meta needs valid CSV format)
   const csvContent = csvRows.length > 1 ? csvRows.join('\n') : headers.join(',')
   
-  console.log(`[Meta CSV Feed] Generated CSV with ${validProducts.length} valid products (${products.length - validProducts.length} filtered out)`)
+  console.log(`[Meta CSV Feed] Generated CSV with ${validDestinations.length} valid destinations (${destinations.length - validDestinations.length} filtered out)`)
 
   return new NextResponse(csvContent, {
     status: 200,
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': 'attachment; filename="meta-catalog-estimates.csv"',
+      'Content-Disposition': 'attachment; filename="meta-destinations-catalog.csv"',
       'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
       'Access-Control-Allow-Origin': '*', // Allow Meta's crawler to access
     },
