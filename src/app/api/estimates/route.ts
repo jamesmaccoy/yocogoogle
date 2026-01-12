@@ -276,16 +276,27 @@ export async function GET(request: NextRequest) {
             
             const packageType = estimate.packageType || 'standard'
             
-            // Get post image
+            // Get post meta image - use OG size (1200x630) if available, perfect for Meta Commerce Manager
             const postImage = post?.meta?.image && typeof post.meta.image === 'object'
               ? post.meta.image
               : null
             
-            const imageUrl = postImage?.url
-              ? postImage.url.startsWith('http')
-                ? postImage.url
-                : `${baseUrl}${postImage.url}`
-              : `${baseUrl}/placeholder-image.jpg`
+            // Prefer OG image size for Meta (1200x630 optimized for social media)
+            let imageUrl = `${baseUrl}/placeholder-image.jpg`
+            if (postImage) {
+              // Check for OG size first (optimized for Meta/social media)
+              const ogImageUrl = (postImage as any)?.sizes?.og?.url
+              if (ogImageUrl) {
+                imageUrl = ogImageUrl.startsWith('http')
+                  ? ogImageUrl
+                  : `${baseUrl}${ogImageUrl}`
+              } else if (postImage.url) {
+                // Fall back to regular image URL
+                imageUrl = postImage.url.startsWith('http')
+                  ? postImage.url
+                  : `${baseUrl}${postImage.url}`
+              }
+            }
             
             const estimateLink = `${baseUrl}/estimate/${estimateId}`
             const description = estimate.description || 
