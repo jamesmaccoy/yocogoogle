@@ -8,8 +8,6 @@ import SuggestedPackages from '@/components/Bookings/SuggestedPackages'
 import { InsightsPanel } from '@/components/Bookings/InsightsPanel'
 import { BookingsClient } from './page.client.bookings'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { getPayload } from 'payload'
 import { Estimate } from '@/payload-types'
 import { EstimateAds } from '@/components/MetaAds/EstimateAds'
@@ -145,37 +143,29 @@ export default async function Bookings() {
   console.log(upcomingBookings, pastBookings)
   const latestEstimate = await fetchLatestEstimate(user.id)
 
+  // Transform estimate for EstimateAds component
+  const estimateForAds = latestEstimate ? {
+    id: latestEstimate.id,
+    total: latestEstimate.total || undefined,
+    title: latestEstimate.title || undefined,
+    post: typeof latestEstimate.post === 'object' ? {
+      id: latestEstimate.post.id,
+      title: latestEstimate.post.title || undefined,
+      slug: latestEstimate.post.slug || undefined,
+      meta: latestEstimate.post.meta ? {
+        image: latestEstimate.post.meta.image && typeof latestEstimate.post.meta.image === 'object' ? {
+          url: (latestEstimate.post.meta.image as any).url || undefined
+        } : undefined
+      } : undefined
+    } : latestEstimate.post,
+    packageType: latestEstimate.packageType || undefined
+  } : null
+
   return (
     <>
       <PageClient />
-      <EstimateAds estimate={latestEstimate} />
+      <EstimateAds estimate={estimateForAds} />
       <div className="my-10 container space-y-10">
-        <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:justify-end">
-          <div>
-            {latestEstimate ? (
-              (() => {
-                const post = typeof latestEstimate.post === 'object' ? latestEstimate.post : null
-                const postSlug = post?.slug
-                const estimateId = latestEstimate.id
-                if (postSlug) {
-                  return (
-                    <Link href={`/posts/${postSlug}?restoreEstimate=${estimateId}`}>
-                      <Button variant="default">Restore to estimate checkpoint</Button>
-                    </Link>
-                  )
-                }
-                return (
-                  <Link href={`/estimate/${estimateId}`}>
-                    <Button variant="default">View your last estimate</Button>
-                  </Link>
-                )
-              })()
-            ) : (
-              <Button variant="default" disabled>No estimate available</Button>
-            )}
-          </div>
-        </div>
-
         <InsightsPanel userId={user.id} />
 
         {upcomingBookings.docs.length === 0 && pastBookings.docs.length === 0 ? (

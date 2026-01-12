@@ -790,38 +790,51 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     // Check for restoreEstimate URL parameter
     const restoreEstimateId = searchParams?.get('restoreEstimate')
     if (restoreEstimateId && isLoggedIn && !restored) {
-      // Load and restore to this estimate
-      fetch(`/api/estimates/latest?userId=${currentUser?.id}&postId=${postId}`)
+      // Fetch the estimate directly by ID to get its actual postId
+      fetch(`/api/estimates/${restoreEstimateId}`)
         .then(res => res.json())
         .then(estimate => {
           if (estimate && estimate.id === restoreEstimateId) {
-            // Restore dates
-            if (estimate.fromDate && estimate.toDate) {
-              const from = new Date(estimate.fromDate)
-              const to = new Date(estimate.toDate)
-              const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+            // Get the estimate's actual post ID
+            const estimatePostId = typeof estimate.post === 'string' ? estimate.post : estimate.post?.id
+            
+            // Only restore if we're on the correct post page
+            if (estimatePostId && estimatePostId === postId) {
+              // Restore dates
+              if (estimate.fromDate && estimate.toDate) {
+                const from = new Date(estimate.fromDate)
+                const to = new Date(estimate.toDate)
+                const calcDuration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+                
+                setStartDate(from)
+                setEndDate(to)
+                setDuration(calcDuration)
+              }
               
-              setStartDate(from)
-              setEndDate(to)
-              setDuration(calcDuration)
-            }
-            
-            // Set initial message
-            const initialMessage: Message = {
-              role: 'assistant',
-              content: `Restored to your estimate checkpoint for ${postTitle}. Your dates and package selection have been restored.`,
-              type: 'text'
-            }
-            setMessages([initialMessage])
-            
-            // Create checkpoint
-            setTimeout(() => {
-              createEstimateCheckpoint(estimate, 0)
-            }, 100)
-            
-            // Clear URL parameter
-            if (typeof window !== 'undefined') {
-              router.replace(window.location.pathname, { scroll: false })
+              // Set initial message
+              const initialMessage: Message = {
+                role: 'assistant',
+                content: `Restored to your estimate checkpoint for ${postTitle}. Your dates and package selection have been restored.`,
+                type: 'text'
+              }
+              setMessages([initialMessage])
+              
+              // Create checkpoint
+              setTimeout(() => {
+                createEstimateCheckpoint(estimate, 0)
+              }, 100)
+              
+              // Clear URL parameter
+              if (typeof window !== 'undefined') {
+                router.replace(window.location.pathname, { scroll: false })
+              }
+            } else if (estimatePostId && estimatePostId !== postId) {
+              // Redirect to the correct post if we're on the wrong page
+              const estimatePost = typeof estimate.post === 'object' ? estimate.post : null
+              const estimatePostSlug = estimatePost?.slug
+              if (estimatePostSlug) {
+                router.push(`/posts/${estimatePostSlug}?restoreEstimate=${restoreEstimateId}`)
+              }
             }
           }
         })
