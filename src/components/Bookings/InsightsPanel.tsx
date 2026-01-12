@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Sparkles, TrendingUp, Home, Star } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import Link from 'next/link'
 
 interface UserInsights {
   engagementScore: number
@@ -10,6 +11,10 @@ interface UserInsights {
   favoriteProperty: string
   popularAddon: string
   recommendation: string
+  estimateLink?: {
+    postSlug: string
+    estimateId: string
+  } | null
 }
 
 interface InsightsPanelProps {
@@ -24,17 +29,36 @@ export function InsightsPanel({ userId }: InsightsPanelProps) {
     const fetchInsights = async () => {
       try {
         setLoading(true)
-        const response = await fetch('/api/tracking-insights')
-        const data = await response.json()
+        const [insightsResponse, estimateResponse] = await Promise.all([
+          fetch('/api/tracking-insights'),
+          fetch(`/api/estimates/latest?userId=${userId}`)
+        ])
+        
+        const insightsData = await insightsResponse.json()
+        const latestEstimate = estimateResponse.ok ? await estimateResponse.json() : null
+        
+        // Get estimate link if available
+        let estimateLink: { postSlug: string; estimateId: string } | null = null
+        if (latestEstimate) {
+          const post = typeof latestEstimate.post === 'object' ? latestEstimate.post : null
+          const postSlug = post?.slug
+          if (postSlug && latestEstimate.id) {
+            estimateLink = {
+              postSlug,
+              estimateId: latestEstimate.id
+            }
+          }
+        }
         
         // Transform the API response to match UserInsights interface
-        const stats = data.stats
+        const stats = insightsData.stats
         const transformedInsights: UserInsights = {
           engagementScore: stats.engagementScore || 0,
           totalBookings: stats.bookings?.totalBookings || 0,
           favoriteProperty: stats.bookings?.favoriteProperties?.[0]?.title || 'No bookings yet',
           popularAddon: stats.addons?.popularAddons?.[0]?.name || 'No addons purchased',
           recommendation: generateRecommendation(stats),
+          estimateLink,
         }
         
         setInsights(transformedInsights)
@@ -161,21 +185,44 @@ export function InsightsPanel({ userId }: InsightsPanelProps) {
           </CardContent>
         </Card>
 
-        <Card className="bg-primary text-primary-foreground">
-          <CardContent className="flex flex-col h-full p-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium opacity-90">
-                Recommendation
-              </span>
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div className="mt-auto">
-              <p className="text-sm font-medium leading-relaxed">
-                {insights.recommendation}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        {insights.estimateLink ? (
+          <Link href={`/posts/${insights.estimateLink.postSlug}?restoreEstimate=${insights.estimateLink.estimateId}`}>
+            <Card className="bg-primary text-primary-foreground cursor-pointer hover:opacity-90 transition-opacity">
+              <CardContent className="flex flex-col h-full p-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium opacity-90">
+                    Recommendation
+                  </span>
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="mt-auto">
+                  <p className="text-sm font-medium leading-relaxed">
+                    {insights.recommendation}
+                  </p>
+                  <p className="text-xs opacity-75 mt-2 underline">
+                    Click to restore your estimate →
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ) : (
+          <Card className="bg-primary text-primary-foreground">
+            <CardContent className="flex flex-col h-full p-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium opacity-90">
+                  Recommendation
+                </span>
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div className="mt-auto">
+                <p className="text-sm font-medium leading-relaxed">
+                  {insights.recommendation}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
