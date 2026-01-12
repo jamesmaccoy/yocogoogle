@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch user's estimates
-    const estimates = await payload.find({
+    let estimates = await payload.find({
       collection: 'estimates',
       where: Object.keys(where).length > 0 ? where : undefined,
       sort: '-createdAt',
@@ -76,6 +76,20 @@ export async function GET(request: NextRequest) {
     })
 
     console.log(`[Meta CSV Feed] Found ${estimates.docs.length} estimates for userId: ${targetUserId || 'all'}`)
+
+    // Meta requires non-empty CSV files. If a specific userId was provided but has no estimates,
+    // fall back to all estimates to ensure Meta always receives a valid feed.
+    if (estimates.docs.length === 0 && targetUserId) {
+      console.warn(`[Meta CSV Feed] No estimates found for userId ${targetUserId}, falling back to all estimates`)
+      estimates = await payload.find({
+        collection: 'estimates',
+        where: undefined, // Get all estimates
+        sort: '-createdAt',
+        limit: 1000,
+        depth: 2,
+      })
+      console.log(`[Meta CSV Feed] Fallback: Found ${estimates.docs.length} total estimates`)
+    }
 
     // Transform estimates to Meta CSV format with validation
     const catalogProducts: MetaCSVProduct[] = estimates.docs
@@ -97,7 +111,7 @@ export async function GET(request: NextRequest) {
         
         return hasPost && hasValidTotal && hasEstimateId
       })
-      .map((estimate) => {
+      .map((estimate): MetaCSVProduct | null => {
         const post = typeof estimate.post === 'object' ? estimate.post : null
         const postId = typeof estimate.post === 'string' ? estimate.post : post?.id
         const postSlug = post?.slug || postId
@@ -113,7 +127,7 @@ export async function GET(request: NextRequest) {
           : 1
 
         // Get package type
-        const packageType = (estimate as any).packageType || 'standard'
+        const packageType = estimate.packageType || 'standard'
 
         // Get post meta image - use OG size (1200x630) if available, perfect for Meta Commerce Manager
         const postImage = post?.meta?.image && typeof post.meta.image === 'object'
@@ -140,8 +154,8 @@ export async function GET(request: NextRequest) {
         // Build estimate URL - link to estimate detail page
         const estimateLink = `${request.nextUrl.origin}/estimate/${estimateId}`
 
-        // Build description
-        const description = estimate.description || 
+        // Build description from estimate notes or generate from post title and duration
+        const description = estimate.notes || 
           `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
 
         // Ensure image URL is absolute HTTPS (Meta requires accessible images)
@@ -221,7 +235,7 @@ export async function GET(request: NextRequest) {
           custom_label_1: duration.toString(),
           custom_label_2: postId || '',
           custom_label_3: estimateId,
-        }
+        } as MetaCSVProduct
       })
       .filter((product): product is MetaCSVProduct => product !== null) // Remove any null products
 
@@ -230,7 +244,16 @@ export async function GET(request: NextRequest) {
     // Return CSV format
     if (format === 'csv' || !format || format === '') {
       if (catalogProducts.length === 0) {
-        console.warn('[Meta CSV Feed] No valid products generated - returning empty CSV with headers only')
+        // Meta rejects empty CSV files. Return an error response instead.
+        console.error('[Meta CSV Feed] No valid products generated - Meta requires non-empty CSV files')
+        return NextResponse.json(
+          {
+            error: 'No valid products found',
+            message: 'Meta Commerce Manager requires non-empty CSV files. Please ensure there are valid estimates with posts and totals.',
+            total: 0,
+          },
+          { status: 404 }
+        )
       }
       return generateCSVResponse(catalogProducts)
     }
@@ -243,8 +266,15 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error generating Meta CSV catalog from estimates:', error)
-    // Return empty but valid CSV for Meta validation
-    return generateCSVResponse([])
+    // Meta rejects empty CSV files. Return an error response instead.
+    return NextResponse.json(
+      {
+        error: 'Failed to generate catalog',
+        message: 'An error occurred while generating the Meta catalog feed. Meta requires non-empty CSV files.',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    )
   }
 }
 
