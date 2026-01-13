@@ -29,6 +29,7 @@ import { getMeUser } from '@/utilities/getMeUser'
 interface MetaDestination {
   destination_id: string
   name: string
+  description?: string // Recommended field for better catalog quality
   address: string
   url: string
   image: string
@@ -188,6 +189,11 @@ export async function GET(request: NextRequest) {
           ? postTitle.trim()
           : `Property ${postId || estimateId}`
         
+        // Build description (recommended field) - use post meta description or generate from post title and duration
+        const postMetaDesc = post?.meta?.description || ''
+        const description = postMetaDesc || 
+          `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay in South Africa`
+        
         // Build address (required field) - using placeholder since address is not stored in Post
         // Format: "Street Address, City, State/Province, Postal Code, Country"
         // Note: If you need specific addresses, add an address field to the Post collection
@@ -229,6 +235,7 @@ export async function GET(request: NextRequest) {
         return {
           destination_id: `estimate-${estimateId}`, // Unique identifier
           name: destinationName, // Required: destination name
+          description: description, // Recommended: detailed description
           address: address, // Required: full address
           url: absoluteUrl, // Required: website link
           image: absoluteImageUrl, // Required: image URL
@@ -282,12 +289,14 @@ export async function GET(request: NextRequest) {
  * Meta requires specific field order and format for Destinations catalog
  */
 function generateDestinationsCSVResponse(destinations: MetaDestination[]): NextResponse {
-  // Meta Destinations Catalog CSV headers (required fields first)
+  // Meta Destinations Catalog CSV headers (required fields first, then recommended fields)
   // Required fields: destination_id, name, address, url, image, type
+  // Recommended fields: description (improves catalog quality)
   // Optional fields: product_tags
   const headers = [
     'destination_id',
     'name',
+    'description', // Recommended field for better catalog quality
     'address',
     'url',
     'image',

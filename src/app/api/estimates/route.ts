@@ -279,13 +279,14 @@ export async function GET(request: NextRequest) {
         })
       }
 
-      // Meta Commerce Manager format
+      // Meta Commerce Manager Destinations Catalog format
       if (metaFormat) {
-        const metaProducts = estimates.docs
+        const metaDestinations = estimates.docs
           .filter((estimate: any) => estimate.post && estimate.total && estimate.total > 0)
           .map((estimate: any) => {
             const post = typeof estimate.post === 'object' ? estimate.post : null
             const postId = typeof estimate.post === 'string' ? estimate.post : post?.id || ''
+            const postSlug = post?.slug || postId
             const postTitle = post?.title || 'Property'
             const estimateId = estimate.id
             
@@ -298,6 +299,9 @@ export async function GET(request: NextRequest) {
               : 1
             
             const packageType = estimate.packageType || 'standard'
+            const packageName = estimate.selectedPackage?.package && typeof estimate.selectedPackage.package === 'object'
+              ? estimate.selectedPackage.package.name || packageType
+              : estimate.selectedPackage?.customName || packageType
             
             // Get post meta image - use OG size (1200x630) if available, perfect for Meta Commerce Manager
             const postImage = post?.meta?.image && typeof post.meta.image === 'object'
@@ -321,80 +325,108 @@ export async function GET(request: NextRequest) {
               }
             }
             
-            const estimateLink = `${baseUrl}/estimate/${estimateId}`
-            const description = estimate.description || 
-              `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} stay`
+            // Build post URL - link to post page (not estimate, as destinations are properties)
+            const postUrl = postSlug 
+              ? `${baseUrl}/${postSlug}`
+              : `${baseUrl}/post/${postId}`
             
             // Ensure image URL is absolute HTTPS
-            const absoluteImageUrl = imageUrl.startsWith('http')
-              ? imageUrl
+            let absoluteImageUrl = imageUrl.startsWith('http')
+              ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
               : imageUrl.startsWith('//')
               ? `https:${imageUrl}`
               : `https://${baseUrl.replace(/^https?:\/\//, '')}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
             
+            // Validate image URL format
+            if (!absoluteImageUrl.match(/^https:\/\/.+\..+/)) {
+              absoluteImageUrl = `https://${baseUrl.replace(/^https?:\/\//, '')}/placeholder-image.jpg`
+            }
+            
             // Ensure link URL is absolute HTTPS
-            const absoluteLink = estimateLink.startsWith('http')
-              ? estimateLink
-              : `https://${baseUrl.replace(/^https?:\/\//, '')}${estimateLink.startsWith('/') ? estimateLink : `/${estimateLink}`}`
+            let absoluteUrl = postUrl.startsWith('http')
+              ? postUrl.replace(/^http:/, 'https:') // Force HTTPS
+              : `https://${baseUrl.replace(/^https?:\/\//, '')}${postUrl.startsWith('/') ? postUrl : `/${postUrl}`}`
             
-            // Meta requires price format: "NUMBER CURRENCY" (e.g., "5400.00 ZAR")
-            const priceValue = (estimate.total || 0).toFixed(2)
-            const formattedPrice = `${priceValue} ZAR`
+            // Validate link URL format
+            if (!absoluteUrl.match(/^https:\/\/.+\..+/)) {
+              console.warn(`Invalid URL for estimate ${estimateId}: ${absoluteUrl}`)
+            }
             
-            // Ensure description is not empty and has minimum length
-            const validDescription = description && description.trim().length > 0
-              ? description.trim()
-              : `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation`
+            // Build destination name (required field)
+            const destinationName = postTitle && postTitle.trim().length > 0
+              ? postTitle.trim()
+              : `Property ${postId || estimateId}`
             
-            // Ensure title is not empty
-            const validTitle = postTitle && postTitle.trim().length > 0
-              ? `${postTitle} - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
-              : `Property Estimate - ${duration} ${duration === 1 ? 'Night' : 'Nights'}`
-
-            // Build internal labels for organizing products in Meta Commerce Manager
-            const internalLabels: string[] = []
-            if (packageType) internalLabels.push(`package-${packageType}`)
-            if (duration) internalLabels.push(`duration-${duration}`)
-            if (postId) internalLabels.push(`post-${postId}`)
+            // Build address (required field) - using placeholder since address is not stored in Post
+            // Format: "Street Address, City, State/Province, Postal Code, Country"
+            const address = `${postTitle || 'Property'}, South Africa`
+            
+            // Build description (recommended field) - use post meta description or generate from post title and duration
+            const postMetaDesc = post?.meta?.description || ''
+            const description = postMetaDesc || 
+              `${postTitle} - ${duration} ${duration === 1 ? 'night' : 'nights'} accommodation stay in South Africa`
+            
+            // Build product tags (comma-separated, no spaces, no special characters)
+            // Format: "tag1,tag2,tag3" (no emojis or special formatting)
+            const tags: string[] = []
+            if (packageType) {
+              // Clean package name - remove emojis and special characters
+              const cleanPackageName = packageName.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()
+              tags.push(`package-${cleanPackageName}`)
+            }
+            tags.push(`duration-${duration}`)
+            if (postId) {
+              tags.push(`post-${postId}`)
+            }
             if (estimate.status) {
-              internalLabels.push(`status-${estimate.status}`)
+              tags.push(`status-${estimate.status}`)
             }
             if (estimate.paymentStatus) {
-              internalLabels.push(`payment-${estimate.paymentStatus}`)
+              tags.push(`payment-${estimate.paymentStatus}`)
             }
-            const internalLabel = internalLabels.join(',')
+            const productTags = tags.join(',')
 
             return {
-              id: `estimate-${estimateId}`,
-              title: validTitle,
-              description: validDescription,
-              availability: 'in stock',
-              condition: 'new',
-              price: formattedPrice,
-              currency: 'ZAR',
-              link: absoluteLink,
-              image_link: absoluteImageUrl,
-              brand: 'Simpleplek',
-              product_type: packageType || 'accommodation',
-              internal_label: internalLabel, // Internal labels for filtering and product sets
-              custom_label_0: packageType || '',
-              custom_label_1: duration.toString(),
-              custom_label_2: postId || '',
-              custom_label_3: estimateId,
+              destination_id: `estimate-${estimateId}`, // Unique identifier
+              name: destinationName, // Required: destination name
+              description: description, // Recommended: detailed description
+              address: address, // Required: full address
+              url: absoluteUrl, // Required: website link
+              image: absoluteImageUrl, // Required: image URL
+              type: 'accommodation', // Required: destination type
+              product_tags: productTags, // Optional: comma-separated tags
             }
           })
         
+        // Meta Destinations Catalog CSV headers (required fields first, then recommended fields)
         const metaHeaders = [
-          'id', 'title', 'description', 'availability', 'condition', 'price', 'currency',
-          'link', 'image_link', 'brand', 'product_type', 'internal_label',
-          'custom_label_0', 'custom_label_1', 'custom_label_2', 'custom_label_3'
+          'destination_id',
+          'name',
+          'description', // Recommended field for better catalog quality
+          'address',
+          'url',
+          'image',
+          'type',
+          'product_tags',
         ]
+        
+        // Validate each destination before adding to CSV
+        const validDestinations = metaDestinations.filter(destination => {
+          const hasDestinationId = !!destination.destination_id && destination.destination_id.trim().length > 0
+          const hasName = !!destination.name && destination.name.trim().length > 0
+          const hasAddress = !!destination.address && destination.address.trim().length > 0
+          const hasUrl = !!destination.url && destination.url.startsWith('https://')
+          const hasImage = !!destination.image && destination.image.startsWith('https://')
+          const hasType = !!destination.type && destination.type.trim().length > 0
+          
+          return hasDestinationId && hasName && hasAddress && hasUrl && hasImage && hasType
+        })
         
         const csvRows = [
           metaHeaders.join(','),
-          ...metaProducts.map(product =>
+          ...validDestinations.map(destination =>
             metaHeaders.map(header => {
-              const value = product[header as keyof typeof product] || ''
+              const value = destination[header as keyof typeof destination] || ''
               const stringValue = String(value)
               if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
                 return `"${stringValue.replace(/"/g, '""')}"`
@@ -408,7 +440,9 @@ export async function GET(request: NextRequest) {
           status: 200,
           headers: {
             'Content-Type': 'text/csv; charset=utf-8',
-            'Cache-Control': 'no-cache',
+            'Content-Disposition': 'attachment; filename="meta-destinations-catalog.csv"',
+            'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+            'Access-Control-Allow-Origin': '*', // Allow Meta's crawler to access
           },
         })
       }
