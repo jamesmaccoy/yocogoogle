@@ -197,6 +197,25 @@ export interface Booking {
    * Transactions for addons purchased for this booking
    */
   addonTransactions?: (string | YocoTransaction)[] | null;
+  /**
+   * Comments and activity log (inherited from estimate if converted)
+   */
+  activity?:
+    | {
+        user: string | User;
+        /**
+         * Cached user name for display
+         */
+        userName?: string | null;
+        type: 'comment' | 'viewed' | 'declined' | 'approved';
+        /**
+         * Comment or activity description
+         */
+        content?: string | null;
+        timestamp: string;
+        id?: string | null;
+      }[]
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1002,6 +1021,25 @@ export interface Estimate {
    * Additional notes about this estimate request
    */
   notes?: string | null;
+  /**
+   * Comments and activity log for this estimate
+   */
+  activity?:
+    | {
+        user: string | User;
+        /**
+         * Cached user name for display
+         */
+        userName?: string | null;
+        type: 'comment' | 'viewed' | 'declined' | 'approved';
+        /**
+         * Comment or activity description
+         */
+        content?: string | null;
+        timestamp: string;
+        id?: string | null;
+      }[]
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1332,6 +1370,16 @@ export interface BookingsSelect<T extends boolean = true> {
   cleaningSchedule?: T;
   cleaningSource?: T;
   addonTransactions?: T;
+  activity?:
+    | T
+    | {
+        user?: T;
+        userName?: T;
+        type?: T;
+        content?: T;
+        timestamp?: T;
+        id?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1365,6 +1413,16 @@ export interface EstimatesSelect<T extends boolean = true> {
   customerName?: T;
   customerEmail?: T;
   notes?: T;
+  activity?:
+    | T
+    | {
+        user?: T;
+        userName?: T;
+        type?: T;
+        content?: T;
+        timestamp?: T;
+        id?: T;
+      };
   updatedAt?: T;
   createdAt?: T;
 }
