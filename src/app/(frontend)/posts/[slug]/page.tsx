@@ -87,16 +87,16 @@ export default async function Post({ params: paramsPromise }: Args) {
             baseRate={postBaseRate}
             postTitle={postTitle}
             postDescription={postDescription}
-            relatedPosts={post.relatedPosts}
+            relatedPosts={post.relatedPosts 
+              ? post.relatedPosts.map((rp: any) => 
+                  typeof rp === 'object' && rp !== null
+                    ? { id: rp.id, title: rp.title || undefined, slug: rp.slug || undefined }
+                    : rp
+                )
+              : undefined}
+            postContent={post.content}
           />
         </Suspense>
-          <div className="text-center py-8">
-            <h2 className="text-2xl font-semibold mb-4">Article Content Available in AI Assistant</h2>
-            <p className="text-muted-foreground">
-              Use the AI Assistant (bottom right) to interact with this article content. 
-              Ask questions, get summaries, or explore specific topics from the article.
-            </p>
-          </div>
           {post.relatedPosts && post.relatedPosts.length > 0 && (
             <RelatedPosts
               className="mt-12 max-w-[52rem] lg:grid lg:grid-cols-subgrid col-start-1 col-span-3 grid-rows-[2fr]"

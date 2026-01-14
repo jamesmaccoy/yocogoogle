@@ -70,6 +70,7 @@ interface SmartEstimateBlockProps {
   postTitle?: string
   postDescription?: string
   relatedPosts?: Array<{ id?: string; title?: string; slug?: string } | string>
+  postContent?: any
 }
 
 const QuickActions = ({ 
@@ -204,7 +205,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   baseRate,
   postTitle = "this property",
   postDescription = "",
-  relatedPosts = []
+  relatedPosts = [],
+  postContent
 }) => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
@@ -311,6 +313,53 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const finalTranscriptRef = useRef('')
   const activeThreadRef = useRef(0)
   const historyKeyRef = useRef<string | null>(null)
+
+  // Extract plain text from Lexical editor content structure
+  const extractPlainTextFromContent = useCallback((content: any, depth = 0): string => {
+    if (content == null) return ''
+    if (typeof content === 'string') return content
+    if (typeof content === 'number' || typeof content === 'boolean') return String(content)
+    if (Array.isArray(content)) {
+      return content.map((c) => extractPlainTextFromContent(c, depth + 1)).filter(Boolean).join('\n')
+    }
+    if (typeof content === 'object') {
+      // Common rich text shapes: { text }, { children }, blocks with { value }, etc.
+      const textParts: string[] = []
+      // Handle explicit line breaks from lexical
+      if ((content as any).type === 'linebreak') {
+        textParts.push('\n')
+      }
+      // Handle autolink nodes that might only carry a URL
+      if ((content as any).type === 'autolink') {
+        const url = (content as any)?.fields?.url
+        if (typeof url === 'string' && url.length > 0) {
+          textParts.push(url)
+        }
+      }
+      if (typeof (content as any).text === 'string') {
+        textParts.push((content as any).text)
+      }
+      if ((content as any).children) {
+        textParts.push(extractPlainTextFromContent((content as any).children, depth + 1))
+      }
+      // Some Payload blocks store content under fields like "content", "value", or "fields"
+      const candidateKeys = ['content', 'value', 'fields', 'data']
+      for (const key of candidateKeys) {
+        if ((content as any)[key] && typeof (content as any)[key] !== 'function') {
+          textParts.push(extractPlainTextFromContent((content as any)[key], depth + 1))
+        }
+      }
+      // Fallback: scan other string props
+      for (const [k, v] of Object.entries(content as Record<string, unknown>)) {
+        if (k === 'text' || candidateKeys.includes(k) || k === 'children') continue
+        if (typeof v === 'string' && v.trim().length > 0) {
+          textParts.push(v)
+        }
+      }
+      return textParts.filter(Boolean).join('\n')
+    }
+    return ''
+  }, [])
 
   const persistHistoryEntries = useCallback((threadId: number, entries: Message[]) => {
     if (typeof window === 'undefined' || !historyKeyRef.current || entries.length === 0) return
@@ -2315,6 +2364,13 @@ ${packages.map((pkg: any, index: number) =>
             .join(', ')
         : 'None'
 
+      // Extract plain text from post content
+      const fullContentTextRaw = extractPlainTextFromContent(postContent)
+      // Limit to a reasonable length to avoid token overuse while keeping relevance
+      const fullContentText = (fullContentTextRaw || 'No content available').split('\n').map((l: string) => l.trim()).filter(Boolean).join('\n')
+      const CONTENT_LIMIT = 60000
+      const limitedContentText = fullContentText.length > CONTENT_LIMIT ? fullContentText.slice(0, CONTENT_LIMIT) + '\n[...truncated...]' : fullContentText
+
       const contextString = `
 Property Context:
 - Title: ${postTitle}
@@ -2322,6 +2378,9 @@ Property Context:
 - Base Rate: R${baseRate}
 - Post ID: ${postId}
 - Related Posts: ${relatedPostsList}
+
+Article Content:
+${limitedContentText}
 
 Current Booking State:
 - Selected Package: ${selectedPackage?.name || 'None'}
