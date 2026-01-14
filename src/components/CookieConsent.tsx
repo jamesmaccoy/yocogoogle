@@ -136,7 +136,7 @@ export function CookieConsent() {
 // Initialize Meta Pixel after consent
 function initializeMetaPixel() {
   // Get pixel ID from window or use default
-  const pixelId = (typeof window !== 'undefined' && (window as any).__META_PIXEL_ID__) || '2659582847593179'
+  const pixelId = (typeof window !== 'undefined' && (window as any).__META_PIXEL_ID__) || '1102454273276257'
   
   if (typeof window === 'undefined' || (window as any).fbq) {
     return // Already initialized or server-side

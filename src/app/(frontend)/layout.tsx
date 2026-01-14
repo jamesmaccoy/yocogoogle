@@ -28,8 +28,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Google Ads conversion tag ID
   const googleAdsId = process.env.NEXT_PUBLIC_GOOGLE_ADS || 'AW-684914935'
   // Meta Pixel ID - use the pixel ID from your Meta Business account
-  // Default to the pixel ID shown in the error: 2659582847593179
-  const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || '2659582847593179'
+  // Default to the organization's Meta Pixel ID: 1102454273276257
+  const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || '1102454273276257'
 
   return (
     <html className={cn(GeistSans.variable, GeistMono.variable)} lang="en" suppressHydrationWarning>

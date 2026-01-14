@@ -8,7 +8,7 @@ import { sendMetaEvent } from '@/lib/metaConversions'
  * Add ?test=true to send a test event to Meta
  */
 export async function GET(request: Request) {
-  const pixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || '2659582847593179'
+  const pixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || '1102454273276257'
   const accessToken = process.env.META_ACCESS_TOKEN
   
   const url = new URL(request.url)
