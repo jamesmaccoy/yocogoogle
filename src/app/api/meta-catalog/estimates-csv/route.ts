@@ -249,29 +249,51 @@ export async function GET(request: NextRequest) {
         
         // Build address (required field) - using placeholder since address is not stored in Post
         // Format: "Street Address, City, State/Province, Postal Code, Country"
+        // Meta requires a complete address format
         // Note: If you need specific addresses, add an address field to the Post collection
-        // For now, using a generic South African address format
-        const address = `${postTitle || 'Property'}, South Africa`
+        const address = `${postTitle || 'Property'}, Cape Town, Western Cape, South Africa`
         
         // Build product tags (comma-separated, no spaces, no special characters)
         // Format: "tag1,tag2,tag3" (no emojis or special formatting)
+        // Meta requires tags to be alphanumeric with hyphens/underscores only
         const tags: string[] = []
         if (packageType) {
-          // Clean package name - remove emojis and special characters
-          const cleanPackageName = packageName.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').toLowerCase()
-          tags.push(`package-${cleanPackageName}`)
+          // Clean package name - remove emojis and special characters, keep only alphanumeric and hyphens
+          const cleanPackageName = packageName
+            .replace(/[^\w\s-]/g, '') // Remove special characters except word chars, spaces, hyphens
+            .trim()
+            .replace(/\s+/g, '-') // Replace spaces with hyphens
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, '') // Final cleanup - only alphanumeric and hyphens
+          if (cleanPackageName) {
+            tags.push(`package-${cleanPackageName}`)
+          }
         }
-        tags.push(`duration-${duration}`)
+        if (duration) {
+          tags.push(`duration-${duration}`)
+        }
         if (postId) {
-          tags.push(`post-${postId}`)
+          // Ensure postId is alphanumeric only
+          const cleanPostId = postId.replace(/[^a-z0-9-]/gi, '')
+          if (cleanPostId) {
+            tags.push(`post-${cleanPostId}`)
+          }
         }
         if (estimate.status) {
-          tags.push(`status-${estimate.status}`)
+          // Status values should be valid (pending, approved, rejected, completed)
+          const validStatuses = ['pending', 'approved', 'rejected', 'completed']
+          if (validStatuses.includes(estimate.status)) {
+            tags.push(`status-${estimate.status}`)
+          }
         }
         if (estimate.paymentStatus) {
-          tags.push(`payment-${estimate.paymentStatus}`)
+          // Payment status values should be valid (paid, unpaid)
+          const validPaymentStatuses = ['paid', 'unpaid']
+          if (validPaymentStatuses.includes(estimate.paymentStatus)) {
+            tags.push(`payment-${estimate.paymentStatus}`)
+          }
         }
-        const productTags = tags.join(',')
+        const productTags = tags.length > 0 ? tags.join(',') : undefined
         
         // Validate all required fields before adding to catalog
         if (!estimateId || !destinationName || !address || !absoluteUrl || !absoluteImageUrl) {
@@ -292,7 +314,7 @@ export async function GET(request: NextRequest) {
           address: address, // Required: full address
           url: absoluteUrl, // Required: website link
           image: absoluteImageUrl, // Required: image URL
-          type: 'accommodation', // Required: destination type
+          type: 'hotel', // Required: destination type (valid values: hotel, flight, destination, event, restaurant, etc.)
           product_tags: productTags, // Optional: comma-separated tags
         }
       })
