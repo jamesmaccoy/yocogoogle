@@ -789,6 +789,7 @@ INSTRUCTIONS:
 11. Use emojis sparingly for a friendly tone
 12. When user asks about packages without dates, suggest they select dates first for better recommendations
 13. If user asks about pro packages but has standard entitlement, suggest upgrading to pro
+14. If Related Posts are available and the user's question suggests they might be interested in similar properties or related content, naturally suggest checking out the related posts. For example, if they ask about similar properties, alternatives, or related experiences, mention the related posts by name.
 
 Respond to the user's message naturally, as if you're a knowledgeable booking assistant who knows this property well.` 
     : 
@@ -800,6 +801,11 @@ USER'S DATA:
  - Available Packages: ${packagesInfo.length}
  - Available Addons: ${packagesInfo.filter(pkg => pkg.category === 'addon' && pkg.isEnabled).length}
  - Page Summary: ${userContext.currentBooking?.postDetails?.description || 'No additional property summary'}
+
+INSTRUCTIONS:
+1. Be helpful, concise, and guide users to make great booking decisions
+2. If the user's message mentions Related Posts or asks about similar properties, alternatives, or related content, and Related Posts are available in the context, naturally suggest checking them out by name
+3. When suggesting related posts, be conversational and explain why they might be relevant to the user's interests
 
 Be helpful, concise, and guide users to make great booking decisions.`
 

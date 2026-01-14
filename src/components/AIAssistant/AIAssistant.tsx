@@ -1276,12 +1276,24 @@ ${bookingContext.property?.content ? JSON.stringify(bookingContext.property.cont
 Finish with a concise, guest-friendly blurb.`
           : messageToSend
 
+        // Format related posts with titles and slugs for better AI reference
+        const relatedPostsFormatted = Array.isArray(postContext.post?.relatedPosts) && postContext.post.relatedPosts.length > 0
+          ? postContext.post.relatedPosts
+              .filter((p: any) => typeof p === 'object' && p !== null)
+              .map((p: any) => {
+                const title = p.title || 'Untitled'
+                const slug = p.slug ? ` (${p.slug})` : ''
+                return `${title}${slug}`
+              })
+              .join(', ')
+          : 'None'
+
         const contextString = `
 Article Context:
 - Title: ${postContext.post?.title || 'Unknown title'}
 - Description: ${postContext.post?.description || 'No description'}
 - Base Rate: ${postContext.post?.baseRate ? `R${postContext.post.baseRate}` : 'Not set'}
-- Related Posts: ${postContext.post?.relatedPosts?.map((p: any) => p.title || p).join(', ') || 'None'}
+- Related Posts: ${relatedPostsFormatted}
 - Categories: ${categoriesLine}
 - Hero Image: ${heroSummary}
 ${sourcesBlock}

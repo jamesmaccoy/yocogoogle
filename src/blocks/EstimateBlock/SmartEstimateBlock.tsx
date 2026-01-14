@@ -10,7 +10,8 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2 } from 'lucide-react'
+import { Bot, Send, Calendar, CalendarIcon, Package, Sparkles, Loader2, User, Bookmark } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion'
 import { Loader } from '@/components/ai-elements/loader'
@@ -68,6 +69,7 @@ interface SmartEstimateBlockProps {
   baseRate: number
   postTitle?: string
   postDescription?: string
+  relatedPosts?: Array<{ id?: string; title?: string; slug?: string } | string>
 }
 
 const QuickActions = ({ 
@@ -201,7 +203,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   postId,
   baseRate,
   postTitle = "this property",
-  postDescription = ""
+  postDescription = "",
+  relatedPosts = []
 }) => {
   const { currentUser } = useUserContext()
   const isLoggedIn = !!currentUser
@@ -224,6 +227,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
+  const [earlyCheckin, setEarlyCheckin] = useState(false)
   
   // Booking states
   const [isBooking, setIsBooking] = useState(false)
@@ -261,7 +265,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   // Suggested dates state (for showing near input)
   const [suggestedDates, setSuggestedDates] = useState<Array<{ startDate: string; endDate: string; duration: number }>>([])
   // Proactive date suggestions for PromptInput header
-  const [dateSuggestions, setDateSuggestions] = useState<Array<{ startDate: Date; endDate: Date; label: string }>>([])
+  const [dateSuggestions, setDateSuggestions] = useState<Array<{ startDate: Date; endDate: Date; label: string; dayRange?: string }>>([])
   
   // Package loading state to prevent multiple API calls
   const [loadingPackages, setLoadingPackages] = useState(false)
@@ -464,7 +468,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       const unavailableDatesSet = new Set(unavailableDates)
       const today = new Date()
       today.setHours(0, 0, 0, 0)
-      const suggestions: Array<{ startDate: Date; endDate: Date; label: string }> = []
+      const suggestions: Array<{ startDate: Date; endDate: Date; label: string; dayRange?: string }> = []
 
       // Helper to normalize dates to midnight UTC (matching check-availability.ts)
       const normalizeDate = (date: Date): Date => {
@@ -518,10 +522,13 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
               if (!hasConflict(startDate, endDate)) {
                 const startStr = format(startDate, 'MMM d')
                 const endStr = format(endDate, 'MMM d')
+                const startDay = format(startDate, 'EEE')
+                const endDay = format(endDate, 'EEE')
                 suggestions.push({
                   startDate,
                   endDate,
                   label: `${startStr} - ${endStr}`,
+                  dayRange: `${startDay} - ${endDay}`,
                 })
                 found = true
                 break
@@ -2296,12 +2303,25 @@ ${packages.map((pkg: any, index: number) =>
         ? Math.ceil((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (1000 * 60 * 60 * 24))
         : duration)
       
+      // Format related posts with titles and slugs for better AI reference
+      const relatedPostsList = Array.isArray(relatedPosts) && relatedPosts.length > 0
+        ? relatedPosts
+            .filter((p: any) => typeof p === 'object' && p !== null)
+            .map((p: any) => {
+              const title = p.title || 'Untitled'
+              const slug = p.slug ? ` (${p.slug})` : ''
+              return `${title}${slug}`
+            })
+            .join(', ')
+        : 'None'
+
       const contextString = `
 Property Context:
 - Title: ${postTitle}
 - Description: ${postDescription}
 - Base Rate: R${baseRate}
 - Post ID: ${postId}
+- Related Posts: ${relatedPostsList}
 
 Current Booking State:
 - Selected Package: ${selectedPackage?.name || 'None'}
@@ -2392,31 +2412,65 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
     if (message.type === 'package_suggestion') {
       const { packages: suggestedPackages } = message.data || { packages: [] }
       return (
-        <Message key={index} from="assistant">
-          <MessageContent>
-            <MessageResponse>{message.content || 'Here are the available packages:'}</MessageResponse>
-            <div className="grid gap-2 mt-4">
-              {suggestedPackages.map((pkg: Package, pkgIndex: number) => (
-                <PackageCard
-                  key={`${pkg.id}-${pkgIndex}`}
-                  package={pkg}
-                  duration={duration}
-                  baseRate={baseRate}
-                  isSelected={selectedPackage?.id === pkg.id}
-                  onSelect={() => {
-                    setSelectedPackage(pkg)
-                    const confirmMessage: Message = {
-                      role: 'assistant',
-                      content: `Great choice! You've selected "${pkg.name}". This package includes: ${pkg.features.join(', ')}. Would you like to proceed with booking or do you have any questions?`,
-                      type: 'text'
-                    }
-                    appendMessageToThread(activeThreadRef.current, confirmMessage)
-                  }}
-                />
-              ))}
-            </div>
-          </MessageContent>
-        </Message>
+        <>
+          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-6 bg-zinc-100 text-slate-900 mb-4">
+            {message.content || 'Here are the available packages:'}
+          </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className="mt-4 w-full max-w-md"
+          >
+            {suggestedPackages.map((pkg: Package, pkgIndex: number) => (
+              <motion.div
+                key={`${pkg.id}-${pkgIndex}`}
+                whileHover={{ scale: 1.02 }}
+                className="cursor-pointer bg-white text-slate-950 shadow-sm border border-zinc-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow group mb-4"
+                onClick={() => {
+                  setSelectedPackage(pkg)
+                  const confirmMessage: Message = {
+                    role: 'assistant',
+                    content: `Great choice! You've selected "${pkg.name}". This package includes: ${pkg.features.join(', ')}. Would you like to proceed with booking or do you have any questions?`,
+                    type: 'text'
+                  }
+                  appendMessageToThread(activeThreadRef.current, confirmMessage)
+                }}
+              >
+                <div className="p-5 border-b border-zinc-100 bg-gradient-to-br from-teal-50/50 to-transparent">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900">
+                        {pkg.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {pkg.description}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-bold text-teal-600">
+                        R{pkg.baseRate || calculateTotal(baseRate, duration, pkg.multiplier).toFixed(0)}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        {pkg.baseRate ? 'Fixed price' : pkg.multiplier === 1 ? 'Base rate' : `${pkg.multiplier}x multiplier`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 bg-white">
+                  <div className="space-y-2">
+                    {pkg.features.slice(0, 3).map((feature, idx) => (
+                      <div key={idx} className="flex items-center text-xs text-slate-600">
+                        <span className="w-1.5 h-1.5 bg-teal-400 rounded-full mr-2"></span>
+                        {typeof feature === 'string' ? feature : (feature as any).feature}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </>
       )
     }
     
@@ -2759,13 +2813,13 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
       )
     }
     
-    // Default text message rendering with Message component
+    // Default text message rendering with Magic Patterns styling
     return (
-      <Message key={index} from={message.role}>
-        <MessageContent>
-          <MessageResponse>{message.content || 'No content'}</MessageResponse>
-        </MessageContent>
-      </Message>
+      <div
+        className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'bg-slate-900 text-white rounded-tr-sm' : 'bg-zinc-100 text-slate-900 rounded-tl-sm'}`}
+      >
+        {message.content || 'No content'}
+      </div>
     )
   }
   
@@ -2952,17 +3006,20 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
   }, [postId, currentUser?.id])
   
   return (
-    <Card className={cn("w-full max-w-2xl mx-auto", className)}>
-      <CardHeader className="border-b">
+    <div className={cn("w-full max-w-[672px] mx-auto bg-zinc-50 text-slate-950 shadow-sm border border-zinc-200 rounded-lg overflow-hidden flex flex-col h-[800px]", className)}>
+      {/* Header */}
+      <div className="flex flex-col border-b border-zinc-200 p-6 bg-white z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            <CardTitle>AI Booking Assistant</CardTitle>
+            <div className="p-1.5 bg-teal-50 rounded-md">
+              <Bot className="h-5 w-5 text-teal-500" />
+            </div>
+            <h3 className="text-xl font-semibold tracking-tight text-slate-900">
+              AI Booking Assistant
+            </h3>
           </div>
           {messages.length > 1 && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <button
               onClick={() => {
                 clearBookingJourney()
                 setMessages([{
@@ -2980,188 +3037,294 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 estimateLoadedRef.current = false
                 journeyLoadedRef.current = false
               }}
-              className="text-xs"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 bg-transparent cursor-pointer px-3 py-1.5 rounded-md transition-colors hover:bg-zinc-100"
             >
               Start Over
-            </Button>
+            </button>
           )}
         </div>
-        <CardDescription>
+        <p className="text-sm text-slate-500 mt-2">
           Get personalized recommendations and book your perfect stay
-        </CardDescription>
-      </CardHeader>
+        </p>
+      </div>
       
-      <CardContent className="p-0">
-        <Conversation className="h-[400px]">
-          <ConversationContent className="p-4">
-            <QuickActions 
-              onAction={handleQuickAction} 
-              hasDates={!!(startDate && endDate)}
-              suggestedDates={suggestedDates}
-            />
-            
-            <div className="space-y-4">
-              {messages.map((message, index) => {
-                const checkpoint = checkpoints.find(cp => cp.messageIndex === index)
-                return (
-                  <React.Fragment key={index}>
-                    {renderMessage(message, index)}
-                    {checkpoint && (
-                      <Checkpoint>
-                        <CheckpointIcon />
-                        <CheckpointTrigger
-                          onClick={() => restoreToCheckpoint(checkpoint)}
-                        >
-                          Restore to estimate checkpoint
-                        </CheckpointTrigger>
-                      </Checkpoint>
-                    )}
-                  </React.Fragment>
-                )
-              })}
-              
-              {isLoading && (
-                <div className="flex w-fit max-w-[85%] rounded-lg bg-muted px-4 py-2 items-center justify-center">
-                  <Loader size={16} />
+      {/* Chat Area */}
+      <div className="flex-1 overflow-hidden relative bg-white">
+        <div className="h-full overflow-y-auto scroll-smooth p-6 space-y-6">
+          {/* Quick Actions */}
+          <div className="flex flex-wrap gap-2">
+            <motion.button
+              whileHover={{ scale: 1.02, backgroundColor: '#f4f4f5' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleQuickAction('select_dates')}
+              className="text-xs font-medium text-slate-700 bg-white cursor-pointer flex items-center h-8 border border-zinc-200 px-3 rounded-full shadow-sm transition-colors"
+            >
+              <Calendar className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+              Select Dates
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02, backgroundColor: '#f4f4f5' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleQuickAction('smart_action')}
+              className="text-xs font-medium text-slate-700 bg-white cursor-pointer flex items-center h-8 border border-zinc-200 px-3 rounded-full shadow-sm transition-colors"
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+              {startDate && endDate ? 'Get Recommendations' : 'Help Me Choose'}
+            </motion.button>
+          </div>
+
+          <AnimatePresence initial={false}>
+            {messages.map((message, index) => {
+              const checkpoint = checkpoints.find(cp => cp.messageIndex === index)
+              return (
+                <React.Fragment key={index}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  >
+                    <div
+                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.role === 'assistant' ? 'bg-teal-50 text-teal-600' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      {message.role === 'assistant' ? (
+                        <Bot className="h-5 w-5" />
+                      ) : (
+                        <User className="h-5 w-5" />
+                      )}
+                    </div>
+
+                    <div
+                      className={`flex flex-col max-w-[85%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      {renderMessage(message, index)}
+                      
+                      {checkpoint && (
+                        <div className="mt-6 mb-2 flex items-center gap-3 w-full opacity-60">
+                          <Bookmark className="h-3.5 w-3.5 text-slate-400" />
+                          <span className="text-xs text-slate-500 font-medium">
+                            Checkpoint restored
+                          </span>
+                          <div className="h-px flex-1 bg-zinc-200"></div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </React.Fragment>
+              )
+            })}
+          </AnimatePresence>
+
+          {isLoading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex gap-4"
+            >
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center">
+                <Bot className="h-5 w-5" />
+              </div>
+              <div className="bg-zinc-100 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1, delay: 0 }}
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full"
+                />
+                <motion.div
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
+                  className="w-1.5 h-1.5 bg-slate-400 rounded-full"
+                />
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </div>
+        
+      {/* Input Area */}
+      <div className="border-t border-zinc-200 bg-white p-4">
+        {!isLoggedIn && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800 mb-2">
+              To use the AI assistant and complete bookings, please log in.
+            </p>
+            <Button size="sm" asChild>
+              <a href="/login">Log In</a>
+            </Button>
+          </div>
+        )}
+
+        {/* Selected Package Summary */}
+        {selectedPackage && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 bg-teal-50/50 border border-teal-100 rounded-lg p-3 flex items-center justify-between"
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-900">
+                  {selectedPackage.name}
+                </span>
+                {areDatesAvailable && (
+                  <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium">
+                    Available
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {startDate && endDate 
+                  ? `${format(startDate, 'MMM dd')} - ${format(endDate, 'MMM dd, yyyy')} • ${duration} ${duration === 1 ? 'night' : 'nights'}`
+                  : 'Select dates to see pricing'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {selectedPackageTotal && (
+                <div className="text-right mr-2">
+                  <div className="text-sm font-bold text-teal-600">R{selectedPackageTotal.toFixed(0)}</div>
+                  <div className="text-[10px] text-slate-400">Total</div>
                 </div>
               )}
+              {isLoggedIn && (
+                <>
+                  <button 
+                    onClick={handleBooking}
+                    disabled={isBooking || !areDatesAvailable || isCheckingAvailability}
+                    className="text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Book Now
+                  </button>
+                  <button 
+                    onClick={handleGoToEstimate}
+                    disabled={isCreatingEstimate}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-zinc-200 hover:bg-zinc-50 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Share
+                  </button>
+                </>
+              )}
             </div>
-          </ConversationContent>
-          <ConversationScrollButton />
-        </Conversation>
-        
-        <div className="border-t p-4">
-          {!isLoggedIn && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800 mb-2">
-                To use the AI assistant and complete bookings, please log in.
-              </p>
-              <Button size="sm" asChild>
-                <a href="/login">Log In</a>
-              </Button>
-            </div>
-          )}
-          
-          {selectedPackage && (
-            <PackageDisplay
-              packageData={{
-                name: selectedPackage.name,
-                description: selectedPackage.description,
-                features: selectedPackage.features,
-                category: selectedPackage.category,
-                minNights: selectedPackage.minNights,
-                maxNights: selectedPackage.maxNights,
-                baseRate: selectedPackage.baseRate,
-                multiplier: selectedPackage.multiplier
-              }}
-              duration={duration}
-              baseRate={baseRate}
-              startDate={startDate}
-              endDate={endDate}
-              variant="estimate"
-              className="mb-4"
-              isCheckingAvailability={isCheckingAvailability}
-              areDatesAvailable={areDatesAvailable}
-              isBooking={isBooking}
-              bookingError={bookingError}
-              isLoggedIn={isLoggedIn}
-              onBooking={handleBooking}
-              onGoToEstimate={handleGoToEstimate}
-              isCreatingEstimate={isCreatingEstimate}
-              total={selectedPackageTotal ?? undefined}
-            />
-          )}
-          
-          <PromptInput 
-            onSubmit={handlePromptSubmit} 
-            className="mt-4"
+          </motion.div>
+        )}
+
+        {/* Booking Addon Toggle */}
+        {selectedPackage && startDate && endDate && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-4 flex items-center justify-between p-3 bg-white border border-zinc-200 rounded-lg hover:border-zinc-300 transition-colors"
           >
-            {dateSuggestions.length > 0 && (
-              <PromptInputHeader className="pb-2">
-                <Suggestions>
-                  {dateSuggestions.map((suggestion, idx) => (
-                    <Suggestion
-                      key={idx}
-                      suggestion={suggestion.label}
-                      onClick={(label) => {
-                        const fromStr = format(suggestion.startDate, 'MMM d, yyyy')
-                        const toStr = format(suggestion.endDate, 'MMM d, yyyy')
-                        const nights = Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000))
-                        setInput(`Check availability for ${fromStr} to ${toStr} (${nights} ${nights === 1 ? 'night' : 'nights'})`)
-                      }}
-                      className="text-xs"
-                    />
-                  ))}
-                </Suggestions>
-              </PromptInputHeader>
-            )}
-            <PromptInputBody>
-              <PromptInputTextarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)}
-                placeholder={
-                  isListening 
-                    ? "I'm listening..." 
-                    : isLoggedIn 
-                      ? "Ask me anything about booking..."
-                      : "Ask about packages (log in for full AI assistance)..."
-                }
-                disabled={isLoading || isListening || !isLoggedIn}
-                className="pr-12"
-              />
-            </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools>
-                <PromptInputSpeechButton
-                  onTranscriptionChange={(text: string) => {
-                    setInput(text)
-                    finalTranscriptRef.current = text
-                  }}
-                  textareaRef={textareaRef}
-                />
-              </PromptInputTools>
-              <PromptInputSubmit 
-                status={isLoading ? 'streaming' : 'ready'} 
-                disabled={!input.trim() || isListening || !isLoggedIn} 
-              />
-            </PromptInputFooter>
-          </PromptInput>
-          {micError && <p className="text-sm text-destructive mt-2">{micError}</p>}
-          {suggestedDates.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs text-muted-foreground mb-2">Suggested dates:</p>
-              <Suggestions>
-                {suggestedDates.map((suggestion, idx) => {
-                  const suggestionStart = new Date(suggestion.startDate)
-                  const suggestionEnd = new Date(suggestion.endDate)
-                  
-                  if (isNaN(suggestionStart.getTime()) || isNaN(suggestionEnd.getTime())) {
-                    return null
-                  }
-                  
-                  const suggestionText = `${format(suggestionStart, 'MMM dd')} - ${format(suggestionEnd, 'MMM dd')}`
-                  
-                  return (
-                    <Suggestion
-                      key={idx}
-                      suggestion={suggestionText}
-                      onClick={() => {
-                        setStartDate(suggestionStart)
-                        setEndDate(suggestionEnd)
-                        setDuration(suggestion.duration)
-                        preservedStartDateRef.current = suggestionStart
-                        setSuggestedDates([]) // Clear suggestions after selection
-                        checkDateAvailability(suggestionStart, suggestionEnd, activeThreadRef.current, false)
-                      }}
-                    />
-                  )
-                })}
-              </Suggestions>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-teal-50 rounded-md">
+                <Calendar className="h-4 w-4 text-teal-600" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-900">
+                  Early Check-in
+                </div>
+                <div className="text-xs text-slate-500">
+                  Arrive from 12:00 PM (+R50)
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+            <button
+              onClick={() => setEarlyCheckin(!earlyCheckin)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${earlyCheckin ? 'bg-teal-500' : 'bg-zinc-200'}`}
+            >
+              <motion.span
+                layout
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${earlyCheckin ? 'translate-x-6' : 'translate-x-1'}`}
+              />
+            </button>
+          </motion.div>
+        )}
+
+        {/* Date Suggestions */}
+        {dateSuggestions.length > 0 && (
+          <div className="mb-3 overflow-x-auto scrollbar-none pb-1">
+            <div className="flex gap-2 w-max">
+              {dateSuggestions.map((suggestion, i) => {
+                const startDay = format(suggestion.startDate, 'EEE')
+                const endDay = format(suggestion.endDate, 'EEE')
+                const dateRange = `${format(suggestion.startDate, 'MMM dd')} - ${format(suggestion.endDate, 'MMM dd')}`
+                const dayRange = `${startDay} - ${endDay}`
+                
+                return (
+                  <motion.button
+                    key={i}
+                    whileHover={{ scale: 1.05, backgroundColor: '#f0fdfa', borderColor: '#99f6e4' }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      setStartDate(suggestion.startDate)
+                      setEndDate(suggestion.endDate)
+                      setDuration(Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000)))
+                      preservedStartDateRef.current = suggestion.startDate
+                      checkDateAvailability(suggestion.startDate, suggestion.endDate, activeThreadRef.current, false)
+                    }}
+                    className="text-xs font-medium text-slate-600 bg-white border border-zinc-200 px-3 py-2 rounded-full transition-colors whitespace-nowrap hover:text-teal-700 flex flex-col items-center gap-0.5"
+                  >
+                    <span className="font-semibold">{dateRange}</span>
+                    <span className="text-[10px] text-slate-400">{dayRange}</span>
+                  </motion.button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} className="relative">
+          <div className="relative flex items-end gap-2 bg-white border border-zinc-300 rounded-xl px-3 py-3 shadow-sm focus-within:ring-2 focus-within:ring-teal-500/20 focus-within:border-teal-500 transition-all">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSubmit(e)
+                }
+              }}
+              placeholder={isListening 
+                ? "I'm listening..." 
+                : isLoggedIn 
+                  ? "Ask me anything about booking..."
+                  : "Ask about packages (log in for full AI assistance)..."}
+              disabled={isLoading || isListening || !isLoggedIn}
+              className="w-full max-h-[120px] min-h-[24px] bg-transparent border-0 p-0 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-0 resize-none leading-6"
+              rows={1}
+              style={{ height: 'auto', minHeight: '24px' }}
+            />
+            <div className="flex items-center gap-2 pb-0.5">
+              <button
+                type="button"
+                onClick={isListening ? stopListening : startListening}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-zinc-100 transition-colors"
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading || isListening || !isLoggedIn}
+                className={`p-1.5 rounded-md transition-all ${input.trim() && !isLoading && !isListening && isLoggedIn ? 'bg-teal-500 text-white shadow-sm hover:bg-teal-600' : 'bg-zinc-100 text-zinc-300 cursor-not-allowed'}`}
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div className="text-[10px] text-center text-slate-400 mt-2">
+            AI can make mistakes. Please double check important info.
+          </div>
+        </form>
+        {micError && <p className="text-sm text-destructive mt-2 text-center">{micError}</p>}
+      </div>
+    </div>
   )
 } 

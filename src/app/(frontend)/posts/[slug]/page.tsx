@@ -87,6 +87,7 @@ export default async function Post({ params: paramsPromise }: Args) {
             baseRate={postBaseRate}
             postTitle={postTitle}
             postDescription={postDescription}
+            relatedPosts={post.relatedPosts}
           />
         </Suspense>
           <div className="text-center py-8">
