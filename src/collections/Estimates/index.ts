@@ -542,6 +542,62 @@ export const Estimate: CollectionConfig = {
         description: 'Additional notes about this estimate request'
       },
     },
+    {
+      name: 'activity',
+      type: 'array',
+      label: 'Activity',
+      required: false,
+      admin: {
+        position: 'sidebar',
+        description: 'Comments and activity log for this estimate'
+      },
+      fields: [
+        {
+          name: 'user',
+          type: 'relationship',
+          relationTo: 'users',
+          required: true,
+        },
+        {
+          name: 'userName',
+          type: 'text',
+          required: false,
+          admin: {
+            description: 'Cached user name for display'
+          },
+        },
+        {
+          name: 'type',
+          type: 'select',
+          required: true,
+          options: [
+            { label: 'Comment', value: 'comment' },
+            { label: 'Viewed', value: 'viewed' },
+            { label: 'Declined', value: 'declined' },
+            { label: 'Approved', value: 'approved' },
+          ],
+          defaultValue: 'comment',
+        },
+        {
+          name: 'content',
+          type: 'textarea',
+          required: false,
+          admin: {
+            description: 'Comment or activity description'
+          },
+        },
+        {
+          name: 'timestamp',
+          type: 'date',
+          required: true,
+          admin: {
+            date: {
+              pickerAppearance: 'dayAndTime',
+            },
+          },
+        },
+      ],
+    },
   ],
   hooks: {
     beforeChange: [

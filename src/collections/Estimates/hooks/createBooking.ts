@@ -83,6 +83,8 @@ export const createBookingHook: CollectionAfterChangeHook = async ({
         paymentStatus: 'paid',
         selectedPackage: resolvedSelectedPackage || doc.selectedPackage,
         slug: doc.slug,
+        // Transfer activity from estimate to booking
+        activity: doc.activity && Array.isArray(doc.activity) ? doc.activity : [],
       },
       req,
     })

@@ -22,7 +22,16 @@ import { UserIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 // Import package suggestion system
 import {
@@ -434,6 +443,10 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   const [shareLink, setShareLink] = useState<string>('')
   const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [isLoadingShareLink, setIsLoadingShareLink] = useState(false)
+  const [activity, setActivity] = useState<any[]>([])
+  const [commentDialogOpen, setCommentDialogOpen] = useState(false)
+  const [commentText, setCommentText] = useState('')
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
 
   // Fetch share link token
   useEffect(() => {
@@ -484,6 +497,81 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
       })
     } else {
       copyShareLink()
+    }
+  }
+
+  // Load activity from estimate
+  useEffect(() => {
+    const estimateData = data as any
+    if (estimateData?.activity && Array.isArray(estimateData.activity)) {
+      setActivity(estimateData.activity)
+    }
+  }, [data])
+
+  // Add comment handler
+  const handleAddComment = async () => {
+    if (!commentText.trim() || !data?.id) return
+
+    setIsSubmittingComment(true)
+    try {
+      const res = await fetch(`/api/estimates/${data.id}/activity`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          type: 'comment',
+          content: commentText.trim(),
+        }),
+      })
+
+      if (res.ok) {
+        const result = await res.json()
+        setActivity(result.activity || [])
+        setCommentText('')
+        setCommentDialogOpen(false)
+      } else {
+        throw new Error('Failed to add comment')
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error)
+      alert('Failed to add comment. Please try again.')
+    } finally {
+      setIsSubmittingComment(false)
+    }
+  }
+
+  // Handle decline
+  const handleDecline = async () => {
+    if (!data?.id) return
+
+    if (!confirm('Are you sure you want to decline this estimate?')) {
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/estimates/${data.id}/activity`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          type: 'declined',
+          content: 'Estimate declined',
+        }),
+      })
+
+      if (res.ok) {
+        const result = await res.json()
+        setActivity(result.activity || [])
+      } else {
+        throw new Error('Failed to decline estimate')
+      }
+    } catch (error) {
+      console.error('Error declining estimate:', error)
+      alert('Failed to decline estimate. Please try again.')
     }
   }
 
@@ -1022,25 +1110,51 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                 {/* Recent Activity */}
                 <div className="pt-4 border-t border-border space-y-3">
                   <h3 className="text-sm font-semibold">Recent Activity</h3>
-                  <div className="space-y-3">
-                    {guestCount > 0 && (
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="text-sm">
-                            {typeof allGuests[0] === 'object' && allGuests[0]?.name 
-                              ? `${allGuests[0].name} viewed the estimate`
-                              : 'Guest viewed the estimate'}
-                          </p>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                            <Clock className="h-3 w-3" />
-                            2m ago
-                          </p>
-                        </div>
+                  <div className="space-y-3 max-h-48 overflow-y-auto">
+                    {activity.length > 0 ? (
+                      activity
+                        .slice()
+                        .reverse()
+                        .slice(0, 5)
+                        .map((entry: any, index: number) => {
+                          const entryDate = entry.timestamp ? new Date(entry.timestamp) : new Date()
+                          const timeAgo = formatDistanceToNow(entryDate, { addSuffix: true })
+                          
+                          return (
+                            <div key={`${entry.timestamp}-${index}`} className="space-y-1 rounded-md border border-dashed p-2">
+                              <div className="flex items-center justify-between text-[0.68rem] uppercase tracking-wide text-muted-foreground">
+                                <span>
+                                  {entry.userName || (typeof entry.user === 'object' ? entry.user?.name : 'User')}
+                                  {entry.type === 'comment' && ' commented'}
+                                  {entry.type === 'viewed' && ' viewed'}
+                                  {entry.type === 'declined' && ' declined'}
+                                  {entry.type === 'approved' && ' approved'}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {timeAgo}
+                                </span>
+                              </div>
+                              {entry.content && (
+                                <p className="whitespace-pre-wrap leading-snug text-sm text-foreground">
+                                  {entry.content}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })
+                    ) : (
+                      <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
+                        No activity yet. Add a comment to get started.
                       </div>
                     )}
-                    {/* Add more activity items as needed */}
                   </div>
-                  <Button variant="outline" size="sm" className="w-full gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full gap-2"
+                    onClick={() => setCommentDialogOpen(true)}
+                  >
                     <MessageCircle className="h-4 w-4" />
                     <span>Add Comment</span>
                   </Button>
@@ -1051,10 +1165,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={() => {
-                      // Handle decline - can be implemented
-                      console.log('Decline estimate')
-                    }}
+                    onClick={handleDecline}
                   >
                     Decline
                   </Button>
@@ -1366,6 +1477,51 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
           />
         )}
       </div>
+
+      {/* Comment Dialog */}
+      <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Comment</DialogTitle>
+            <DialogDescription>
+              Share your thoughts or questions about this estimate
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Enter your comment..."
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              rows={4}
+              className="resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCommentDialogOpen(false)
+                setCommentText('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddComment}
+              disabled={!commentText.trim() || isSubmittingComment}
+            >
+              {isSubmittingComment ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                'Add Comment'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

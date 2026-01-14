@@ -708,6 +708,7 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
             <BookingSidebar
               history={assistantHistory}
               onClearHistory={assistantHistory.length > 0 ? clearAssistantHistory : undefined}
+              activity={(data as any)?.activity || []}
             />
           </aside>
           <div className="order-1 flex-1 space-y-8 lg:order-2">

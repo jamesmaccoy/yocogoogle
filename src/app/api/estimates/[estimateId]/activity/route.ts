@@ -1,0 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getPayload } from 'payload'
+import configPromise from '@/payload.config'
+import { getMeUser } from '@/utilities/getMeUser'
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ estimateId: string }> }
+) {
+  try {
+    const { estimateId } = await params
+    const { user } = await getMeUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { type = 'comment', content } = body
+
+    if (!content && type === 'comment') {
+      return NextResponse.json(
+        { error: 'Content is required for comments' },
+        { status: 400 }
+      )
+    }
+
+    const payload = await getPayload({ config: configPromise })
+
+    // Fetch the estimate
+    const estimate = await payload.findByID({
+      collection: 'estimates',
+      id: estimateId,
+      depth: 1,
+    })
+
+    if (!estimate) {
+      return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
+    }
+
+    // Check authorization
+    const isCustomer =
+      typeof estimate.customer === 'string'
+        ? estimate.customer === user.id
+        : estimate.customer?.id === user.id
+
+    const isGuest =
+      estimate.guests &&
+      Array.isArray(estimate.guests) &&
+      estimate.guests.some(
+        (guest) =>
+          (typeof guest === 'string' ? guest : guest.id) === user.id
+      )
+
+    if (!isCustomer && !isGuest) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    }
+
+    // Get user name for caching
+    const userName = user.name || user.email || 'Unknown User'
+
+    // Create new activity entry
+    const newActivity = {
+      user: user.id,
+      userName,
+      type,
+      content: content || '',
+      timestamp: new Date().toISOString(),
+    }
+
+    // Get existing activity or initialize empty array
+    const existingActivity = estimate.activity && Array.isArray(estimate.activity)
+      ? estimate.activity
+      : []
+
+    // Update estimate with new activity
+    const updatedEstimate = await payload.update({
+      collection: 'estimates',
+      id: estimateId,
+      data: {
+        activity: [...existingActivity, newActivity],
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      activity: updatedEstimate.activity,
+    })
+  } catch (error) {
+    console.error('Error adding activity to estimate:', error)
+    return NextResponse.json(
+      { error: 'Failed to add activity' },
+      { status: 500 }
+    )
+  }
+}
+
