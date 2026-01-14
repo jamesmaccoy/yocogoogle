@@ -298,12 +298,21 @@ class YocoService {
       if (bookingData?.plan) successParams.set('plan', bookingData.plan)
       if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
 
+      // Build cancel URL - redirect back to estimate if estimateId exists, otherwise to post or estimate page
+      let cancelUrl = `${baseUrl}/estimate?cancelled=true`
+      if (bookingData?.estimateId) {
+        cancelUrl = `${baseUrl}/estimate/${bookingData.estimateId}?cancelled=true`
+      } else if (bookingData?.postId) {
+        // If we have postId but no estimateId, redirect to post page
+        cancelUrl = `${baseUrl}/posts/${bookingData.postId}?cancelled=true`
+      }
+
       // Create checkout via Yoco Checkout API
       const requestBody = {
         amount: Math.round(product.price * 100), // Amount in cents
         currency: product.currency,
         successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
-        cancelUrl: `${baseUrl}/estimate?cancelled=true`,
+        cancelUrl,
         metadata: {
           productId: product.id,
           productName: product.title,
@@ -437,6 +446,15 @@ class YocoService {
       if (bookingData?.plan) successParams.set('plan', bookingData.plan)
       if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
 
+      // Build cancel URL - redirect back to estimate if estimateId exists, otherwise to post or estimate page
+      let cancelUrl = `${baseUrl}/estimate?cancelled=true`
+      if (bookingData?.estimateId) {
+        cancelUrl = `${baseUrl}/estimate/${bookingData.estimateId}?cancelled=true`
+      } else if (bookingData?.postId) {
+        // If we have postId but no estimateId, redirect to post page
+        cancelUrl = `${baseUrl}/posts/${bookingData.postId}?cancelled=true`
+      }
+
       // Create checkout via Yoco Checkout API
       // Note: The Checkout API creates a checkout session, not a direct payment link
       // Convert total from rands (Payload CMS format) to cents (Yoco API format)
@@ -451,7 +469,7 @@ class YocoService {
         amount: amountInCents, // Amount in cents (converted from rands)
         currency: 'ZAR',
         successUrl: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
-        cancelUrl: `${baseUrl}/estimate?cancelled=true`,
+        cancelUrl,
         metadata: {
           packageId: packageData.id,
           packageName: packageData.name,
@@ -559,6 +577,15 @@ class YocoService {
     if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
     if (bookingData?.plan) successParams.set('plan', bookingData.plan)
     if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
+    
+    // Build cancel URL for mock payment link
+    let cancelUrl = `${baseUrl}/estimate?cancelled=true`
+    if (bookingData?.estimateId) {
+      cancelUrl = `${baseUrl}/estimate/${bookingData.estimateId}?cancelled=true`
+    } else if (bookingData?.postId) {
+      cancelUrl = `${baseUrl}/posts/${bookingData.postId}?cancelled=true`
+    }
+    
     return {
       id: `mock-${Date.now()}`,
       url: `${baseUrl}/booking-confirmation?${successParams.toString()}`,
@@ -616,6 +643,15 @@ class YocoService {
     if (bookingData?.entitlement) successParams.set('entitlement', bookingData.entitlement)
     if (bookingData?.plan) successParams.set('plan', bookingData.plan)
     if (bookingData?.periodDays) successParams.set('periodDays', String(bookingData.periodDays))
+    
+    // Build cancel URL for mock payment link
+    let cancelUrl = `${baseUrl}/estimate?cancelled=true`
+    if (bookingData?.estimateId) {
+      cancelUrl = `${baseUrl}/estimate/${bookingData.estimateId}?cancelled=true`
+    } else if (bookingData?.postId) {
+      cancelUrl = `${baseUrl}/posts/${bookingData.postId}?cancelled=true`
+    }
+    
     console.warn('⚠️ Using mock payment link - Yoco API requires OAuth 2.0 for Payment Links')
     console.warn('💡 To use real Yoco payments, you need to:')
     console.warn('   1. Get OAuth 2.0 credentials from Yoco')

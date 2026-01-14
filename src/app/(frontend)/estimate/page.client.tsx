@@ -38,7 +38,17 @@ type PostSummary = {
   updatedAt?: string
 }
 
-export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration = 'N/A' }) {
+export default function EstimateClient({ 
+  bookingTotal = 'N/A', 
+  bookingDuration = 'N/A',
+  cancelled = false,
+  postId: propPostId
+}: { 
+  bookingTotal?: string
+  bookingDuration?: string
+  cancelled?: boolean
+  postId?: string
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isInitialized } = useYoco()
@@ -60,8 +70,19 @@ export default function EstimateClient({ bookingTotal = 'N/A', bookingDuration =
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
   
-  // Get postId from URL if available
-  const postId = searchParams?.get('postId') || ''
+  // Get postId from URL if available, or use prop
+  const postId = propPostId || searchParams?.get('postId') || ''
+  
+  // Handle cancellation redirect
+  useEffect(() => {
+    if (cancelled && postId) {
+      // If cancelled and we have a postId, redirect to the post page
+      router.replace(`/posts/${postId}?cancelled=true`)
+    } else if (cancelled) {
+      // If cancelled but no postId, show cancellation message
+      setPaymentError('Payment was cancelled. You can try again when ready.')
+    }
+  }, [cancelled, postId, router])
   
   console.log('Estimate page - Received postId:', postId)
 

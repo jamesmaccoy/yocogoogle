@@ -39,7 +39,7 @@ import {
   type CustomerEntitlement,
 } from '@/utils/packageSuggestions'
 import { useSubscription } from '@/hooks/useSubscription'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { trackEstimateViewGoogleAds } from '@/lib/googleAdsTracking'
 
 // Helper function to generate MD5 hash (required for Gravatar)
@@ -296,6 +296,18 @@ type Props = {
 export default function EstimateDetailsClientPage({ data, user }: Props) {
   const { createPaymentLinkFromDatabase } = useYoco()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Check for cancellation from payment gateway
+  useEffect(() => {
+    const cancelled = searchParams?.get('cancelled') === 'true'
+    if (cancelled) {
+      setPaymentError('Payment was cancelled. You can try again when ready.')
+      // Remove the cancelled parameter from URL
+      const newUrl = window.location.pathname
+      router.replace(newUrl, { scroll: false })
+    }
+  }, [searchParams, router])
 
   // Check if this is a reschedule estimate (has originalBooking)
   const originalBooking = typeof data?.originalBooking === 'object' ? data.originalBooking : null
@@ -1159,6 +1171,15 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                     <span>Add Comment</span>
                   </Button>
                 </div>
+
+                {/* Payment Error Display */}
+                {paymentError && (
+                  <div className="pt-4 border-t border-border">
+                    <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+                      {paymentError}
+                    </div>
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="pt-4 border-t border-border flex gap-3">
