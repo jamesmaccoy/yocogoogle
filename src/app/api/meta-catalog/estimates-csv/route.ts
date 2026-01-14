@@ -138,20 +138,66 @@ export async function GET(request: NextRequest) {
           ? post.meta.image
           : null
 
-        // Prefer OG image size for Meta (1200x630 optimized for social media)
+        // Helper function to properly format and encode image URLs for Meta's crawler
+        // IMPORTANT: Uses direct static file paths from /public/media to bypass any throttling/restrictions
+        const formatImageUrl = (url: string | null | undefined, imageData?: any): string => {
+          const origin = request.nextUrl.origin
+          if (!url) return `${origin}/placeholder-image.jpg`
+          
+          // If already absolute URL, ensure HTTPS and encode
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            const httpsUrl = url.replace(/^http:/, 'https:')
+            // URL encode the path portion to handle spaces and special characters
+            try {
+              const urlObj = new URL(httpsUrl)
+              // Reconstruct URL with encoded path
+              return `${urlObj.protocol}//${urlObj.host}${encodeURI(urlObj.pathname)}${urlObj.search}${urlObj.hash}`
+            } catch {
+              // If URL parsing fails, return as-is (shouldn't happen but safety check)
+              return httpsUrl
+            }
+          }
+          
+          // For relative URLs, ensure they start with / and encode
+          // CRITICAL: Ensure we're using direct static paths, not API endpoints
+          // Payload stores media in /public/media, so URLs should be /media/filename.jpg
+          let cleanPath = url.startsWith('/') ? url : `/${url}`
+          
+          // If URL points to API endpoint, convert to static path
+          // /api/media/file/... -> /media/...
+          if (cleanPath.startsWith('/api/media/')) {
+            cleanPath = cleanPath.replace('/api/media/file/', '/media/').replace('/api/media/', '/media/')
+          }
+          
+          // Ensure path points to /media/ directory (public static files)
+          // This bypasses any throttling/restrictions for Meta's crawler
+          if (!cleanPath.startsWith('/media/') && imageData?.filename) {
+            // If we have a filename, construct direct path to public/media
+            cleanPath = `/media/${imageData.filename}`
+          }
+          
+          // Encode the path to handle spaces and special characters
+          const encodedPath = encodeURI(cleanPath)
+          return `${origin}${encodedPath}`
+        }
+
+        // Prefer OG size first (optimized for Meta/social media)
+        // Use direct static file paths to ensure Meta's crawler can access images
+        // CRITICAL: Bypasses throttling by using direct /media/ paths (public static files)
         let imageUrl = `${request.nextUrl.origin}/placeholder-image.jpg`
         if (postImage) {
           // Check for OG size first (optimized for Meta/social media)
           const ogImageUrl = (postImage as any)?.sizes?.og?.url
           if (ogImageUrl) {
-            imageUrl = ogImageUrl.startsWith('http')
-              ? ogImageUrl
-              : `${request.nextUrl.origin}${ogImageUrl}`
+            imageUrl = formatImageUrl(ogImageUrl, postImage)
           } else if (postImage.url) {
             // Fall back to regular image URL
-            imageUrl = postImage.url.startsWith('http')
-              ? postImage.url
-              : `${request.nextUrl.origin}${postImage.url}`
+            imageUrl = formatImageUrl(postImage.url, postImage)
+          } else if ((postImage as any)?.filename) {
+            // If we have filename, construct direct path to public/media
+            // This ensures Meta's crawler can access the image directly (bypasses throttling)
+            const filename = (postImage as any).filename
+            imageUrl = formatImageUrl(`/media/${filename}`, postImage)
           }
         }
 
@@ -160,19 +206,26 @@ export async function GET(request: NextRequest) {
           ? `${request.nextUrl.origin}/${postSlug}`
           : `${request.nextUrl.origin}/post/${postId}`
 
-        // Ensure image URL is absolute HTTPS (Meta requires accessible images)
-        let absoluteImageUrl = imageUrl.startsWith('http')
-          ? imageUrl.replace(/^http:/, 'https:') // Force HTTPS
-          : imageUrl.startsWith('//')
-          ? `https:${imageUrl}`
-          : `https://${request.nextUrl.host}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`
+        // Ensure image URL is absolute HTTPS and properly encoded
+        let absoluteImageUrl = formatImageUrl(imageUrl)
         
-        // Validate image URL format (Meta requires valid image URLs)
-        if (!absoluteImageUrl.match(/^https:\/\/.+\..+/)) {
-          console.warn(`Invalid image URL for estimate ${estimateId}: ${absoluteImageUrl}`)
-          // Use a default image if invalid
+        // Validate image URL format (must be valid HTTPS URL)
+        if (!absoluteImageUrl.match(/^https:\/\/[^\s]+\.[^\s]+/)) {
+          console.warn(`Invalid image URL format for estimate ${estimateId}: ${absoluteImageUrl}, using placeholder`)
           absoluteImageUrl = `https://${request.nextUrl.host}/placeholder-image.jpg`
         }
+        
+        // Final validation: ensure no spaces in URL (should be encoded by formatImageUrl)
+        if (absoluteImageUrl.includes(' ')) {
+          console.warn(`Image URL contains spaces for estimate ${estimateId}, encoding...`)
+          absoluteImageUrl = absoluteImageUrl.replace(/ /g, '%20')
+        }
+        
+        // Additional validation: ensure URL doesn't have double slashes (except after protocol)
+        absoluteImageUrl = absoluteImageUrl.replace(/([^:]\/)\/+/g, '$1')
+        
+        // Log image URL for debugging broken links
+        console.log(`[Meta Feed] Estimate ${estimateId} image URL: ${absoluteImageUrl}`)
         
         // Ensure link URL is absolute HTTPS (Meta requires valid URLs)
         let absoluteUrl = postUrl.startsWith('http')
