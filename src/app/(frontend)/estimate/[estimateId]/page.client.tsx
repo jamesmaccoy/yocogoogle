@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Estimate, User } from '@/payload-types'
 import { Button } from '@/components/ui/button'
 import { useYoco } from '@/providers/Yoco'
-import { FileText, Loader2, PlusCircleIcon, TrashIcon } from 'lucide-react'
+import { FileText, Loader2, PlusCircleIcon, TrashIcon, Lock, Share2, Copy, Users, MessageCircle, Clock, MapPin, ChevronRight } from 'lucide-react'
 import {
   Card,
   CardContent,
@@ -431,6 +431,61 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     })
   }, [isSubscribed, selectedPackage, subscriptionProductId])
   const [removedGuests, setRemovedGuests] = useState<string[]>([])
+  const [shareLink, setShareLink] = useState<string>('')
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
+  const [isLoadingShareLink, setIsLoadingShareLink] = useState(false)
+
+  // Fetch share link token
+  useEffect(() => {
+    const fetchShareLink = async () => {
+      if (!data?.id) return
+      
+      try {
+        setIsLoadingShareLink(true)
+        const res = await fetch(`/api/estimates/${data.id}/token`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          const url = `${window.location.origin}/i/${data.token}`
+          setShareLink(url)
+        }
+      } catch (error) {
+        console.error('Error fetching share link:', error)
+      } finally {
+        setIsLoadingShareLink(false)
+      }
+    }
+
+    fetchShareLink()
+  }, [data?.id])
+
+  // Copy share link handler
+  const copyShareLink = () => {
+    if (shareLink) {
+      navigator.clipboard.writeText(shareLink)
+      setShareLinkCopied(true)
+      setTimeout(() => setShareLinkCopied(false), 2000)
+    }
+  }
+
+  // Share handler
+  const handleShare = () => {
+    if (navigator.share && shareLink) {
+      navigator.share({
+        title: 'Estimate Details',
+        text: 'Check out this estimate',
+        url: shareLink,
+      }).catch(() => {
+        // Fallback to copy if share fails
+        copyShareLink()
+      })
+    } else {
+      copyShareLink()
+    }
+  }
 
   // Remove guest handler for estimates
   const removeGuestHandler = async (guestId: string) => {
@@ -745,90 +800,306 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
     return <div className="container py-16">Estimate not found</div>
   }
 
+  const post = typeof data?.post === 'object' ? data.post : null
+  const postSlug = post?.slug
+  const postTitle = post?.title || 'Property'
+  const postImage = post?.meta?.image
+  const allGuests = data?.guests || []
+  const guestCount = Array.isArray(allGuests) ? allGuests.length : 0
+  const onlineCount = guestCount // Mock online count - can be enhanced with real data
+
   return (
-    <div className="container py-16">
-      <div className="mx-auto max-w-4xl">
-        <div className="flex items-center space-x-4 mb-8">
-          {(() => {
-            // Get post slug from estimate data
-            const post = typeof data?.post === 'object' ? data.post : null
-            const postSlug = post?.slug
-            
-            // If we have a post slug, link back to the post page with restoreEstimate parameter
-            // Otherwise, fall back to /estimates
-            const backUrl = postSlug 
-              ? `/posts/${postSlug}?restoreEstimate=${data.id}`
-              : '/estimates'
-            
-            return (
-              <Link
-                href={backUrl}
-                className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground"
-              >
-                ← Back to {postSlug ? 'Property' : 'Estimates'}
-              </Link>
-            )
-          })()}
+    <div className="min-h-screen bg-background">
+      <div className="mx-auto max-w-2xl">
+        {/* Secure Estimate Banner */}
+        <div className="bg-primary/10 border-b border-primary/20 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium text-foreground">Secure Estimate</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleShare}
+            className="h-8 gap-2"
+          >
+            <Share2 className="h-4 w-4" />
+            <span>Share</span>
+          </Button>
         </div>
 
-        <Tabs defaultValue="details" className="mt-10">
-          <TabsList className="mb-6 bg-muted p-2 rounded-full flex flex-row gap-2">
-            <TabsTrigger value="details" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-              <FileText className="h-5 w-5" />
-              <span className="hidden sm:inline">Estimate Details</span>
-            </TabsTrigger>
-            <TabsTrigger value="guests" className="px-3 py-2 rounded-full flex items-center gap-2 data-[state=active]:bg-secondary data-[state=active]:text-foreground">
-              <UserIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">Guests</span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="details">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-8">
-            {/* Estimate Details */}
-            {data ? (
-              <div className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold">Estimate Details</h1>
-                  <p className="text-muted-foreground mt-2">
-                    Review and complete your booking estimate
-                  </p>
+        {/* Main Content */}
+        <div className="bg-white dark:bg-card rounded-lg shadow-sm border border-border -mt-px">
+          <Tabs defaultValue="details" className="w-full">
+            <div className="px-6 pt-4 border-b border-border">
+              <TabsList className="bg-transparent p-0 h-auto">
+                <TabsTrigger value="details" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
+                  <FileText className="h-4 w-4 mr-2" />
+                  <span>Details</span>
+                </TabsTrigger>
+                <TabsTrigger value="guests" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
+                  <UserIcon className="h-4 w-4 mr-2" />
+                  <span>Guests</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <TabsContent value="details" className="mt-0">
+              <div className="p-6 space-y-6">
+                {/* Property Header */}
+                {postImage && (
+                  <div className="relative w-full h-64 rounded-lg overflow-hidden -mx-6 -mt-6 mb-6">
+                    <Media
+                      resource={postImage}
+                      className="w-full h-full object-cover"
+                      postId={post?.id}
+                      postTitle={postTitle}
+                    />
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-bold">{postTitle}</h1>
                 </div>
 
-                <div className="w-full rounded-md overflow-hidden bg-muted p-2 flex items-center gap-3">
-                  {!!(typeof data?.post === 'object' && data?.post?.meta?.image) && (
-                    <div className="w-24 h-24 flex-shrink-0 rounded-md overflow-hidden border border-border bg-white">
-                      <Media
-                        resource={typeof data?.post === 'object' && data?.post?.meta?.image ? data.post.meta.image : undefined}
-                        className="w-full h-full object-cover"
-                        postId={typeof data?.post === 'object' ? data.post.id : undefined}
-                        postTitle={typeof data?.post === 'object' ? data.post.title : undefined}
-                      />
+                {/* Shared with Section */}
+                <div className="space-y-3 pt-4 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">Shared with</h2>
+                    <span className="text-xs text-muted-foreground">{onlineCount} online</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex -space-x-2">
+                        {/* Customer Avatar */}
+                        {(() => {
+                          const customerEmail = typeof data.customer === 'object' ? data.customer?.email : null
+                          const customerGravatar = getGravatarUrl(customerEmail, 40)
+                          return customerGravatar ? (
+                            <img 
+                              src={customerGravatar} 
+                              alt={typeof data.customer === 'string' ? 'Customer' : data.customer?.name || 'Customer'}
+                              className="h-10 w-10 rounded-full border-2 border-background object-cover"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full border-2 border-background bg-muted flex items-center justify-center">
+                              <UserIcon className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )
+                        })()}
+                        
+                        {/* Guest Avatars */}
+                        {allGuests
+                          .filter((guest) =>
+                            typeof guest === 'string'
+                              ? !removedGuests.includes(guest)
+                              : !removedGuests.includes(guest.id),
+                          )
+                          .slice(0, 3)
+                          .map((guest) => {
+                            if (typeof guest === 'string') return null
+                            const guestGravatar = getGravatarUrl(guest.email, 40)
+                            return guestGravatar ? (
+                              <img 
+                                key={guest.id}
+                                src={guestGravatar} 
+                                alt={guest.name || 'Guest'}
+                                className="h-10 w-10 rounded-full border-2 border-background object-cover"
+                              />
+                            ) : (
+                              <div key={guest.id} className="h-10 w-10 rounded-full border-2 border-background bg-muted flex items-center justify-center">
+                                <UserIcon className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )
+                          })}
+                        
+                        {/* More guests indicator */}
+                        {guestCount > 3 && (
+                          <div className="h-10 w-10 rounded-full border-2 border-background bg-muted flex items-center justify-center text-xs font-medium">
+                            +{guestCount - 3}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {data &&
+                      'customer' in data &&
+                      typeof data?.customer !== 'string' &&
+                      data.customer?.id === user.id && (
+                        <InviteUrlDialog
+                          trigger={
+                            <Button variant="outline" size="sm" className="gap-2">
+                              <PlusCircleIcon className="h-4 w-4" />
+                              <span>Invite</span>
+                            </Button>
+                          }
+                          estimateId={data.id}
+                          type="estimates"
+                        />
+                      )}
+                  </div>
+
+                  {/* Share Link Section */}
+                  {shareLink && (
+                    <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                      <span className="text-xs text-muted-foreground flex-1 truncate font-mono">
+                        {shareLink.replace(window.location.origin, '').substring(0, 30)}...
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={copyShareLink}
+                        className="h-8 gap-2"
+                      >
+                        <Copy className="h-3 w-3" />
+                        <span className="text-xs">{shareLinkCopied ? 'Copied!' : 'Copy'}</span>
+                      </Button>
                     </div>
                   )}
-                  <div className="flex flex-col">
-                    <span className="font-medium">
-                      Guests: {Array.isArray(data?.guests) ? data.guests.length : 0}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Created {formatDateTime(data?.createdAt)}
-                    </span>
+                </div>
+
+                {/* Booking Period */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Check-in</p>
+                    <p className="font-medium text-sm">
+                      {data.fromDate && data.toDate
+                        ? `${format(new Date(data.fromDate), 'MMM dd')} - ${format(new Date(data.toDate), 'MMM dd')}`
+                        : 'Not set'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Duration</p>
+                    <p className="font-medium text-sm">{_bookingDuration} {_bookingDuration === 1 ? 'night' : 'nights'}</p>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="mb-8">Error loading estimate details</div>
-            )}
 
-            {/* Package Selection */}
-            <div className="mb-8">
-              <h2 className="text-2xl font-semibold mb-4">
-                Available Packages 
-                <span className="text-sm text-muted-foreground font-normal ml-2">
-                  ({_bookingDuration} {_bookingDuration === 1 ? 'night' : 'nights'})
-                </span>
-              </h2>
+                {/* Package Details */}
+                {selectedPackage && (
+                  <div className="pt-4 border-t border-border space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Package Details</h3>
+                      <Badge variant="secondary" className="text-xs">Selected</Badge>
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium mb-1">{selectedPackage.name}</h4>
+                      {selectedPackage.description && (
+                        <p className="text-sm text-muted-foreground">{selectedPackage.description}</p>
+                      )}
+                    </div>
+
+                    <ul className="space-y-2">
+                      {selectedPackage.features.slice(0, 3).map((f, idx) => (
+                        <li key={idx} className="flex items-center text-sm gap-2">
+                          <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                          <span>{f.feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="pt-4 border-t border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-muted-foreground">Total Estimate</p>
+                        <p className="text-lg font-bold">{formatPrice(bookingTotal)}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-between text-xs"
+                        onClick={() => {
+                          // Scroll to package selection section
+                          document.getElementById('package-selection')?.scrollIntoView({ behavior: 'smooth' })
+                        }}
+                      >
+                        <span>View breakdown</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Activity */}
+                <div className="pt-4 border-t border-border space-y-3">
+                  <h3 className="text-sm font-semibold">Recent Activity</h3>
+                  <div className="space-y-3">
+                    {guestCount > 0 && (
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm">
+                            {typeof allGuests[0] === 'object' && allGuests[0]?.name 
+                              ? `${allGuests[0].name} viewed the estimate`
+                              : 'Guest viewed the estimate'}
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                            <Clock className="h-3 w-3" />
+                            2m ago
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {/* Add more activity items as needed */}
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full gap-2">
+                    <MessageCircle className="h-4 w-4" />
+                    <span>Add Comment</span>
+                  </Button>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-4 border-t border-border flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      // Handle decline - can be implemented
+                      console.log('Decline estimate')
+                    }}
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    onClick={handleEstimate}
+                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={
+                      paymentLoading || paymentSuccess || !_postId || !selectedPackage || !areDatesAvailable || isSubscriptionLoading
+                    }
+                  >
+                    {paymentLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {isSubscribed ? 'Creating Booking...' : 'Processing...'}
+                      </>
+                    ) : paymentSuccess ? (
+                      'Estimate Confirmed!'
+                    ) : !_postId ? (
+                      'Missing Property Information'
+                    ) : !selectedPackage ? (
+                      'Please Select a Package'
+                    ) : !areDatesAvailable ? (
+                      'Dates Not Available'
+                    ) : isSubscriptionLoading ? (
+                      'Checking Subscription...'
+                    ) : isSubscribed && isPackageIncludedInSubscription ? (
+                      'Approve Estimate (Included)'
+                    ) : (
+                      'Approve Estimate'
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Package Selection Section */}
+              <div id="package-selection" className="px-6 pb-6 border-t border-border pt-6">
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold">
+                  Available Packages 
+                  <span className="text-sm text-muted-foreground font-normal ml-2">
+                    ({_bookingDuration} {_bookingDuration === 1 ? 'night' : 'nights'})
+                  </span>
+                </h2>
+                
+                {/* Package Selection */}
               <div className="grid grid-cols-1 gap-4">
                 {loading ? (
                   <div>Loading packages...</div>
@@ -963,261 +1234,13 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                 )}
               </div>
             </div>
-
-            {/* Date Selection */}
-            <div className="mb-8">
-              <h2 className="text-2xl font-semibold mb-4">Booking Period</h2>
-              <div className="bg-muted p-4 rounded-lg">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Check-in:</span>
-                    <div className="font-medium">
-                      {data.fromDate ? format(new Date(data.fromDate), 'PPP') : 'Not set'}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Check-out:</span>
-                    <div className="font-medium">
-                      {data.toDate ? format(new Date(data.toDate), 'PPP') : 'Not set'}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Duration:</span>
-                    <div className="font-medium">{_bookingDuration} nights</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Total:</span>
-                    <div className="font-medium">{formatPrice(bookingTotal)}</div>
-                  </div>
-                </div>
-              </div>
             </div>
-          </div>
+            </TabsContent>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Estimate Summary */}
-            <div className="bg-muted p-6 rounded-lg border border-border">
-              <h2 className="text-2xl font-semibold mb-4">Estimate Summary</h2>
-              {selectedPackage && (
-                <>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Package:</span>
-                    <span className="font-medium">{getPackageDisplayName(selectedPackage)}</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Package price:</span>
-                    <span className="font-medium">{formatPrice(bookingTotal)}</span>
-                  </div>
-                  {!isFixedPricePackage && (
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-muted-foreground">Rate per night:</span>
-                      <span className="font-medium">{formatPrice(packagePrice)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Property base rate:</span>
-                    <span className="font-medium">{formatPrice(_postBaseRate)}/night</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-muted-foreground">Duration:</span>
-                    <span className="font-medium">{_bookingDuration} nights</span>
-                  </div>
-                  <div className="flex justify-between items-center mb-6">
-                    <span className="text-muted-foreground">Total:</span>
-                    {originalBookingPaid ? (
-                      <div className="flex flex-col items-end">
-                        <span className="text-2xl font-bold text-green-600">Paid</span>
-                        <span className="text-xs text-muted-foreground line-through">{formatPrice(bookingTotal)}</span>
-                        {originalBookingTotal && originalBookingTotal !== bookingTotal && (
-                          <span className="text-xs text-muted-foreground mt-1">
-                            Original: {formatPrice(originalBookingTotal)}
-                          </span>
-                        )}
-                      </div>
-                    ) : isSubscribed && isPackageIncludedInSubscription ? (
-                      <div className="flex flex-col items-end">
-                        <span className="text-2xl font-bold text-green-600">Paid</span>
-                        <span className="text-xs text-muted-foreground line-through">{formatPrice(bookingTotal)}</span>
-                      </div>
-                    ) : (
-                      <span className="text-2xl font-bold">{formatPrice(bookingTotal)}</span>
-                    )}
-                  </div>
-                  
-                  {/* Reschedule Comparison Banner */}
-                  {isReschedule && originalBooking && (
-                    <div className="mt-4 rounded-lg border-2 border-primary/20 bg-primary/5 p-4 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-foreground">🔄 Reschedule Comparison</span>
-                        <Badge variant="outline" className="text-xs">Important</Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <div className="text-muted-foreground mb-1">Original Booking</div>
-                          <div className="font-medium">
-                            {originalBooking.fromDate && originalBooking.toDate && (
-                              <>
-                                {format(new Date(originalBooking.fromDate), 'MMM dd')} - {format(new Date(originalBooking.toDate), 'MMM dd')}
-                                {originalBookingDuration && (
-                                  <span className="text-muted-foreground ml-1">({originalBookingDuration} {originalBookingDuration === 1 ? 'night' : 'nights'})</span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          {originalBookingTotal && (
-                            <div className="text-muted-foreground mt-1">{formatPrice(originalBookingTotal)}</div>
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground mb-1">New Dates</div>
-                          <div className="font-medium text-primary">
-                            {data.fromDate && data.toDate && (
-                              <>
-                                {format(new Date(data.fromDate), 'MMM dd')} - {format(new Date(data.toDate), 'MMM dd')}
-                                {_bookingDuration && (
-                                  <span className="text-muted-foreground ml-1">({_bookingDuration} {_bookingDuration === 1 ? 'night' : 'nights'})</span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          <div className="text-muted-foreground mt-1">{formatPrice(bookingTotal)}</div>
-                        </div>
-                      </div>
-                      {originalBookingTotal && originalBookingTotal !== bookingTotal && (
-                        <div className="pt-2 border-t border-border">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-muted-foreground">Price difference:</span>
-                            <span className={`font-semibold ${bookingTotal > originalBookingTotal ? 'text-orange-600' : 'text-green-600'}`}>
-                              {bookingTotal > originalBookingTotal ? '+' : ''}{formatPrice(bookingTotal - originalBookingTotal)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Token Consumption Info for Reschedule */}
-                  {isReschedule && latestTokenUsage && (
-                    <div className="mt-4 rounded-md border border-border bg-muted/40 p-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                        Token Consumption
-                      </h3>
-                      <div className="space-y-1 text-xs">
-                        {latestTokenUsage.total !== null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Total tokens:</span>
-                            <span className="font-medium">{latestTokenUsage.total.toLocaleString()}</span>
-                          </div>
-                        )}
-                        {latestTokenUsage.prompt !== null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Prompt tokens:</span>
-                            <span className="font-medium">{latestTokenUsage.prompt.toLocaleString()}</span>
-                          </div>
-                        )}
-                        {latestTokenUsage.candidates !== null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Response tokens:</span>
-                            <span className="font-medium">{latestTokenUsage.candidates.toLocaleString()}</span>
-                          </div>
-                        )}
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        These tokens will be deducted from your monthly subscription allowance.
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {/* Complete Estimate Button */}
-              <Button
-                onClick={handleEstimate}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                disabled={
-                  paymentLoading || paymentSuccess || !_postId || !selectedPackage || !areDatesAvailable || isSubscriptionLoading
-                }
-              >
-                {paymentLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {isSubscribed ? 'Creating Booking...' : 'Processing...'}
-                  </>
-                ) : paymentSuccess ? (
-                  'Estimate Confirmed!'
-                ) : !_postId ? (
-                  'Missing Property Information'
-                ) : !selectedPackage ? (
-                  'Please Select a Package'
-                ) : !areDatesAvailable ? (
-                  'Dates Not Available'
-                ) : isSubscriptionLoading ? (
-                  'Checking Subscription...'
-                ) : isSubscribed && isPackageIncludedInSubscription ? (
-                  'Confirm Booking (Included)'
-                ) : (
-                  `Complete Estimate - ${formatPrice(bookingTotal)}`
-                )}
-              </Button>
-              <div className="mt-4 rounded-md border border-border bg-muted/40 p-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Latest AI tokens
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {latestTokenUsage
-                    ? `Total ${typeof latestTokenUsage.total === 'number' ? latestTokenUsage.total : '—'} • Prompt ${typeof latestTokenUsage.prompt === 'number' ? latestTokenUsage.prompt : '—'} • Response ${typeof latestTokenUsage.candidates === 'number' ? latestTokenUsage.candidates : '—'}${typeof latestTokenUsage.cached === 'number' ? ` • Cached ${latestTokenUsage.cached}` : ''}`
-                    : 'Interact with the assistant to see Gemini token usage here.'}
-                </p>
-                {latestTokenUsage?.timestamp && (
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/80">
-                    Updated {new Date(latestTokenUsage.timestamp).toLocaleString()}
-                  </p>
-                )}
-              </div>
-              <AIAssistant />
-              {paymentError && (
-                <div className="mt-4 p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-                  {paymentError}
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-          </TabsContent>
-          
-          {/* Set estimate context for AI Assistant */}
-          {data && (
-            <script
-              dangerouslySetInnerHTML={{
-                __html: `
-                  window.addEventListener('load', function() {
-                    const context = ${JSON.stringify({
-                      context: 'estimate-details',
-                      estimate: {
-                        id: data.id,
-                        fromDate: data.fromDate,
-                        toDate: data.toDate,
-                        total: data.total,
-                      },
-                      post: typeof data.post === 'object' ? {
-                        id: data.post.id,
-                        title: data.post.title,
-                        slug: data.post.slug,
-                      } : null,
-                    })};
-                    window.estimateContext = context;
-                  });
-                `
-              }}
-            />
-          )}
-
-          <TabsContent value="guests">
-            <div className="max-w-2xl mx-auto">
+          <TabsContent value="guests" className="mt-0">
+            <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold">Guests</h2>
+                <h2 className="text-xl font-semibold">Guests</h2>
                 {data &&
                   'customer' in data &&
                   typeof data?.customer !== 'string' &&
@@ -1314,6 +1337,34 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
             </div>
           </TabsContent>
         </Tabs>
+        </div>
+        
+        {/* Set estimate context for AI Assistant */}
+        {data && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                window.addEventListener('load', function() {
+                  const context = ${JSON.stringify({
+                    context: 'estimate-details',
+                    estimate: {
+                      id: data.id,
+                      fromDate: data.fromDate,
+                      toDate: data.toDate,
+                      total: data.total,
+                    },
+                    post: typeof data.post === 'object' ? {
+                      id: data.post.id,
+                      title: data.post.title,
+                      slug: data.post.slug,
+                    } : null,
+                  })};
+                  window.estimateContext = context;
+                });
+              `
+            }}
+          />
+        )}
       </div>
     </div>
   )
