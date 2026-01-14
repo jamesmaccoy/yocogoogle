@@ -342,8 +342,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       if ((content as any).children) {
         textParts.push(extractPlainTextFromContent((content as any).children, depth + 1))
       }
-      // Some Payload blocks store content under fields like "content", "value", or "fields"
-      const candidateKeys = ['content', 'value', 'fields', 'data']
+      // Some Payload blocks store content under fields like "content", "value", "fields", "data", or "root" (Lexical)
+      const candidateKeys = ['content', 'value', 'fields', 'data', 'root']
       for (const key of candidateKeys) {
         if ((content as any)[key] && typeof (content as any)[key] !== 'function') {
           textParts.push(extractPlainTextFromContent((content as any)[key], depth + 1))
