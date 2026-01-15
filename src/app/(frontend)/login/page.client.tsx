@@ -29,7 +29,7 @@ export default function LoginPage() {
         {/* Background Image/Pattern */}
         <div className="absolute inset-0 bg-zinc-900">
           <img
-            src="https://www.simpleplek.co.za/api/media/file/studio-1.jpg?q=80&w=2564&auto=format&fit=crop"
+            src="https://www.simpleplek.co.za/api/media/file/studio-2.jpg?q=80&w=2564&auto=format&fit=crop"
             alt="Abstract background"
             className="w-full h-full object-cover opacity-100"
           />
