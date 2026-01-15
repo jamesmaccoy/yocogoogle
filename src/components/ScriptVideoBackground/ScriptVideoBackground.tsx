@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useScroll, useTransform, motion } from 'framer-motion';
 import { script } from './data';
 import { Scene } from './Scene';
 import type { Post, Media } from '@/payload-types';
@@ -12,90 +13,105 @@ interface ScriptVideoBackgroundProps {
 }
 
 export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ featuredPosts = [] }) => {
-    const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
-    const [currentTextIndex, setCurrentTextIndex] = useState(0);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const { scrollYProgress } = useScroll({
+        target: containerRef,
+        offset: ["start start", "end end"]
+    });
 
     // Merge static script with dynamic featured posts
     const activeScript = useMemo(() => {
-        // Create a deep copy or map to new objects
         return script.map(scene => {
-            let newSrc = scene.src;
+            if (scene.id === 'scene-choice') {
+                // Create options from featured posts
+                const postOptions = featuredPosts.slice(0, 3).map(post => {
+                    const media = post.meta?.image || post.heroImage;
+                    const imageUrl = (media && typeof media === 'object' && 'url' in media && media.url)
+                        ? media.url
+                        : '';
 
-            // Logic to inject featured posts into specific slots
-            // We'll map the first 3 featured posts to scenes 6a, 6b, 6c (guitar/jam session scenes)
-            if (scene.id === 'scene-6a' && featuredPosts[0]) {
-                const media = featuredPosts[0].meta?.image || featuredPosts[0].heroImage;
-                if (media && typeof media === 'object' && 'url' in media && media.url) {
-                    newSrc = media.url;
-                }
-            } else if (scene.id === 'scene-6b' && featuredPosts[1]) {
-                const media = featuredPosts[1].meta?.image || featuredPosts[1].heroImage;
-                if (media && typeof media === 'object' && 'url' in media && media.url) {
-                    newSrc = media.url;
-                }
-            } else if (scene.id === 'scene-6c' && featuredPosts[2]) {
-                const media = featuredPosts[2].meta?.image || featuredPosts[2].heroImage;
-                if (media && typeof media === 'object' && 'url' in media && media.url) {
-                    newSrc = media.url;
-                }
+                    return {
+                        id: `post-${post.id}`,
+                        type: 'post' as const,
+                        label: post.title,
+                        src: imageUrl,
+                        slug: post.slug || ''
+                    };
+                });
+
+                // Get the existing ticket option if present
+                const existingOptions = scene.options || [];
+                const ticketOption = existingOptions.find(o => o.type === 'ticket');
+
+                return {
+                    ...scene,
+                    options: [
+                        ...postOptions,
+                        ...(ticketOption ? [ticketOption] : [])
+                    ]
+                };
             }
-
-            return {
-                ...scene,
-                src: newSrc
-            };
+            return scene;
         });
     }, [featuredPosts]);
 
+    const totalScenes = activeScript.length;
+
+    // Transform scroll progress to scene index
+    // We want to snap or blend? For now, straight mapping.
+    // 0 to 1 -> 0 to totalScenes - 1
+    const currentSceneIndex = useTransform(scrollYProgress, [0, 1], [0, totalScenes - 1]);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [activeTextIndex, setActiveTextIndex] = useState(0);
+
     useEffect(() => {
-        const scene = activeScript[currentSceneIndex];
-        if (!scene) return;
+        const unsubscribe = currentSceneIndex.on("change", (latest) => {
+            const index = Math.min(Math.floor(latest), totalScenes - 1);
+            setActiveIndex(index);
 
-        const textCount = scene.texts.length || 1; // Ensure at least 1 duration cycle even if no text
-
-        const timer = setTimeout(() => {
-            if (currentTextIndex < textCount - 1) {
-                // Next text in same scene
-                setCurrentTextIndex(prev => prev + 1);
+            // Calculate text index within the scene
+            // Each scene gets a slice of the scroll progress (1 / totalScenes)
+            // Within that slice, we divide by number of texts
+            const sceneProgress = (latest - index); // 0 to 1 within the scene
+            const currentScene = activeScript[index];
+            if (currentScene && currentScene.texts.length > 0) {
+                const textIdx = Math.min(
+                    Math.floor(sceneProgress * currentScene.texts.length * 1.5), // Multiply to speed up text cycle slightly so it finishes before scene end
+                    currentScene.texts.length - 1
+                );
+                setActiveTextIndex(textIdx);
             } else {
-                // Next scene
-                if (currentSceneIndex < activeScript.length - 1) {
-                    setCurrentSceneIndex(prev => prev + 1);
-                    setCurrentTextIndex(0);
-                } else {
-                    // Loop back to start
-                    setCurrentSceneIndex(0);
-                    setCurrentTextIndex(0);
-                }
+                setActiveTextIndex(0);
             }
-        }, SCENE_DURATION_PER_TEXT);
-
-        return () => clearTimeout(timer);
-    }, [currentSceneIndex, currentTextIndex, activeScript]);
+        });
+        return () => unsubscribe();
+    }, [currentSceneIndex, totalScenes, activeScript]);
 
     return (
-        <div className="relative w-full h-[100dvh] bg-black overflow-hidden">
-            <div className="absolute top-4 right-4 z-50 mix-blend-difference text-white/50 font-mono text-sm">
-                {currentSceneIndex + 1} / {activeScript.length}
-            </div>
+        <div ref={containerRef} className="relative w-full" style={{ height: `${totalScenes * 100}vh` }}>
+            <div className="sticky top-0 left-0 w-full h-[100dvh] bg-black overflow-hidden">
+                <div className="absolute top-4 right-4 z-50 mix-blend-difference text-white/50 font-mono text-sm">
+                    {activeIndex + 1} / {totalScenes}
+                </div>
 
-            {activeScript.map((scene, index) => (
-                <Scene
-                    key={`${scene.id}-${index}`} // Add index to key to force re-render if src changes
-                    scene={scene}
-                    isActive={index === currentSceneIndex}
-                    activeTextIndex={index === currentSceneIndex ? currentTextIndex : 0}
-                />
-            ))}
+                {activeScript.map((scene, index) => (
+                    <Scene
+                        key={`${scene.id}-${index}`}
+                        scene={scene}
+                        isActive={index === activeIndex}
+                        activeTextIndex={index === activeIndex ? activeTextIndex : 0}
+                        currentSceneIndex={currentSceneIndex}
+                        index={index}
+                    />
+                ))}
 
-            {/* Progress Bar */}
-            <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10 z-50">
-                <div
-                    className="h-full bg-white transition-all duration-300 ease-linear"
-                    style={{
-                        width: `${((currentSceneIndex + (currentTextIndex / (activeScript[currentSceneIndex]?.texts.length || 1))) / activeScript.length) * 100}%`
-                    }}
-                />
+                {/* Progress Bar */}
+                <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10 z-50">
+                    <motion.div
+                        className="h-full bg-white"
+                        style={{ scaleX: scrollYProgress, transformOrigin: "0%" }}
+                    />
+                </div>
             </div>
         </div>
     );

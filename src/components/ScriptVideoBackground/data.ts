@@ -1,10 +1,20 @@
 
+export interface ChoiceOption {
+    id: string;
+    type: 'post' | 'ticket';
+    label: string;
+    src?: string; // Image source
+    slug?: string; // For posts
+    action?: string; // For ticket
+}
+
 export interface SceneData {
     id: string;
-    type: 'image' | 'sprite' | 'video';
+    type: 'image' | 'sprite' | 'video' | 'choice';
     src: string;
     texts: string[];
     overlay?: string;
+    options?: ChoiceOption[];
     // For sprite cropping (percentages)
     crop?: {
         x: number;
@@ -73,6 +83,14 @@ export const script: SceneData[] = [
         ]
     },
     {
+        id: 'scene-book',
+        type: 'image',
+        src: `${ASSET_PREFIX}/guest_book.png`,
+        texts: [
+            "Leave a note used\nto mean a paper\non the counter."
+        ]
+    },
+    {
         id: 'scene-4',
         type: 'image',
         src: `${ASSET_PREFIX}/ocean.jpg`,
@@ -85,39 +103,33 @@ export const script: SceneData[] = [
         type: 'image',
         src: `${ASSET_PREFIX}/studio_ticket.png`,
         texts: [
-            "Security is pretty\ntight, but don't carry any\ncash or leave our shit\non the lawn.\nPeople will steal it."
+            "Security is pretty\ntight, but don't carry any\ncash."
         ]
     },
     {
-        id: 'scene-6a',
+        id: 'scene-cassette',
         type: 'image',
-        src: `${ASSET_PREFIX}/guitar_1.jpg`,
+        src: `${ASSET_PREFIX}/cassette.png`,
         texts: [
-            "Nothing beats a\nSunday jam session."
+            "Rewind to the\ngood times."
         ]
     },
     {
-        id: 'scene-6b',
-        type: 'image',
-        src: `${ASSET_PREFIX}/guitar_2.jpg`,
+        id: 'scene-choice',
+        type: 'choice',
+        src: '', // Background for choice scene, can be black or a blurred previous image
         texts: [
-            "Good vibes and\ngreat company."
-        ]
-    },
-    {
-        id: 'scene-6c',
-        type: 'image',
-        src: `${ASSET_PREFIX}/guitar_3.jpg`,
-        texts: [
-            "Making memories."
-        ]
-    },
-    {
-        id: 'scene-6d',
-        type: 'image',
-        src: `${ASSET_PREFIX}/guitar_4.jpg`,
-        texts: [
-            "Lifestyle at its best."
+            "Choose your vibe."
+        ],
+        options: [
+            // These will be populated mainly by the parent component passing featured posts
+            {
+                id: 'opt-ticket',
+                type: 'ticket',
+                label: 'Studio Ticket',
+                src: `${ASSET_PREFIX}/studio_ticket.png`,
+                action: 'open-ticket'
+            }
         ]
     },
     {
