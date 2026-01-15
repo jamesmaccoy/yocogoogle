@@ -29,9 +29,9 @@ export default function LoginPage() {
         {/* Background Image/Pattern */}
         <div className="absolute inset-0 bg-zinc-900">
           <img
-            src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop"
+            src="https://www.simpleplek.co.za/api/media/file/studio.jpg?q=80&w=2564&auto=format&fit=crop"
             alt="Abstract background"
-            className="w-full h-full object-cover opacity-20"
+            className="w-full h-full object-cover opacity-100"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/50 to-transparent" />
         </div>
@@ -41,7 +41,7 @@ export default function LoginPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm">
             <Command className="h-5 w-5" />
           </div>
-          SimplePlek
+          Retro pop up market down in the studio
         </div>
 
         {/* Testimonial */}
@@ -51,13 +51,12 @@ export default function LoginPage() {
               <Quote className="h-8 w-8 rotate-180 opacity-50" />
             </div>
             <p className="text-xl font-medium leading-relaxed">
-              "This platform has saved me countless hours of work and helped me
-              deliver stunning designs to my clients faster than ever before."
+              "Life is a series of experiences some real some fantasy but you don't have to decide which are which as long as you know there are some things you can always count on"
             </p>
             <footer className="text-sm text-zinc-400 mt-4">
-              Sofia Davis
+              Frank Rob
               <span className="block text-xs text-zinc-500 mt-1">
-                Product Designer at TechFlow
+                Art Director 1962-1965, See poster in the out house
               </span>
             </footer>
           </blockquote>
