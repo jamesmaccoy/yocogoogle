@@ -229,7 +229,19 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
-  const [earlyCheckin, setEarlyCheckin] = useState(false)
+  
+  // Addon states
+  interface AddonPackage {
+    id: string
+    name: string
+    description: string
+    baseRate: number
+    enabled: boolean
+    features: string[]
+  }
+  const [suggestedAddons, setSuggestedAddons] = useState<AddonPackage[]>([])
+  const [selectedAddons, setSelectedAddons] = useState<Set<string>>(new Set())
+  const [isLoadingAddons, setIsLoadingAddons] = useState(false)
   
   // Booking states
   const [isBooking, setIsBooking] = useState(false)
@@ -243,6 +255,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       : selectedPackage
         ? calculateTotal(baseRate, duration, selectedPackage.multiplier)
         : null
+  
+  // Calculate total including addons
+  const totalWithAddons = selectedPackageTotal 
+    ? selectedPackageTotal + Array.from(selectedAddons).reduce((sum, addonId) => {
+        const addon = suggestedAddons.find(a => a.id === addonId)
+        return sum + (addon?.baseRate || 0)
+      }, 0)
+    : null
   
   // Availability checking states
   const [unavailableDates, setUnavailableDates] = useState<string[]>([])
@@ -978,6 +998,124 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     }
   }, [isInitialized])
 
+  // Load and suggest addons when package and dates are selected
+  const loadAndSuggestAddons = useCallback(async () => {
+    if (!selectedPackage || !startDate || !endDate || !isLoggedIn) {
+      setSuggestedAddons([])
+      return
+    }
+
+    setIsLoadingAddons(true)
+    try {
+      // First, fetch available addons for this post
+      const addonsResponse = await fetch(`/api/packages/addons/${postId}`)
+      if (!addonsResponse.ok) {
+        throw new Error('Failed to fetch addons')
+      }
+      const addonsData = await addonsResponse.json()
+      const availableAddons = addonsData.addons || []
+
+      if (availableAddons.length === 0) {
+        setSuggestedAddons([])
+        setIsLoadingAddons(false)
+        return
+      }
+
+      // Use AI to suggest relevant addons based on package and dates
+      const contextDescription = `Package: ${selectedPackage.name} (${duration} ${duration === 1 ? 'night' : 'nights'}), Dates: ${format(startDate, 'MMM dd')} - ${format(endDate, 'MMM dd, yyyy')}, Property: ${postTitle}`
+      
+      const suggestResponse = await fetch('/api/packages/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: contextDescription,
+          postId,
+          baseRate,
+          hostContext: false
+        })
+      })
+
+      if (suggestResponse.ok) {
+        const suggestData = await suggestResponse.json()
+        const aiRecommendations = suggestData.recommendations || []
+        
+        // Filter to only addon category recommendations
+        const addonRecommendations = aiRecommendations.filter((r: any) => 
+          r.details?.category === 'addon'
+        )
+
+        // Match AI suggestions with available addons
+        const matchedAddons: AddonPackage[] = []
+        
+        // First, add AI-suggested addons that match available addons
+        for (const recommendation of addonRecommendations) {
+          const matchedAddon = availableAddons.find((addon: any) => 
+            addon.id === recommendation.revenueCatId || 
+            addon.revenueCatId === recommendation.revenueCatId ||
+            addon.name.toLowerCase().includes(recommendation.suggestedName.toLowerCase()) ||
+            recommendation.suggestedName.toLowerCase().includes(addon.name.toLowerCase())
+          )
+          
+          if (matchedAddon) {
+            matchedAddons.push({
+              id: matchedAddon.id,
+              name: matchedAddon.name,
+              description: matchedAddon.description || recommendation.description || '',
+              baseRate: matchedAddon.baseRate || recommendation.baseRate || 0,
+              enabled: false,
+              features: matchedAddon.features || recommendation.features || []
+            })
+          }
+        }
+
+        // If no AI matches, show top 1 available addon (sorted by price)
+        if (matchedAddons.length === 0 && availableAddons.length > 0) {
+          const topAddons = availableAddons
+            .slice(0, 1)
+            .map((addon: any) => ({
+              id: addon.id,
+              name: addon.name,
+              description: addon.description || '',
+              baseRate: addon.baseRate || 0,
+              enabled: false,
+              features: addon.features || []
+            }))
+          matchedAddons.push(...topAddons)
+        }
+
+        setSuggestedAddons(matchedAddons.slice(0, 1)) // Limit to 1 suggestion
+      } else {
+        // Fallback: show top 1 available addon if AI fails
+        const topAddons = availableAddons
+          .slice(0, 1)
+          .map((addon: any) => ({
+            id: addon.id,
+            name: addon.name,
+            description: addon.description || '',
+            baseRate: addon.baseRate || 0,
+            enabled: false,
+            features: addon.features || []
+          }))
+        setSuggestedAddons(topAddons)
+      }
+    } catch (error) {
+      console.error('Error loading addons:', error)
+      setSuggestedAddons([])
+    } finally {
+      setIsLoadingAddons(false)
+    }
+  }, [selectedPackage, startDate, endDate, duration, postId, postTitle, baseRate, isLoggedIn])
+
+  // Load addons when package and dates change
+  useEffect(() => {
+    if (selectedPackage && startDate && endDate && isLoggedIn) {
+      loadAndSuggestAddons()
+    } else {
+      setSuggestedAddons([])
+      setSelectedAddons(new Set())
+    }
+  }, [selectedPackage?.id, startDate, endDate, isLoggedIn, loadAndSuggestAddons])
+
   // Initialize speech recognition and synthesis
   useEffect(() => {
     // Initialize speech recognition
@@ -1186,7 +1324,12 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     setBookingError(null)
     
     try {
-      const total = selectedPackage.baseRate || calculateTotal(baseRate, duration, selectedPackage.multiplier)
+      const packageTotal = selectedPackage.baseRate || calculateTotal(baseRate, duration, selectedPackage.multiplier)
+      const addonTotal = Array.from(selectedAddons).reduce((sum, addonId) => {
+        const addon = suggestedAddons.find(a => a.id === addonId)
+        return sum + (addon?.baseRate || 0)
+      }, 0)
+      const total = packageTotal + addonTotal
       
       // Create estimate first
       console.log('Creating estimate with package:', {
@@ -3091,6 +3234,8 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 setEndDate(null)
                 setDuration(1)
                 setBookingError(null)
+                setSelectedAddons(new Set())
+                setSuggestedAddons([])
                 // Reset refs to allow new package suggestions
                 packagesSuggestedRef.current = false
                 estimateLoadedRef.current = false
@@ -3243,10 +3388,12 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {selectedPackageTotal && (
+              {totalWithAddons && (
                 <div className="text-right mr-2">
-                  <div className="text-sm font-bold text-teal-600">R{selectedPackageTotal.toFixed(0)}</div>
-                  <div className="text-[10px] text-slate-400">Total</div>
+                  <div className="text-sm font-bold text-teal-600">R{totalWithAddons.toFixed(0)}</div>
+                  <div className="text-[10px] text-slate-400">
+                    {selectedAddons.size > 0 ? `Total (+${selectedAddons.size} addon${selectedAddons.size > 1 ? 's' : ''})` : 'Total'}
+                  </div>
                 </div>
               )}
               {isLoggedIn && (
@@ -3271,38 +3418,81 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
           </motion.div>
         )}
 
-        {/* Booking Addon Toggle */}
+        {/* AI-Suggested Addons */}
         {selectedPackage && startDate && endDate && (
-          <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="mb-4 flex items-center justify-between p-3 bg-white border border-zinc-200 rounded-lg hover:border-zinc-300 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-teal-50 rounded-md">
-                <Calendar className="h-4 w-4 text-teal-600" />
+          <div className="mb-4 space-y-2">
+            {isLoadingAddons ? (
+              <div className="flex items-center justify-center p-3 bg-white border border-zinc-200 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin text-teal-500 mr-2" />
+                <span className="text-xs text-slate-500">Finding relevant addons...</span>
               </div>
-              <div>
-                <div className="text-sm font-medium text-slate-900">
-                  Early Check-in
+            ) : suggestedAddons.length > 0 ? (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                  Suggested Add-ons
                 </div>
-                <div className="text-xs text-slate-500">
-                  Arrive from 12:00 PM (+R50)
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setEarlyCheckin(!earlyCheckin)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${earlyCheckin ? 'bg-teal-500' : 'bg-zinc-200'}`}
-            >
-              <motion.span
-                layout
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${earlyCheckin ? 'translate-x-6' : 'translate-x-1'}`}
-              />
-            </button>
-          </motion.div>
+                {suggestedAddons.map((addon) => {
+                  const isSelected = selectedAddons.has(addon.id)
+                  return (
+                    <motion.div
+                      key={addon.id}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="flex items-center justify-between p-3 bg-white border border-zinc-200 rounded-lg hover:border-zinc-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="p-2 bg-teal-50 rounded-md">
+                          <Package className="h-4 w-4 text-teal-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-900">
+                            {addon.name}
+                          </div>
+                          {addon.description && (
+                            <div className="text-xs text-slate-500 line-clamp-1">
+                              {addon.description}
+                            </div>
+                          )}
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            +R{addon.baseRate.toFixed(0)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const newSelected = new Set(selectedAddons)
+                          if (isSelected) {
+                            newSelected.delete(addon.id)
+                          } else {
+                            newSelected.add(addon.id)
+                          }
+                          setSelectedAddons(newSelected)
+                          
+                          // Notify assistant
+                          const message: Message = {
+                            role: 'assistant',
+                            content: isSelected
+                              ? `Removed "${addon.name}" addon from your booking.`
+                              : `Added "${addon.name}" addon (+R${addon.baseRate.toFixed(0)}) to your booking.`,
+                            type: 'text'
+                          }
+                          appendMessageToThread(activeThreadRef.current, message)
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ml-3 ${isSelected ? 'bg-teal-500' : 'bg-zinc-200'}`}
+                      >
+                        <motion.span
+                          layout
+                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${isSelected ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </motion.div>
+                  )
+                })}
+              </>
+            ) : null}
+          </div>
         )}
 
         {/* Date Suggestions */}
@@ -3321,11 +3511,27 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                     whileHover={{ scale: 1.05, backgroundColor: '#f0fdfa', borderColor: '#99f6e4' }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => {
-                      setStartDate(suggestion.startDate)
-                      setEndDate(suggestion.endDate)
-                      setDuration(Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000)))
-                      preservedStartDateRef.current = suggestion.startDate
-                      checkDateAvailability(suggestion.startDate, suggestion.endDate, activeThreadRef.current, false)
+                      const newStartDate = suggestion.startDate
+                      const newEndDate = suggestion.endDate
+                      const newDuration = Math.ceil((suggestion.endDate.getTime() - suggestion.startDate.getTime()) / (24 * 60 * 60 * 1000))
+                      
+                      setStartDate(newStartDate)
+                      setEndDate(newEndDate)
+                      setDuration(newDuration)
+                      preservedStartDateRef.current = newStartDate
+                      
+                      // Check availability
+                      checkDateAvailability(newStartDate, newEndDate, activeThreadRef.current, false).then((isAvailable) => {
+                        // Notify the assistant about the date selection
+                        const confirmMessage: Message = {
+                          role: 'assistant',
+                          content: isAvailable
+                            ? `Great! I've updated your dates to ${format(newStartDate, 'MMM dd')} - ${format(newEndDate, 'MMM dd, yyyy')} (${newDuration} ${newDuration === 1 ? 'night' : 'nights'}). These dates are available for booking.`
+                            : `I've updated your dates to ${format(newStartDate, 'MMM dd')} - ${format(newEndDate, 'MMM dd, yyyy')} (${newDuration} ${newDuration === 1 ? 'night' : 'nights'}), but these dates may not be available. Please check availability.`,
+                          type: 'text'
+                        }
+                        appendMessageToThread(activeThreadRef.current, confirmMessage)
+                      })
                     }}
                     className="text-xs font-medium text-slate-600 bg-white border border-zinc-200 px-3 py-2 rounded-full transition-colors whitespace-nowrap hover:text-teal-700 flex flex-col items-center gap-0.5"
                   >
