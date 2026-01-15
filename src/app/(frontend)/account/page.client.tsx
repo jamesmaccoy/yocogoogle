@@ -4,9 +4,10 @@ import React, { useEffect, useState } from 'react'
 import { User } from '@/payload-types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2, AlertCircle, CheckCircle2, ArrowUpDown, Filter, Eye, Download, MoreHorizontal, Send, Sparkles } from 'lucide-react'
+import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2, AlertCircle, CheckCircle2, ArrowUpDown, Filter, Eye, Download, MoreHorizontal, Send, Sparkles, CreditCard, Activity } from 'lucide-react'
 import { useSubscription } from '@/hooks/useSubscription'
 import { EditPostsLink } from '@/components/EditPostsLink'
+import { Switch } from '@/components/ui/switch'
 import Link from 'next/link'
 
 type YocoTransaction = {
@@ -18,6 +19,20 @@ type YocoTransaction = {
   createdAt?: string
   expiresAt?: string
   category?: string
+}
+
+type AvailableProduct = {
+  id: string
+  title: string
+  description: string
+  price: number
+  currency: string
+  period: string
+  periodCount: number
+  category: string
+  features: string[]
+  entitlement: string
+  icon?: string
 }
 
 type Message = {
@@ -50,6 +65,10 @@ export default function AccountClient({ user }: AccountClientProps) {
   }])
   const [inputValue, setInputValue] = useState('')
   const [isLoadingAI, setIsLoadingAI] = useState(false)
+  const [availableProducts, setAvailableProducts] = useState<AvailableProduct[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(false)
+  const [activeProducts, setActiveProducts] = useState<Set<string>>(new Set())
+  const [activeTab, setActiveTab] = useState<'features' | 'transactions' | 'activity'>('features')
 
   useEffect(() => {
     const loadTransactions = async () => {
@@ -76,6 +95,37 @@ export default function AccountClient({ user }: AccountClientProps) {
 
     loadTransactions()
   }, [user])
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      if (!user) return
+      setLoadingProducts(true)
+      try {
+        const response = await fetch('/api/packages/available-products', { credentials: 'include' })
+        if (!response.ok) return
+        const products = await response.json()
+        setAvailableProducts(products || [])
+        
+        // Determine which products are active based on subscription
+        const activeSet = new Set<string>()
+        if (isSubscribed) {
+          // Add products that match user's entitlement
+          products.forEach((product: AvailableProduct) => {
+            if (product.entitlement === 'standard' || product.entitlement === 'pro') {
+              activeSet.add(product.id)
+            }
+          })
+        }
+        setActiveProducts(activeSet)
+      } catch (error) {
+        console.error('Failed to fetch available products:', error)
+      } finally {
+        setLoadingProducts(false)
+      }
+    }
+
+    loadProducts()
+  }, [user, isSubscribed])
 
   if (!user) {
     return (
@@ -108,71 +158,6 @@ export default function AccountClient({ user }: AccountClientProps) {
   }
 
   const tier = inferSubscriptionTier(transactions)
-
-  // Get available packages based on tier and roles
-  const getAvailablePackages = () => {
-    const packages: Array<{ name: string; description: string; available: boolean }> = [
-      {
-        name: 'Booking Estimates',
-        description: 'Get pricing estimates for stays',
-        available: true
-      }
-    ]
-
-    if (isSubscribed) {
-      packages.push({
-        name: 'Plek Booking',
-        description: 'Book stays at available pleks',
-        available: true
-      })
-    }
-
-    if ((isCustomer || isAdmin) && isSubscribed) {
-      packages.push({
-        name: 'Edit Posts/Pleks',
-        description: 'Create and edit property listings and content',
-        available: true
-      })
-    }
-
-    if (isHost || isAdmin) {
-      packages.push({
-        name: 'Create Blog Posts',
-        description: 'Write and publish blog content',
-        available: true
-      })
-      packages.push({
-        name: 'Manage Pleks',
-        description: 'Create and manage property listings',
-        available: true
-      })
-    }
-
-    if (tier === 'Premium') {
-      packages.push({
-        name: 'Luxury Hosting',
-        description: 'Host premium weekly packages',
-        available: true
-      })
-      packages.push({
-        name: 'Concierge Service',
-        description: '24/7 dedicated support',
-        available: true
-      })
-    }
-
-    if (!isSubscribed) {
-      packages.push({
-        name: 'Calendar Integration',
-        description: 'Sync bookings to your calendar',
-        available: false
-      })
-    }
-
-    return packages
-  }
-
-  const availablePackages = getAvailablePackages()
 
   // Filter and sort transactions
   const filteredTransactions = transactions
@@ -329,536 +314,562 @@ export default function AccountClient({ user }: AccountClientProps) {
   }
 
   return (
-    <div className="w-full max-w-[1152px] mx-auto px-4 py-8 bg-white text-[rgb(2,8,23)]">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-[30px] font-bold leading-9 text-gray-900 m-0">
-          Account
-        </h1>
-        <p className="text-gray-600 mt-2 m-0">
-          Manage your account and access your features
-        </p>
+      <div className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Account</h1>
+              <p className="text-sm text-gray-600 mt-0.5">
+                Manage your account and access your features
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-semibold text-white rounded-full">
+                {getUserInitials(user.name, user.email)}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Quick Actions Block */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="p-6 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100">
-                  <Settings className="h-5 w-5 text-gray-700" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Quick Actions
-                </h3>
-              </div>
-              <p className="text-sm text-gray-500 mt-2">
-                Common tasks and features you can access
-              </p>
+      {/* AI Search Hero */}
+      <div className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-3xl px-6 py-12">
+          <div className="text-center mb-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl mb-4">
+              <Sparkles className="h-6 w-6 text-white" />
             </div>
-            <div className="px-6 pb-6">
-              <div className="grid grid-cols-2 gap-3">
-                <Link href="/posts" className="no-underline">
-                  <button className="group relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:shadow-md">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover:bg-blue-100">
-                        <Calendar className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          Browse Properties
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          View available spaces
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                </Link>
-                
-                {(isHost || isAdmin) && (
-                  <Link href="/bookings" className="no-underline">
-                    <button className="group relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:shadow-md">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover:bg-purple-100">
-                          <Calendar className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            My Bookings
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            View your schedule
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  </Link>
-                )}
-
-                {(isHost || isAdmin) && (
-                  <Link href="/plek/adminPage" className="no-underline">
-                    <button className="group relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:shadow-md">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-green-600 transition-colors group-hover:bg-green-100">
-                          <FileText className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            Manage Pleks
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Admin dashboard
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  </Link>
-                )}
-
-                <EditPostsLink className="no-underline">
-                  <button className="group relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:shadow-md">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 text-orange-600 transition-colors group-hover:bg-orange-100">
-                        <Edit3 className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          Edit Posts
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Manage content
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                </EditPostsLink>
-
-                {isSubscribed && (
-                  <Link href="/plek" className="no-underline">
-                    <button className="group relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:shadow-md">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition-colors group-hover:bg-indigo-100">
-                          <FileText className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            Book a Plek
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Reserve a space
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  </Link>
-                )}
-              </div>
-            </div>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+              AI Assistant
+            </h2>
+            <p className="text-gray-600">
+              Ask anything about your bookings, payments, or account features
+            </p>
           </div>
 
-          {/* Available Features Block */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="p-6 pb-4">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-lg font-semibold text-gray-900">
+          <div className="relative">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Ask about bookings, payments, features..."
+              className="h-14 w-full text-base text-gray-900 bg-white border border-gray-300 rounded-xl px-5 pr-14 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              disabled={isLoadingAI}
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim() || isLoadingAI}
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-white bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transition-all rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="h-5 w-5" />
+            </button>
+          </div>
+
+          {messages.length > 0 && (
+            <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <div className="flex gap-3">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                    <Sparkles className="h-4 w-4 text-white" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    {messages[messages.length - 1]?.content || 'Hi! I can help you with bookings, subscriptions, or any questions about your account. What would you like to know?'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="border-b border-gray-200 bg-white">
+        <div className="mx-auto max-w-7xl px-6">
+          <nav className="flex gap-8">
+            {[
+              {
+                id: 'features' as const,
+                label: 'Features',
+                icon: Settings,
+              },
+              {
+                id: 'transactions' as const,
+                label: 'Transactions',
+                icon: CreditCard,
+              },
+              {
+                id: 'activity' as const,
+                label: 'Quick Actions',
+                icon: Activity,
+              },
+            ].map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-gray-900 text-gray-900'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        {activeTab === 'features' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
+              {/* Account Info Card */}
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Account Information
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Your profile and subscription details
+                    </p>
+                  </div>
+                  <div className={`inline-flex items-center text-xs font-medium border rounded-full px-3 py-1 ${getTierBadge(tier)}`}>
+                    {tier} Tier
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
+                  <div className="flex h-16 w-16 items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-xl font-semibold text-white rounded-full">
+                    {getUserInitials(user.name, user.email)}
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900">{user.name || 'No name set'}</div>
+                    <div className="text-sm text-gray-600">{user.email}</div>
+                    <div className="flex items-center gap-2 mt-2">
+                      {userRoles.map((role) => (
+                        <div
+                          key={role}
+                          className={`flex items-center text-xs font-medium border rounded-full px-2 py-0.5 ${
+                            role === 'admin'
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : role === 'host'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
+                              : 'bg-cyan-50 text-cyan-700 border-cyan-200'
+                          }`}
+                        >
+                          {role === 'admin' && <Crown className="mr-1 h-3 w-3" />}
+                          {role === 'host' && <Crown className="mr-1 h-3 w-3" />}
+                          {role.charAt(0).toUpperCase() + role.slice(1)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-6">
+                  {isSubscribed && activeTransaction ? (
+                    <Button
+                      variant="destructive"
+                      onClick={handleCancelMembership}
+                      disabled={cancelLoading}
+                      className="w-full"
+                    >
+                      {cancelLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Cancel Subscription'
+                      )}
+                    </Button>
+                  ) : (
+                    <Link href="/subscribe" className="block">
+                      <Button className="w-full bg-gray-900 hover:bg-gray-800">
+                        Manage Subscription
+                      </Button>
+                    </Link>
+                  )}
+                  {cancelError && (
+                    <div className="mt-2 flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+                      <AlertCircle className="mt-0.5 h-4 w-4" />
+                      <span>{cancelError}</span>
+                    </div>
+                  )}
+                  {cancelSuccess && (
+                    <div className="mt-2 flex items-start gap-2 rounded-md bg-green-50 p-2 text-xs text-green-700">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4" />
+                      <span>{cancelSuccess}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Available Features */}
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   Available Features
                 </h3>
-                <div className={`inline-flex items-center text-xs font-medium border rounded-full px-2.5 py-1 ${getTierBadge(tier)}`}>
-                  {tier} Tier
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 mt-2">
-                Features available based on your {tier.toLowerCase()} tier membership
-              </p>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="space-y-2">
-                {availablePackages.map((pkg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
-                      pkg.available
-                        ? 'border-gray-200 bg-white hover:bg-gray-50'
-                        : 'border-gray-100 bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-2 w-2 rounded-full ${
-                          pkg.available ? 'bg-green-500' : 'bg-gray-300'
-                        }`}
-                      />
-                      <div>
-                        <div
-                          className={`text-sm font-medium ${
-                            !pkg.available ? 'text-gray-500' : 'text-gray-900'
-                          }`}
-                        >
-                          {pkg.name}
-                        </div>
-                        <div
-                          className={`text-xs ${
-                            !pkg.available ? 'text-gray-400' : 'text-gray-500'
-                          }`}
-                        >
-                          {pkg.description}
-                        </div>
-                      </div>
-                    </div>
-                    {!pkg.available && (
-                      <Link href="/subscribe" className="no-underline">
-                        <button className="inline-flex h-8 items-center justify-center rounded-md bg-gray-900 px-3 text-xs font-medium text-white transition-colors hover:bg-gray-800">
-                          Upgrade
-                        </button>
-                      </Link>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Transactions Table */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="p-6 pb-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                Transaction History
-              </h3>
-              <p className="text-sm text-gray-500">
-                View and manage your payment history
-              </p>
-            </div>
-
-            {/* Filters */}
-            <div className="px-6 pb-4">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className={`inline-flex items-center gap-1.5 h-8 text-xs font-medium border rounded-md px-3 transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  <Filter className="h-3 w-3" />
-                  All
-                </button>
-                <button
-                  onClick={() => setStatusFilter('completed')}
-                  className={`inline-flex items-center h-8 text-xs font-medium border rounded-md px-3 transition-colors ${
-                    statusFilter === 'completed'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  Completed
-                </button>
-                <button
-                  onClick={() => setStatusFilter('pending')}
-                  className={`inline-flex items-center h-8 text-xs font-medium border rounded-md px-3 transition-colors ${
-                    statusFilter === 'pending'
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  Pending
-                </button>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="px-6 pb-6">
-              {loadingTransactions ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
-                  <span className="ml-2 text-sm text-gray-600">Loading transactions...</span>
-                </div>
-              ) : transactions.length === 0 ? (
-                <p className="text-sm text-gray-500 py-8 text-center">No transactions recorded yet.</p>
-              ) : (
-                <>
-                  <div className="rounded-lg border border-gray-200 overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="text-left text-xs font-medium text-gray-700 px-4 py-3">
-                            Description
-                          </th>
-                          <th className="text-left text-xs font-medium text-gray-700 px-4 py-3">
-                            <button
-                              onClick={() => toggleSort('date')}
-                              className="inline-flex items-center gap-1 hover:text-gray-900 transition-colors"
-                            >
-                              Date
-                              <ArrowUpDown className="h-3 w-3" />
-                            </button>
-                          </th>
-                          <th className="text-left text-xs font-medium text-gray-700 px-4 py-3">
-                            <button
-                              onClick={() => toggleSort('amount')}
-                              className="inline-flex items-center gap-1 hover:text-gray-900 transition-colors"
-                            >
-                              Amount
-                              <ArrowUpDown className="h-3 w-3" />
-                            </button>
-                          </th>
-                          <th className="text-left text-xs font-medium text-gray-700 px-4 py-3">
-                            Status
-                          </th>
-                          <th className="text-right text-xs font-medium text-gray-700 px-4 py-3">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {filteredTransactions.map((transaction) => (
-                          <tr
-                            key={transaction.id}
-                            className="hover:bg-gray-50 transition-colors"
-                          >
-                            <td className="px-4 py-3">
-                              <div className="text-sm font-medium text-gray-900">
-                                {transaction.packageName || 'Subscription payment'}
-                              </div>
-                              <div className="text-xs text-gray-500 capitalize">
-                                {transaction.category || 'payment'}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
-                              {transaction.createdAt
-                                ? new Date(transaction.createdAt).toLocaleDateString('en-GB')
-                                : 'Unknown date'}
-                            </td>
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                              {transaction.currency || 'ZAR'} {transaction.amount?.toFixed(2) ?? '0.00'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div
-                                className={`inline-flex items-center text-xs font-medium border rounded-full px-2.5 py-0.5 capitalize ${getStatusBadge(
-                                  transaction.status || 'pending'
-                                )}`}
-                              >
-                                {transaction.status || 'pending'}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button className="inline-flex items-center justify-center h-8 w-8 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors">
-                                  <Eye className="h-4 w-4" />
-                                </button>
-                                <button className="inline-flex items-center justify-center h-8 w-8 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors">
-                                  <Download className="h-4 w-4" />
-                                </button>
-                                <button className="inline-flex items-center justify-center h-8 w-8 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-4">
-                    <p className="text-sm text-gray-600">
-                      Showing {filteredTransactions.length} of {transactions.length} transactions
-                    </p>
-                    <Link
-                      href="/subscribe"
-                      className="text-sm font-medium text-gray-900 hover:text-gray-700 transition-colors"
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    {
+                      title: 'Booking Estimates',
+                      desc: 'Get pricing estimates',
+                    },
+                    {
+                      title: 'Plek Booking',
+                      desc: 'Book available spaces',
+                    },
+                    {
+                      title: 'Edit Posts/Pleks',
+                      desc: 'Manage listings',
+                    },
+                    {
+                      title: 'Create Blog Posts',
+                      desc: 'Publish content',
+                    },
+                    {
+                      title: 'Manage Pleks',
+                      desc: 'Property management',
+                    },
+                    {
+                      title: 'Luxury Hosting',
+                      desc: 'Premium packages',
+                    },
+                    {
+                      title: 'Concierge Service',
+                      desc: '24/7 support',
+                    },
+                    {
+                      title: 'Priority Booking',
+                      desc: 'Early access',
+                    },
+                  ].map((feature, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
                     >
-                      View all transactions →
-                    </Link>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Sidebar */}
-        <div className="space-y-6">
-          {/* Account Info Block */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="p-6 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100">
-                  <UserIcon className="h-5 w-5 text-gray-700" />
+                      <div className="flex-shrink-0 h-2 w-2 bg-green-500 rounded-full mt-1.5"></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900">
+                          {feature.title}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {feature.desc}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Account Info
+              </div>
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">
+                  Resources
                 </h3>
-              </div>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold text-lg">
-                  {getUserInitials(user.name, user.email)}
+                <div className="space-y-2">
+                  {[
+                    {
+                      label: 'Documentation',
+                      href: '#',
+                    },
+                    {
+                      label: 'API Reference',
+                      href: '#',
+                    },
+                    {
+                      label: 'Support Center',
+                      href: '#',
+                    },
+                    {
+                      label: 'Community',
+                      href: '#',
+                    },
+                  ].map((link, idx) => (
+                    <a
+                      key={idx}
+                      href={link.href}
+                      className="block text-sm text-gray-600 hover:text-gray-900 transition-colors py-1"
+                    >
+                      {link.label} →
+                    </a>
+                  ))}
                 </div>
-                <div>
-                  <div className="font-medium text-gray-900">{user.name || 'No name set'}</div>
-                  <div className="text-sm text-gray-500">{user.email}</div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Roles
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {userRoles.map((role) => (
-                      <div
-                        key={role}
-                        className={`inline-flex items-center text-xs font-medium border rounded-full px-2.5 py-1 ${
-                          role === 'admin'
-                            ? 'bg-red-500/10 text-red-700 border-red-500/20'
-                            : role === 'host'
-                            ? 'bg-purple-100 text-purple-800 border-transparent'
-                            : 'bg-cyan-700 text-cyan-300 border-transparent'
-                        }`}
-                      >
-                        {role === 'admin' && <Crown className="h-3 w-3 mr-1" />}
-                        {role === 'host' && <Crown className="h-3 w-3 mr-1" />}
-                        {role.charAt(0).toUpperCase() + role.slice(1)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {!isLoading && (
-                  <div>
-                    <div className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Subscription Tier
-                    </div>
-                    <div className={`inline-flex items-center text-xs font-medium border rounded-full px-2.5 py-1 ${getTierBadge(tier)}`}>
-                      {tier}
-                    </div>
-                    {isSubscribed && activeTransaction && (
-                      <div className="mt-3 space-y-2 text-sm">
-                        {activeTransaction.expiresAt && (
-                          <p className="text-gray-600">
-                            Renewing on{' '}
-                            {new Date(activeTransaction.expiresAt).toLocaleDateString()}
-                          </p>
-                        )}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleCancelMembership}
-                          disabled={cancelLoading}
-                          className="w-full"
-                        >
-                          {cancelLoading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Cancelling...
-                            </>
-                          ) : (
-                            'Cancel Membership'
-                          )}
-                        </Button>
-                        {cancelError && (
-                          <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
-                            <AlertCircle className="mt-0.5 h-4 w-4" />
-                            <span>{cancelError}</span>
-                          </div>
-                        )}
-                        {cancelSuccess && (
-                          <div className="flex items-start gap-2 rounded-md bg-green-50 p-2 text-xs text-green-700">
-                            <CheckCircle2 className="mt-0.5 h-4 w-4" />
-                            <span>{cancelSuccess}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {!isSubscribed && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        Inferred from activity
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           </div>
+        )}
 
-          {/* AI Assistant Block */}
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="p-6 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-pink-500">
-                  <Sparkles className="h-5 w-5 text-white" />
+        {activeTab === 'transactions' && (
+          <div className="bg-white border border-gray-200 rounded-xl">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Transaction History
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    View and manage your payment history
+                  </p>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  AI Assistant
-                </h3>
-              </div>
-              <p className="text-sm text-gray-500 mt-2">
-                Ask anything about your account
-              </p>
-            </div>
-
-            {/* Messages */}
-            <div className="px-6 pb-4 max-h-[300px] overflow-y-auto space-y-3">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                      message.role === 'user'
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-100 text-gray-900'
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className={`flex items-center gap-1.5 h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
+                      statusFilter === 'all'
+                        ? 'text-white bg-gray-900'
+                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
                     }`}
                   >
-                    {message.content}
-                  </div>
+                    <Filter className="h-3.5 w-3.5" />
+                    All
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('completed')}
+                    className={`h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
+                      statusFilter === 'completed'
+                        ? 'text-white bg-gray-900'
+                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    Completed
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('pending')}
+                    className={`h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
+                      statusFilter === 'pending'
+                        ? 'text-white bg-gray-900'
+                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    Pending
+                  </button>
                 </div>
-              ))}
-              {isLoadingAI && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-lg px-3 py-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-600" />
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
 
-            {/* Input */}
-            <div className="px-6 pb-6">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Ask about bookings, payments..."
-                  className="flex-1 h-10 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                  disabled={isLoadingAI}
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!inputValue.trim() || isLoadingAI}
-                  className="inline-flex items-center justify-center h-10 w-10 bg-gray-900 text-white rounded-lg transition-colors hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Powered by AI • Instant responses
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                      Description
+                    </th>
+                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                      <button
+                        onClick={() => toggleSort('date')}
+                        className="inline-flex items-center gap-1 hover:text-gray-900"
+                      >
+                        Date <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </th>
+                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                      <button
+                        onClick={() => toggleSort('amount')}
+                        className="inline-flex items-center gap-1 hover:text-gray-900"
+                      >
+                        Amount <ArrowUpDown className="h-3 w-3" />
+                      </button>
+                    </th>
+                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                      Status
+                    </th>
+                    <th className="text-right text-xs font-medium text-gray-600 px-6 py-3">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {loadingTransactions ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-gray-600 mx-auto" />
+                      </td>
+                    </tr>
+                  ) : filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">
+                        No transactions found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTransactions.map((transaction) => (
+                      <tr
+                        key={transaction.id}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900">
+                            {transaction.packageName || 'Subscription payment'}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-0.5">
+                            {transaction.category || 'Payment'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-700">
+                          {transaction.createdAt
+                            ? new Date(transaction.createdAt).toLocaleDateString('en-GB')
+                            : 'Unknown date'}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                          {transaction.currency || 'ZAR'} {transaction.amount?.toFixed(2) ?? '0.00'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center text-xs font-medium rounded-full px-2.5 py-1 ${
+                              transaction.status === 'pending'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : transaction.status === 'completed'
+                                ? 'bg-green-50 text-green-700 border border-green-200'
+                                : 'bg-gray-50 text-gray-700 border border-gray-200'
+                            }`}
+                          >
+                            {transaction.status || 'pending'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end gap-1">
+                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                              <Download className="h-4 w-4" />
+                            </button>
+                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing {filteredTransactions.length} of {transactions.length} transactions
               </p>
+              <Link
+                href="/subscribe"
+                className="text-sm font-medium text-gray-900 hover:text-gray-700"
+              >
+                View all transactions →
+              </Link>
             </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              {
+                title: 'Browse Properties',
+                desc: 'View available spaces',
+                icon: Calendar,
+                color: 'blue',
+                href: '/posts',
+              },
+              {
+                title: 'My Bookings',
+                desc: 'View your schedule',
+                icon: Calendar,
+                color: 'purple',
+                href: '/bookings',
+                show: isHost || isAdmin,
+              },
+              {
+                title: 'Manage Pleks',
+                desc: 'Admin dashboard',
+                icon: FileText,
+                color: 'green',
+                href: '/plek/adminPage',
+                show: isHost || isAdmin,
+              },
+              {
+                title: 'Edit Posts',
+                desc: 'Manage content',
+                icon: Edit3,
+                color: 'orange',
+                href: '#',
+                component: EditPostsLink,
+              },
+              {
+                title: 'Book a Plek',
+                desc: 'Reserve a space',
+                icon: FileText,
+                color: 'indigo',
+                href: '/plek',
+                show: isSubscribed,
+              },
+            ]
+              .filter((action) => action.show !== false)
+              .map((action, idx) => {
+                const Icon = action.icon
+                const colorClasses = {
+                  blue: 'bg-blue-50 text-blue-600',
+                  purple: 'bg-purple-50 text-purple-600',
+                  green: 'bg-green-50 text-green-600',
+                  orange: 'bg-orange-50 text-orange-600',
+                  indigo: 'bg-indigo-50 text-indigo-600',
+                }
+                if (action.component) {
+                  const Component = action.component
+                  return (
+                    <Component key={idx} className="no-underline">
+                      <button className="flex items-center gap-4 p-6 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all text-left w-full">
+                        <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${colorClasses[action.color as keyof typeof colorClasses]}`}>
+                          <Icon className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {action.title}
+                          </div>
+                          <div className="text-sm text-gray-600 mt-0.5">
+                            {action.desc}
+                          </div>
+                        </div>
+                      </button>
+                    </Component>
+                  )
+                }
+                
+                return (
+                  <Link key={idx} href={action.href} className="no-underline">
+                    <button className="flex items-center gap-4 p-6 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all text-left w-full">
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${colorClasses[action.color as keyof typeof colorClasses]}`}>
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {action.title}
+                        </div>
+                        <div className="text-sm text-gray-600 mt-0.5">
+                          {action.desc}
+                        </div>
+                      </div>
+                    </button>
+                  </Link>
+                )
+              })}
+          </div>
+        )}
       </div>
     </div>
   )
-} 
+}
