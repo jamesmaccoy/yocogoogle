@@ -15,11 +15,6 @@ type EmailFormValues = {
 function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; loading: boolean }) {
   const [value, setValue] = React.useState('')
 
-  const COLORS = {
-    teal: 'rgb(45, 212, 191)',
-    tealDark: 'rgb(22, 78, 99)',
-  }
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -43,12 +38,8 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
       </InputOTP>
       <Button
         type="submit"
-        className="w-full h-10"
+        className="w-full h-10 bg-zinc-900 text-white hover:bg-zinc-800"
         disabled={loading || value.length < 6}
-        style={{
-          backgroundColor: COLORS.teal,
-          color: COLORS.tealDark,
-        }}
       >
         {loading ? (
           <span className="flex items-center gap-2">
@@ -124,11 +115,6 @@ export default function EmailAuthForm() {
     }
   }
 
-  const COLORS = {
-    teal: 'rgb(45, 212, 191)',
-    tealDark: 'rgb(22, 78, 99)',
-  }
-
   return (
     <div>
       {step === 'email' && (
@@ -153,13 +139,9 @@ export default function EmailAuthForm() {
             />
           </div>
           <Button
-            className="w-full mt-2 h-10"
+            className="w-full mt-2 h-10 bg-zinc-900 text-white hover:bg-zinc-800"
             type="submit"
             disabled={loading}
-            style={{
-              backgroundColor: COLORS.teal,
-              color: COLORS.tealDark,
-            }}
           >
             {loading ? (
               <span className="flex items-center gap-2">
