@@ -92,7 +92,7 @@ export default function RegisterPage() {
         {/* Background Image/Pattern */}
         <div className="absolute inset-0 bg-zinc-900">
           <img
-            src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop"
+            src="https://www.simpleplek.co.za/api/media/file/sport.jpg?q=80&w=2564&auto=format&fit=crop"
             alt="Abstract background"
             className="w-full h-full object-cover opacity-20"
           />
@@ -114,13 +114,12 @@ export default function RegisterPage() {
               <Quote className="h-8 w-8 rotate-180 opacity-50" />
             </div>
             <p className="text-xl font-medium leading-relaxed">
-              "This platform has saved me countless hours of work and helped me
-              deliver stunning designs to my clients faster than ever before."
+              "What a dream!! From the sounds of the ocean, to the birds in the morning, what a peaceful and grounding place. It was such a treat having the beach right on the door step, and being able to take a hot shower outside to warm up! Ihad such a wholesome weekend at the shack and definitely be back sometime soon! :"
             </p>
             <footer className="text-sm text-zinc-400 mt-4">
-              Sofia Davis
+              Anonymous Guest
               <span className="block text-xs text-zinc-500 mt-1">
-                Product Designer at TechFlow
+                Photographer from Portugal
               </span>
             </footer>
           </blockquote>
