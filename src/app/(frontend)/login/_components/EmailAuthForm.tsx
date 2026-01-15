@@ -22,20 +22,22 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 items-center">
-      <InputOTP maxLength={6} onChange={(v) => setValue(v)}>
-        <InputOTPGroup>
-          <InputOTPSlot index={0} />
-          <InputOTPSlot index={1} />
-          <InputOTPSlot index={2} />
-        </InputOTPGroup>
-        <InputOTPSeparator />
-        <InputOTPGroup>
-          <InputOTPSlot index={3} />
-          <InputOTPSlot index={4} />
-          <InputOTPSlot index={5} />
-        </InputOTPGroup>
-      </InputOTP>
+    <form onSubmit={handleSubmit} className="grid gap-4">
+      <div className="flex justify-center">
+        <InputOTP maxLength={6} onChange={(v) => setValue(v)}>
+          <InputOTPGroup>
+            <InputOTPSlot index={0} />
+            <InputOTPSlot index={1} />
+            <InputOTPSlot index={2} />
+          </InputOTPGroup>
+          <InputOTPSeparator />
+          <InputOTPGroup>
+            <InputOTPSlot index={3} />
+            <InputOTPSlot index={4} />
+            <InputOTPSlot index={5} />
+          </InputOTPGroup>
+        </InputOTP>
+      </div>
       <Button
         type="submit"
         className="w-full h-10"
@@ -157,18 +159,18 @@ export default function EmailAuthForm() {
         </form>
       )}
       {step === 'otp' && (
-        <div>
-          <div className="mb-4 text-center">
-            <p className="font-medium">We&apos;ve sent a login link and code to:</p>
-            <p className="font-mono text-primary">{email}</p>
-            <p className="text-xs text-muted-foreground mt-2">
+        <div className="grid gap-4">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-zinc-900">
+              We&apos;ve sent a login link and code to:
+            </p>
+            <p className="text-sm font-mono text-primary font-semibold">{email}</p>
+            <p className="text-sm text-zinc-500 mt-3">
               Enter the 6-digit code from your email to continue.
             </p>
           </div>
-          {error && <div className="bg-red-100 text-red-700 p-3 rounded-md my-3">{error}</div>}
-          <div className="flex items-center justify-center">
-            <OtpInput onSubmit={handleVerifyOtp} loading={loading} />
-          </div>
+          {error && <div className="bg-red-100 text-red-700 p-3 rounded-md">{error}</div>}
+          <OtpInput onSubmit={handleVerifyOtp} loading={loading} />
         </div>
       )}
     </div>
