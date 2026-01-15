@@ -151,14 +151,14 @@ export default function LoginPage() {
           <p className="px-8 text-center text-sm text-zinc-500">
             By clicking continue, you agree to our{' '}
             <Link
-              href="/terms"
+              href="/terms-of-service"
               className="underline underline-offset-4 hover:text-zinc-900"
             >
               Terms of Service
             </Link>{' '}
             and{' '}
             <Link
-              href="/privacy"
+              href="/privacy-policy"
               className="underline underline-offset-4 hover:text-zinc-900"
             >
               Privacy Policy
