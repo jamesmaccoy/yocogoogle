@@ -23,7 +23,8 @@ const serializeUsageMetadata = (usage: any) => {
 
 export async function POST(req: Request) {
   try {
-    const { message, bookingContext, context, packageId, postId } = await req.json()
+    const body = await req.json()
+    const { message, bookingContext, context, packageId, postId } = body
     const { user } = await getMeUser()
 
     if (!user) {
@@ -79,10 +80,10 @@ export async function POST(req: Request) {
       const post = typeof booking.post === 'object' && booking.post ? booking.post : null
       const categories = Array.isArray(post?.categories)
         ? post.categories.map((c: any) =>
-            typeof c === 'object'
-              ? (c.title || c.slug || c.id || '').toString()
-              : String(c)
-          ).filter(Boolean)
+          typeof c === 'object'
+            ? (c.title || c.slug || c.id || '').toString()
+            : String(c)
+        ).filter(Boolean)
         : []
 
       return {
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
       revenueCatId: pkg.revenueCatId,
       features: pkg.features?.map((f: any) => typeof f === 'string' ? f : f.feature).filter(Boolean) || [],
       postTitle: typeof pkg.post === 'object' && pkg.post ? pkg.post.title : 'Unknown Property',
-      durationText: pkg.minNights === pkg.maxNights 
+      durationText: pkg.minNights === pkg.maxNights
         ? `${pkg.minNights} ${pkg.minNights === 1 ? 'night' : 'nights'}`
         : `${pkg.minNights}-${pkg.maxNights} nights`
     }))
@@ -158,6 +159,62 @@ export async function POST(req: Request) {
 
     // Get the generative model
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+    // Handle account page context
+    if (context === 'account-page') {
+      const { user: contextUser, subscription, transactionsSummary } = body
+
+      const systemPrompt = `You are a helpful account assistant for the user ${contextUser?.name || 'Guest'}.
+      
+USER CONTEXT:
+- Name: ${contextUser?.name}
+- Email: ${contextUser?.email}
+- Roles: ${contextUser?.roles?.join(', ') || 'user'}
+- Subscription Plan: ${subscription?.plan || 'None'}
+- Tier: ${subscription?.tier || 'Basic'}
+- Is Subscribed: ${subscription?.isSubscribed ? 'Yes' : 'No'}
+
+TRANSACTION SUMMARY:
+- Total Transactions: ${transactionsSummary?.total || 0}
+- Completed Transactions: ${transactionsSummary?.completed || 0}
+- Latest Transaction Status: ${transactionsSummary?.latest?.status || 'None'}
+
+INSTRUCTIONS:
+1. Answer questions about the user's account, subscription status, and billing history.
+2. If the user asks about features, explain what their current tier (${subscription?.tier}) allows.
+   - Basic: Standard features
+   - Member: Access to member-only packages
+   - Premium: All features plus concierge
+3. If asked about cancelling, guide them to the button on the account page.
+4. Be clear, concise, and helpful.
+5. If the user asks about booking history, refer to the global booking context if needed, or suggest checking the "Transactions" tab.
+
+Your goal is to help the user understand their current account standing and available features.`
+
+      const chat = model.startChat({
+        history: [
+          {
+            role: 'user',
+            parts: [{ text: systemPrompt }],
+          },
+          {
+            role: 'model',
+            parts: [{ text: "I understand. I am ready to assist with account and subscription questions." }],
+          },
+        ],
+      })
+
+      try {
+        const result = await chat.sendMessage(message)
+        const response = await result.response
+        const text = response.text()
+        const usage = serializeUsageMetadata(response.usageMetadata)
+        return NextResponse.json({ response: text, usage })
+      } catch (error) {
+        console.error('Error in account context chat:', error)
+        return NextResponse.json({ response: 'I apologize, but I encountered an error processing your request.' })
+      }
+    }
 
     // Handle package update context
     if (context === 'package-update' && packageId && postId) {
@@ -254,7 +311,7 @@ Respond with clear, specific suggestions for updating the package.`
         const customerIds = allBookings.docs
           .map((b: any) => typeof b.customer === 'object' ? b.customer?.id : b.customer)
           .filter(Boolean) as string[]
-        
+
         const guestTransactions = customerIds.length > 0 ? await payload.find({
           collection: 'yoco-transactions',
           where: {
@@ -264,9 +321,9 @@ Respond with clear, specific suggestions for updating the package.`
           },
           limit: 1000,
         }) : { docs: [] }
-        
+
         const guestTransactionUserIds = new Set(
-          guestTransactions.docs.map((t: any) => 
+          guestTransactions.docs.map((t: any) =>
             typeof t.user === 'object' ? t.user?.id : t.user
           ).filter(Boolean) as string[]
         )
@@ -276,12 +333,12 @@ Respond with clear, specific suggestions for updating the package.`
           const post = typeof booking.post === 'object' && booking.post ? booking.post : null
           const categories = Array.isArray(post?.categories)
             ? post.categories.map((c: any) =>
-                typeof c === 'object'
-                  ? (c.title || c.slug || c.id || '').toString()
-                  : String(c)
-              ).filter(Boolean)
+              typeof c === 'object'
+                ? (c.title || c.slug || c.id || '').toString()
+                : String(c)
+            ).filter(Boolean)
             : []
-          
+
           // Extract sleep capacity from post meta description or content
           let sleepCapacity = 'Unknown'
           if (post?.meta?.description) {
@@ -291,7 +348,7 @@ Respond with clear, specific suggestions for updating the package.`
             const match3 = desc.match(/(?:couple|double|single|twin)/i) ? '2' : null
             sleepCapacity = match1 || match2 || match3 || 'Unknown'
           }
-          
+
           // Also try to extract from post content if it's a string (simple text)
           if (sleepCapacity === 'Unknown' && post?.content && typeof post.content === 'string') {
             const content = post.content
@@ -302,11 +359,11 @@ Respond with clear, specific suggestions for updating the package.`
 
           const checkoutDateISO = booking.toDate.split('T')[0] // YYYY-MM-DD format
           const checkinDateISO = booking.fromDate.split('T')[0] // YYYY-MM-DD format
-          
+
           // Check if booking was paid by a guest (has completed transaction)
           const customerId = typeof booking.customer === 'object' ? booking.customer?.id : booking.customer
           const isGuestBooking = customerId && guestTransactionUserIds.has(customerId)
-          
+
           // Get package info for current booking
           const currentPackage = booking.selectedPackage?.package
           const currentPackageName = typeof currentPackage === 'object' && currentPackage
@@ -320,17 +377,17 @@ Respond with clear, specific suggestions for updating the package.`
             propertyId: post?.id || '',
             fromDate: booking.fromDate,
             toDate: booking.toDate,
-            checkoutDate: new Date(booking.toDate).toLocaleDateString('en-US', { 
-              weekday: 'short', 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
+            checkoutDate: new Date(booking.toDate).toLocaleDateString('en-US', {
+              weekday: 'short',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
             }),
-            checkinDate: new Date(booking.fromDate).toLocaleDateString('en-US', { 
-              weekday: 'short', 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
+            checkinDate: new Date(booking.fromDate).toLocaleDateString('en-US', {
+              weekday: 'short',
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
             }),
             checkoutDateISO: checkoutDateISO,
             checkinDateISO: checkinDateISO,
@@ -344,21 +401,21 @@ Respond with clear, specific suggestions for updating the package.`
 
         // Find next bookings for each property to determine cleaning needs before check-in
         // Also calculate time windows between checkout and next check-in
-        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] & { 
+        const propertyNextBookings: Record<string, typeof cleaningBookingsInfo[0] & {
           timeWindowHours: number
           timeWindowDays: number
           nextPackageName: string
         } | null> = {}
-        
+
         cleaningBookingsInfo.forEach((booking) => {
           const propertyId = booking.propertyId
           if (!propertyId) return
-          
+
           // Find the next booking for this property (earliest check-in after this checkout)
           const nextBooking = cleaningBookingsInfo
             .filter(b => b.propertyId === propertyId && b.checkinDateISO > booking.checkoutDateISO)
             .sort((a, b) => a.checkinDateISO.localeCompare(b.checkinDateISO))[0]
-          
+
           if (nextBooking) {
             // Calculate time window between checkout and next check-in
             const checkoutDate = new Date(booking.toDate)
@@ -366,7 +423,7 @@ Respond with clear, specific suggestions for updating the package.`
             const timeWindowMs = nextCheckinDate.getTime() - checkoutDate.getTime()
             const timeWindowHours = Math.floor(timeWindowMs / (1000 * 60 * 60))
             const timeWindowDays = Math.floor(timeWindowMs / (1000 * 60 * 60 * 24))
-            
+
             propertyNextBookings[booking.id] = {
               ...nextBooking,
               timeWindowHours,
@@ -436,57 +493,57 @@ HOST CONTEXT:
 - Today's date: ${today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 
 ALL UPCOMING BOOKINGS WITH CLEANING CONTEXT:
-${detailedBookingsInfo.length > 0 
-  ? detailedBookingsInfo.map(
-      (b) => {
-        const nextInfo = b.nextCheckin 
-          ? ` → Next check-in: ${b.nextCheckin.propertyTitle} on ${b.nextCheckin.date} (clean on ${b.checkoutDate} before next guest)`
-          : ` → No immediate next booking (clean on ${b.checkoutDate})`
-        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Check-in: ${b.checkinDate}${nextInfo} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
-      }
-    ).join('\n')
-  : 'No upcoming bookings found.'}
+${detailedBookingsInfo.length > 0
+            ? detailedBookingsInfo.map(
+              (b) => {
+                const nextInfo = b.nextCheckin
+                  ? ` → Next check-in: ${b.nextCheckin.propertyTitle} on ${b.nextCheckin.date} (clean on ${b.checkoutDate} before next guest)`
+                  : ` → No immediate next booking (clean on ${b.checkoutDate})`
+                return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Checkout: ${b.checkoutDate} • Check-in: ${b.checkinDate}${nextInfo} • Categories: ${b.proximityCategories.length ? b.proximityCategories.join(', ') : 'None'}`
+              }
+            ).join('\n')
+            : 'No upcoming bookings found.'}
 
 SAME-DAY CHECKOUTS BY DATE:
 ${Object.entries(bookingsByCheckoutDate)
-  .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-  .map(([date, bookings]) => {
-    const dateFormatted = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    })
-    const sameDayCheckins = bookingsByCheckinDate[date] || []
-    const checkinsText = sameDayCheckins.length > 0
-      ? `\n  ⚠️ CRITICAL: ${sameDayCheckins.length} ${sameDayCheckins.length === 1 ? 'property' : 'properties'} checking IN on this same date:\n${sameDayCheckins.map(c => `    - ${c.propertyTitle} (sleeps ${c.sleepCapacity}) • Categories: ${c.proximityCategories.join(', ') || 'None'}`).join('\n')}`
-      : ''
-    return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}${checkinsText}`
-  }).join('\n')}
+            .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+            .map(([date, bookings]) => {
+              const dateFormatted = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })
+              const sameDayCheckins = bookingsByCheckinDate[date] || []
+              const checkinsText = sameDayCheckins.length > 0
+                ? `\n  ⚠️ CRITICAL: ${sameDayCheckins.length} ${sameDayCheckins.length === 1 ? 'property' : 'properties'} checking IN on this same date:\n${sameDayCheckins.map(c => `    - ${c.propertyTitle} (sleeps ${c.sleepCapacity}) • Categories: ${c.proximityCategories.join(', ') || 'None'}`).join('\n')}`
+                : ''
+              return `\n${dateFormatted} (${bookings.length} checkout${bookings.length !== 1 ? 's' : ''}):\n${bookings.map(b => `  - ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}`).join('\n')}${checkinsText}`
+            }).join('\n')}
 
 TODAY'S CHECKOUTS (${todayCheckouts.length}):
 ${todayCheckouts.length > 0
-  ? todayCheckouts.map(
-      (b) => {
-        const nextInfo = propertyNextBookings[b.id]
-          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean today before next guest)`
-          : ''
-        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
-      }
-    ).join('\n')
-  : 'No checkouts today.'}
+            ? todayCheckouts.map(
+              (b) => {
+                const nextInfo = propertyNextBookings[b.id]
+                  ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean today before next guest)`
+                  : ''
+                return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+              }
+            ).join('\n')
+            : 'No checkouts today.'}
 
 TOMORROW'S CHECKOUTS (${tomorrowCheckouts.length}):
 ${tomorrowCheckouts.length > 0
-  ? tomorrowCheckouts.map(
-      (b) => {
-        const nextInfo = propertyNextBookings[b.id]
-          ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean tomorrow before next guest)`
-          : ''
-        return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
-      }
-    ).join('\n')
-  : 'No checkouts tomorrow.'}
+            ? tomorrowCheckouts.map(
+              (b) => {
+                const nextInfo = propertyNextBookings[b.id]
+                  ? ` → Next: ${propertyNextBookings[b.id]!.propertyTitle} checks in ${propertyNextBookings[b.id]!.checkinDate} (clean tomorrow before next guest)`
+                  : ''
+                return `- ${b.propertyTitle} (sleeps ${b.sleepCapacity}) • Categories: ${b.proximityCategories.join(', ') || 'None'}${nextInfo}`
+              }
+            ).join('\n')
+            : 'No checkouts tomorrow.'}
 
 CRITICAL INSTRUCTIONS - BE CONCISE AND USE RELATIVE DATES:
 
@@ -540,16 +597,16 @@ Respond concisely with just the essential information using relative date refere
         const sameDayCheckoutsByDate = Object.entries(bookingsByCheckoutDate)
           .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
           .map(([dateISO, bookings]) => {
-            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
             })
-            
+
             // Find checkins happening on the same date (different properties)
             const sameDayCheckins = bookingsByCheckinDate[dateISO] || []
-            
+
             return {
               date: dateFormatted,
               dateISO: dateISO,
@@ -591,19 +648,19 @@ Respond concisely with just the essential information using relative date refere
                 }),
             }
           })
-        
+
         // Create date suggestions showing checkout schedules grouped by date
         // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
         const checkoutScheduleSuggestions = Object.entries(bookingsByCheckoutDate)
           .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
           .map(([dateISO, bookings]) => {
-            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            const dateFormatted = new Date(dateISO + 'T00:00:00').toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
             })
-            
+
             // Get next checkout dates for properties in this group
             const nextCheckouts = bookings
               .map(b => {
@@ -611,17 +668,17 @@ Respond concisely with just the essential information using relative date refere
                 if (!nextBooking) return null
                 return {
                   checkoutDate: nextBooking.checkoutDateISO,
-                  checkoutDateFormatted: new Date(nextBooking.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                  checkoutDateFormatted: new Date(nextBooking.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
                   }),
                   propertyTitle: b.propertyTitle,
                 }
               })
               .filter((nc): nc is { checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string } => nc !== null)
-            
+
             // Group next checkouts by date
             const nextCheckoutsByDate: Record<string, Array<{ checkoutDate: string; checkoutDateFormatted: string; propertyTitle: string }>> = {}
             nextCheckouts.forEach(nc => {
@@ -633,7 +690,7 @@ Respond concisely with just the essential information using relative date refere
                 dateGroup.push(nc)
               }
             })
-            
+
             return {
               checkoutDate: dateISO,
               checkoutDateFormatted: dateFormatted,
@@ -651,11 +708,11 @@ Respond concisely with just the essential information using relative date refere
                 nextCheckin: propertyNextBookings[b.id] ? {
                   date: propertyNextBookings[b.id]!.checkinDate,
                   checkoutDate: propertyNextBookings[b.id]!.checkoutDateISO,
-                  checkoutDateFormatted: new Date(propertyNextBookings[b.id]!.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
+                  checkoutDateFormatted: new Date(propertyNextBookings[b.id]!.checkoutDateISO + 'T00:00:00').toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
                   }),
                   propertyTitle: propertyNextBookings[b.id]!.propertyTitle,
                   timeWindowHours: propertyNextBookings[b.id]!.timeWindowHours,
@@ -676,12 +733,12 @@ Respond concisely with just the essential information using relative date refere
                 .filter((item): item is { checkoutDate: string; checkoutDateFormatted: string; propertyCount: number } => item !== null),
             }
           })
-        
+
         // Create schedule suggestions showing date ranges with property counts
         // Format: "Tuesday, October 14, 2025 (1 property) - Friday, December 19, 2025 (1 property)"
         const scheduleSuggestions = checkoutScheduleSuggestions
           .filter(schedule => schedule.nextCheckoutsByDate.length > 0)
-          .flatMap(schedule => 
+          .flatMap(schedule =>
             schedule.nextCheckoutsByDate.map(nextCheckout => ({
               label: `${schedule.checkoutDateFormatted} (${schedule.propertyCount} ${schedule.propertyCount === 1 ? 'property' : 'properties'}) - ${nextCheckout.checkoutDateFormatted} (${nextCheckout.propertyCount} ${nextCheckout.propertyCount === 1 ? 'property' : 'properties'})`,
               fromCheckoutDate: schedule.checkoutDate,
@@ -693,7 +750,7 @@ Respond concisely with just the essential information using relative date refere
               properties: schedule.properties,
             }))
           )
-        
+
         // Also keep the time window suggestions for the existing display
         const dateSuggestions = cleaningBookingsInfo
           .filter(b => propertyNextBookings[b.id]) // Only bookings with next check-ins
@@ -701,7 +758,7 @@ Respond concisely with just the essential information using relative date refere
             const nextBooking = propertyNextBookings[b.id]!
             const checkoutDate = new Date(b.toDate)
             const nextCheckinDate = new Date(nextBooking.fromDate)
-            
+
             // Format time window
             let timeWindowLabel = ''
             if (nextBooking.timeWindowHours < 24) {
@@ -711,7 +768,7 @@ Respond concisely with just the essential information using relative date refere
             } else {
               timeWindowLabel = `${nextBooking.timeWindowDays} days`
             }
-            
+
             return {
               checkoutDate: b.checkoutDateISO,
               checkoutDateFormatted: b.checkoutDate,
@@ -727,8 +784,8 @@ Respond concisely with just the essential information using relative date refere
           })
           .sort((a, b) => a.checkoutDate.localeCompare(b.checkoutDate))
 
-        return NextResponse.json({ 
-          response: text, 
+        return NextResponse.json({
+          response: text,
           usage,
           cleaningSchedule: {
             sameDayCheckouts: sameDayCheckoutsByDate,
@@ -754,10 +811,10 @@ CURRENT BOOKING CONTEXT:
 - Customer Entitlement: ${userContext.currentBooking?.customerEntitlement}
 - Available Packages: ${userContext.currentBooking?.availablePackages}
 ${userContext.currentBooking?.selectedPackage ? `- Selected Package: ${userContext.currentBooking.selectedPackage}` : ''}
-${userContext.currentBooking?.fromDate && userContext.currentBooking?.toDate ? 
-  `- Selected Dates: ${new Date(userContext.currentBooking.fromDate).toLocaleDateString()} to ${new Date(userContext.currentBooking.toDate).toLocaleDateString()} (${userContext.currentBooking.duration} ${userContext.currentBooking.duration === 1 ? 'night' : 'nights'})` : 
-  '- Dates: Not yet selected'
-}
+${userContext.currentBooking?.fromDate && userContext.currentBooking?.toDate ?
+        `- Selected Dates: ${new Date(userContext.currentBooking.fromDate).toLocaleDateString()} to ${new Date(userContext.currentBooking.toDate).toLocaleDateString()} (${userContext.currentBooking.duration} ${userContext.currentBooking.duration === 1 ? 'night' : 'nights'})` :
+        '- Dates: Not yet selected'
+      }
 ${userContext.currentBooking?.postDetails?.description ? `- Description: ${userContext.currentBooking.postDetails.description}` : ''}
 
 USER'S BOOKING HISTORY:
@@ -765,9 +822,9 @@ USER'S BOOKING HISTORY:
 - Recent Estimates: ${userContext.estimates.length}
 
 AVAILABLE PACKAGES FOR THIS PROPERTY:
-${packagesInfo.filter(pkg => pkg.isEnabled).map(pkg => 
-  `- ${pkg.name} (${pkg.durationText}): ${pkg.description} - Features: ${pkg.features.join(', ')}`
-).join('\n')}
+${packagesInfo.filter(pkg => pkg.isEnabled).map(pkg =>
+        `- ${pkg.name} (${pkg.durationText}): ${pkg.description} - Features: ${pkg.features.join(', ')}`
+      ).join('\n')}
 
 ENTITLEMENT INFORMATION:
 - Customer has ${userContext.currentBooking?.customerEntitlement} entitlement
@@ -791,9 +848,9 @@ INSTRUCTIONS:
 13. If user asks about pro packages but has standard entitlement, suggest upgrading to pro
 14. If Related Posts are available and the user's question suggests they might be interested in similar properties or related content, naturally suggest checking out the related posts. For example, if they ask about similar properties, alternatives, or related experiences, mention the related posts by name.
 
-Respond to the user's message naturally, as if you're a knowledgeable booking assistant who knows this property well.` 
-    : 
-    `You are a helpful AI assistant for a booking platform. You have access to the user's booking history and can help with general questions about properties, packages, and bookings.
+Respond to the user's message naturally, as if you're a knowledgeable booking assistant who knows this property well.`
+      :
+      `You are a helpful AI assistant for a booking platform. You have access to the user's booking history and can help with general questions about properties, packages, and bookings.
 
 USER'S DATA:
 - Total Bookings: ${userContext.bookings.length}

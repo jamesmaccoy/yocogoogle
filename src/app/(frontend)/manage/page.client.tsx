@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -13,10 +14,22 @@ type ManagePageClientProps = {
 }
 
 export default function ManagePageClient({ posts, latestEstimatePostId }: ManagePageClientProps) {
+  useEffect(() => {
+    ; (window as any).manageContext = {
+      context: 'manage-page',
+      posts: posts.map(p => ({
+        id: p.id,
+        title: p.title,
+        slug: p.slug
+      })),
+      postCount: posts.length
+    }
+  }, [posts])
+
   return (
     <div className="container py-10">
       <h1 className="text-3xl font-bold mb-6">Manage</h1>
-      
+
       <Tabs defaultValue="packages" className="space-y-6">
         <TabsList>
           <TabsTrigger value="packages" className="gap-2">
@@ -50,13 +63,13 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
         </TabsContent>
 
         <TabsContent value="statement" className="space-y-6">
-          <AnnualStatementClient 
-            postId={latestEstimatePostId} 
+          <AnnualStatementClient
+            postId={latestEstimatePostId}
             year={undefined}
           />
         </TabsContent>
       </Tabs>
-      
+
       {/* AI Assistant */}
       <AIAssistant />
     </div>

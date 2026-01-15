@@ -771,6 +771,10 @@ export const AIAssistant = () => {
         setCurrentContext((window as any).estimateContext)
       } else if ((window as any).postContext) {
         setCurrentContext((window as any).postContext)
+      } else if ((window as any).accountContext) {
+        setCurrentContext((window as any).accountContext)
+      } else if ((window as any).manageContext) {
+        setCurrentContext((window as any).manageContext)
       }
     }
 
@@ -1279,13 +1283,13 @@ Finish with a concise, guest-friendly blurb.`
         // Format related posts with titles and slugs for better AI reference
         const relatedPostsFormatted = Array.isArray(postContext.post?.relatedPosts) && postContext.post.relatedPosts.length > 0
           ? postContext.post.relatedPosts
-              .filter((p: any) => typeof p === 'object' && p !== null)
-              .map((p: any) => {
-                const title = p.title || 'Untitled'
-                const slug = p.slug ? ` (${p.slug})` : ''
-                return `${title}${slug}`
-              })
-              .join(', ')
+            .filter((p: any) => typeof p === 'object' && p !== null)
+            .map((p: any) => {
+              const title = p.title || 'Untitled'
+              const slug = p.slug ? ` (${p.slug})` : ''
+              return `${title}${slug}`
+            })
+            .join(', ')
           : 'None'
 
         const contextString = `
@@ -1868,11 +1872,15 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
           speakSafely('Error finding other properties.')
         }
       } else {
-        // Regular chat API call
+        // Regular chat API call with context
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: messageToSend }),
+          body: JSON.stringify({
+            message: messageToSend,
+            context: currentContext?.context,
+            ...currentContext
+          }),
         })
 
         const data = await response.json()
@@ -1881,6 +1889,7 @@ IMPORTANT: You MUST include clickable markdown links to each property in your re
         const baseContent = data.message || data.response || 'No response received'
 
         persistTokenUsage(usage)
+        setLastUsage(usage)
 
         const assistantMessage: Message = {
           role: 'assistant',
