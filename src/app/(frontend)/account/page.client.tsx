@@ -10,6 +10,203 @@ import { EditPostsLink } from '@/components/EditPostsLink'
 import { Switch } from '@/components/ui/switch'
 import Link from 'next/link'
 
+// MD5 hash function for Gravatar
+const md5 = (str: string): string => {
+  const rotateLeft = (value: number, amount: number): number => {
+    return (value << amount) | (value >>> (32 - amount))
+  }
+  
+  const addUnsigned = (x: number, y: number): number => {
+    const lsw = (x & 0xFFFF) + (y & 0xFFFF)
+    const msw = (x >> 16) + (y >> 16) + (lsw >> 16)
+    return (msw << 16) | (lsw & 0xFFFF)
+  }
+  
+  const md5cmn = (q: number, a: number, b: number, x: number, s: number, t: number): number => {
+    a = addUnsigned(a, addUnsigned(addUnsigned((b & q) | ((~b) & x), t), s))
+    return addUnsigned(rotateLeft(a, s), b)
+  }
+  
+  const md5ff = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn((b & c) | ((~b) & d), a, b, x, s, t)
+  }
+  
+  const md5gg = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn((b & d) | (c & (~d)), a, b, x, s, t)
+  }
+  
+  const md5hh = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn(b ^ c ^ d, a, b, x, s, t)
+  }
+  
+  const md5ii = (a: number, b: number, c: number, d: number, x: number, s: number, t: number): number => {
+    return md5cmn(c ^ (b | (~d)), a, b, x, s, t)
+  }
+  
+  const calcMD5 = (str: string): string => {
+    let k, AA, BB, CC, DD, a, b, c, d
+    const S11 = 7, S12 = 12, S13 = 17, S14 = 22
+    const S21 = 5, S22 = 9, S23 = 14, S24 = 20
+    const S31 = 4, S32 = 11, S33 = 16, S34 = 23
+    const S41 = 6, S42 = 10, S43 = 15, S44 = 21
+    
+    str = utf8Encode(str)
+    const x = convertToWordArray(str)
+    a = 0x67452301
+    b = 0xEFCDAB89
+    c = 0x98BADCFE
+    d = 0x10325476
+    
+    for (k = 0; k < x.length; k += 16) {
+      AA = a
+      BB = b
+      CC = c
+      DD = d
+      a = md5ff(a, b, c, d, x[k + 0] || 0, S11, 0xD76AA478)
+      d = md5ff(d, a, b, c, x[k + 1] || 0, S12, 0xE8C7B756)
+      c = md5ff(c, d, a, b, x[k + 2] || 0, S13, 0x242070DB)
+      b = md5ff(b, c, d, a, x[k + 3] || 0, S14, 0xC1BDCEEE)
+      a = md5ff(a, b, c, d, x[k + 4] || 0, S11, 0xF57C0FAF)
+      d = md5ff(d, a, b, c, x[k + 5] || 0, S12, 0x4787C62A)
+      c = md5ff(c, d, a, b, x[k + 6] || 0, S13, 0xA8304613)
+      b = md5ff(b, c, d, a, x[k + 7] || 0, S14, 0xFD469501)
+      a = md5ff(a, b, c, d, x[k + 8] || 0, S11, 0x698098D8)
+      d = md5ff(d, a, b, c, x[k + 9] || 0, S12, 0x8B44F7AF)
+      c = md5ff(c, d, a, b, x[k + 10] || 0, S13, 0xFFFF5BB1)
+      b = md5ff(b, c, d, a, x[k + 11] || 0, S14, 0x895CD7BE)
+      a = md5ff(a, b, c, d, x[k + 12] || 0, S11, 0x6B901122)
+      d = md5ff(d, a, b, c, x[k + 13] || 0, S12, 0xFD987193)
+      c = md5ff(c, d, a, b, x[k + 14] || 0, S13, 0xA679438E)
+      b = md5ff(b, c, d, a, x[k + 15] || 0, S14, 0x49B40821)
+      a = md5gg(a, b, c, d, x[k + 1] || 0, S21, 0xF61E2562)
+      d = md5gg(d, a, b, c, x[k + 6] || 0, S22, 0xC040B340)
+      c = md5gg(c, d, a, b, x[k + 11] || 0, S23, 0x265E5A51)
+      b = md5gg(b, c, d, a, x[k + 0] || 0, S24, 0xE9B6C7AA)
+      a = md5gg(a, b, c, d, x[k + 5] || 0, S21, 0xD62F105D)
+      d = md5gg(d, a, b, c, x[k + 10] || 0, S22, 0x2441453)
+      c = md5gg(c, d, a, b, x[k + 15] || 0, S23, 0xD8A1E681)
+      b = md5gg(b, c, d, a, x[k + 4] || 0, S24, 0xE7D3FBC8)
+      a = md5gg(a, b, c, d, x[k + 9] || 0, S21, 0x21E1CDE6)
+      d = md5gg(d, a, b, c, x[k + 14] || 0, S22, 0xC33707D6)
+      c = md5gg(c, d, a, b, x[k + 3] || 0, S23, 0xF4D50D87)
+      b = md5gg(b, c, d, a, x[k + 8] || 0, S24, 0x455A14ED)
+      a = md5gg(a, b, c, d, x[k + 13] || 0, S21, 0xA9E3E905)
+      d = md5gg(d, a, b, c, x[k + 2] || 0, S22, 0xFCEFA3F8)
+      c = md5gg(c, d, a, b, x[k + 7] || 0, S23, 0x676F02D9)
+      b = md5gg(b, c, d, a, x[k + 12] || 0, S24, 0x8D2A4C8A)
+      a = md5hh(a, b, c, d, x[k + 5] || 0, S31, 0xFFFA3942)
+      d = md5hh(d, a, b, c, x[k + 8] || 0, S32, 0x8771F681)
+      c = md5hh(c, d, a, b, x[k + 11] || 0, S33, 0x6D9D6122)
+      b = md5hh(b, c, d, a, x[k + 14] || 0, S34, 0xFDE5380C)
+      a = md5hh(a, b, c, d, x[k + 1] || 0, S31, 0xA4BEEA44)
+      d = md5hh(d, a, b, c, x[k + 4] || 0, S32, 0x4BDECFA9)
+      c = md5hh(c, d, a, b, x[k + 7] || 0, S33, 0xF6BB4B60)
+      b = md5hh(b, c, d, a, x[k + 10] || 0, S34, 0xBEBFBC70)
+      a = md5hh(a, b, c, d, x[k + 13] || 0, S31, 0x289B7EC6)
+      d = md5hh(d, a, b, c, x[k + 0] || 0, S32, 0xEAA127FA)
+      c = md5hh(c, d, a, b, x[k + 3] || 0, S33, 0xD4EF3085)
+      b = md5hh(b, c, d, a, x[k + 6] || 0, S34, 0x4881D05)
+      a = md5hh(a, b, c, d, x[k + 9] || 0, S31, 0xD9D4D039)
+      d = md5hh(d, a, b, c, x[k + 12] || 0, S32, 0xE6DB99E5)
+      c = md5hh(c, d, a, b, x[k + 15] || 0, S33, 0x1FA27CF8)
+      b = md5hh(b, c, d, a, x[k + 2] || 0, S34, 0xC4AC5665)
+      a = md5ii(a, b, c, d, x[k + 0] || 0, S41, 0xF4292244)
+      d = md5ii(d, a, b, c, x[k + 7] || 0, S42, 0x432AFF97)
+      c = md5ii(c, d, a, b, x[k + 14] || 0, S43, 0xAB9423A7)
+      b = md5ii(b, c, d, a, x[k + 5] || 0, S44, 0xFC93A039)
+      a = md5ii(a, b, c, d, x[k + 12] || 0, S41, 0x655B59C3)
+      d = md5ii(d, a, b, c, x[k + 3] || 0, S42, 0x8F0CCC92)
+      c = md5ii(c, d, a, b, x[k + 10] || 0, S43, 0xFFEFF47D)
+      b = md5ii(b, c, d, a, x[k + 1] || 0, S44, 0x85845DD1)
+      a = md5ii(a, b, c, d, x[k + 8] || 0, S41, 0x6FA87E4F)
+      d = md5ii(d, a, b, c, x[k + 15] || 0, S42, 0xFE2CE6E0)
+      c = md5ii(c, d, a, b, x[k + 6] || 0, S43, 0xA3014314)
+      b = md5ii(b, c, d, a, x[k + 13] || 0, S44, 0x4E0811A1)
+      a = md5ii(a, b, c, d, x[k + 4] || 0, S41, 0xF7537E82)
+      d = md5ii(d, a, b, c, x[k + 11] || 0, S42, 0xBD3AF235)
+      c = md5ii(c, d, a, b, x[k + 2] || 0, S43, 0x2AD7D2BB)
+      b = md5ii(b, c, d, a, x[k + 9] || 0, S44, 0xEB86D391)
+      a = addUnsigned(a, AA)
+      b = addUnsigned(b, BB)
+      c = addUnsigned(c, CC)
+      d = addUnsigned(d, DD)
+    }
+    
+    return (wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d)).toLowerCase()
+  }
+  
+  const utf8Encode = (str: string): string => {
+    str = str.replace(/\r\n/g, '\n')
+    let utftext = ''
+    
+    for (let n = 0; n < str.length; n++) {
+      const c = str.charCodeAt(n)
+      
+      if (c < 128) {
+        utftext += String.fromCharCode(c)
+      } else if ((c > 127) && (c < 2048)) {
+        utftext += String.fromCharCode((c >> 6) | 192)
+        utftext += String.fromCharCode((c & 63) | 128)
+      } else {
+        utftext += String.fromCharCode((c >> 12) | 224)
+        utftext += String.fromCharCode(((c >> 6) & 63) | 128)
+        utftext += String.fromCharCode((c & 63) | 128)
+      }
+    }
+    
+    return utftext
+  }
+  
+  const convertToWordArray = (str: string): number[] => {
+    let wordCount: number
+    const messageLength = str.length
+    const numberOfWords_temp1 = messageLength + 8
+    const numberOfWords_temp2 = (numberOfWords_temp1 - (numberOfWords_temp1 % 64)) / 64
+    const numberOfWords = (numberOfWords_temp2 + 1) * 16
+    const wordArray: number[] = Array(numberOfWords - 1)
+    let bytePosition = 0
+    let byteCount = 0
+    
+    while (byteCount < messageLength) {
+      wordCount = (byteCount - (byteCount % 4)) / 4
+      bytePosition = (byteCount % 4) * 8
+      wordArray[wordCount] = (wordArray[wordCount] || 0) | (str.charCodeAt(byteCount) << bytePosition)
+      byteCount++
+    }
+    
+    wordCount = (byteCount - (byteCount % 4)) / 4
+    bytePosition = (byteCount % 4) * 8
+    wordArray[wordCount] = (wordArray[wordCount] || 0) | (0x80 << bytePosition)
+    wordArray[numberOfWords - 2] = messageLength << 3
+    wordArray[numberOfWords - 1] = messageLength >>> 29
+    
+    return wordArray
+  }
+  
+  const wordToHex = (lValue: number): string => {
+    let wordToHexValue = '', wordToHexValue_temp = '', lByte, lCount
+    for (lCount = 0; lCount <= 3; lCount++) {
+      lByte = (lValue >>> (lCount * 8)) & 255
+      wordToHexValue_temp = '0' + lByte.toString(16)
+      wordToHexValue = wordToHexValue + wordToHexValue_temp.substr(wordToHexValue_temp.length - 2, 2)
+    }
+    return wordToHexValue
+  }
+  
+  return calcMD5(str)
+}
+
+// Helper function to generate Gravatar URL from email
+const getGravatarUrl = (email: string | null | undefined, size: number = 40): string | null => {
+  if (!email) return null
+  
+  // Normalize email (lowercase and trim) - Gravatar requires lowercase
+  const normalizedEmail = email.trim().toLowerCase()
+  const hash = md5(normalizedEmail)
+  
+  return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=mp&r=pg`
+}
+
 type YocoTransaction = {
   id: string
   packageName?: string
@@ -131,8 +328,8 @@ export default function AccountClient({ user }: AccountClientProps) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
-          <p className="text-gray-600 mt-2">You need to be logged in to view this page.</p>
+          <h1 className="text-2xl font-bold text-foreground">Access Denied</h1>
+          <p className="text-muted-foreground mt-2">You need to be logged in to view this page.</p>
         </div>
       </div>
     )
@@ -246,8 +443,8 @@ export default function AccountClient({ user }: AccountClientProps) {
 
   const getTierBadge = (tier: string) => {
     const styles: Record<string, string> = {
-      Premium: 'bg-purple-500/10 text-purple-700 border-purple-500/20',
-      Member: 'bg-cyan-700 text-cyan-300 border-transparent',
+      Premium: 'bg-primary/10 text-primary border-primary/20',
+      Member: 'bg-secondary text-secondary-foreground border-transparent',
       Basic: 'bg-gray-500/10 text-gray-700 border-gray-500/20'
     }
     return styles[tier] || styles.Basic
@@ -314,37 +511,48 @@ export default function AccountClient({ user }: AccountClientProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-gray-200 bg-white">
+      <div className="border-b border-primary/20 bg-card">
         <div className="mx-auto max-w-7xl px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">Account</h1>
-              <p className="text-sm text-gray-600 mt-0.5">
+              <h1 className="text-xl font-semibold text-foreground">Account</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 Manage your account and access your features
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-sm font-semibold text-white rounded-full">
-                {getUserInitials(user.name, user.email)}
-              </div>
+              {(() => {
+                const gravatarUrl = getGravatarUrl(user.email, 40)
+                return gravatarUrl ? (
+                  <img
+                    src={gravatarUrl}
+                    alt={user.name || 'User'}
+                    className="h-10 w-10 rounded-full border-2 border-primary object-cover shadow-sm"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center bg-primary text-primary-foreground text-sm font-semibold rounded-full shadow-sm">
+                    {getUserInitials(user.name, user.email)}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>
       </div>
 
       {/* AI Search Hero */}
-      <div className="border-b border-gray-200 bg-white">
+      <div className="border-b border-primary/20 bg-card">
         <div className="mx-auto max-w-3xl px-6 py-12">
           <div className="text-center mb-8">
-            <div className="inline-flex h-12 w-12 items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl mb-4">
-              <Sparkles className="h-6 w-6 text-white" />
+            <div className="inline-flex h-12 w-12 items-center justify-center bg-primary rounded-xl mb-4 shadow-sm">
+              <Sparkles className="h-6 w-6 text-primary-foreground" />
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-2xl font-semibold text-foreground mb-2">
               AI Assistant
             </h2>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               Ask anything about your bookings, payments, or account features
             </p>
           </div>
@@ -356,28 +564,28 @@ export default function AccountClient({ user }: AccountClientProps) {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask about bookings, payments, features..."
-              className="h-14 w-full text-base text-gray-900 bg-white border border-gray-300 rounded-xl px-5 pr-14 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              className="h-14 w-full text-base text-foreground bg-background border border-primary/20 rounded-xl px-5 pr-14 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
               disabled={isLoadingAI}
             />
             <button
               onClick={handleSendMessage}
               disabled={!inputValue.trim() || isLoadingAI}
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-white bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transition-all rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center text-primary-foreground bg-primary hover:bg-primary/90 transition-all rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="h-5 w-5" />
             </button>
           </div>
 
           {messages.length > 0 && (
-            <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+            <div className="mt-6 bg-secondary/10 border border-secondary/20 rounded-xl p-4">
               <div className="flex gap-3">
                 <div className="flex-shrink-0">
-                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                    <Sparkles className="h-4 w-4 text-white" />
+                  <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shadow-sm">
+                    <Sparkles className="h-4 w-4 text-primary-foreground" />
                   </div>
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm text-gray-700 leading-relaxed">
+                  <p className="text-sm text-foreground leading-relaxed">
                     {messages[messages.length - 1]?.content || 'Hi! I can help you with bookings, subscriptions, or any questions about your account. What would you like to know?'}
                   </p>
                 </div>
@@ -388,7 +596,7 @@ export default function AccountClient({ user }: AccountClientProps) {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="border-b border-gray-200 bg-white">
+      <div className="border-b border-primary/20 bg-card">
         <div className="mx-auto max-w-7xl px-6">
           <nav className="flex gap-8">
             {[
@@ -415,8 +623,8 @@ export default function AccountClient({ user }: AccountClientProps) {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === tab.id
-                      ? 'border-gray-900 text-gray-900'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-primary'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -434,13 +642,13 @@ export default function AccountClient({ user }: AccountClientProps) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               {/* Account Info Card */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6">
+              <div className="bg-card border border-primary/20 rounded-xl p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-lg font-semibold text-foreground">
                       Account Information
                     </h3>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       Your profile and subscription details
                     </p>
                   </div>
@@ -449,23 +657,34 @@ export default function AccountClient({ user }: AccountClientProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 pb-6 border-b border-gray-100">
-                  <div className="flex h-16 w-16 items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-xl font-semibold text-white rounded-full">
-                    {getUserInitials(user.name, user.email)}
-                  </div>
+                <div className="flex items-center gap-4 pb-6 border-b border-primary/10">
+                  {(() => {
+                    const gravatarUrl = getGravatarUrl(user.email, 64)
+                    return gravatarUrl ? (
+                      <img
+                        src={gravatarUrl}
+                        alt={user.name || 'User'}
+                        className="h-16 w-16 rounded-full border-2 border-primary object-cover shadow-sm"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 items-center justify-center bg-primary text-primary-foreground text-xl font-semibold rounded-full shadow-sm">
+                        {getUserInitials(user.name, user.email)}
+                      </div>
+                    )
+                  })()}
                   <div>
-                    <div className="font-medium text-gray-900">{user.name || 'No name set'}</div>
-                    <div className="text-sm text-gray-600">{user.email}</div>
+                    <div className="font-medium text-foreground">{user.name || 'No name set'}</div>
+                    <div className="text-sm text-muted-foreground">{user.email}</div>
                     <div className="flex items-center gap-2 mt-2">
                       {userRoles.map((role) => (
                         <div
                           key={role}
                           className={`flex items-center text-xs font-medium border rounded-full px-2 py-0.5 ${
                             role === 'admin'
-                              ? 'bg-red-50 text-red-700 border-red-200'
+                              ? 'bg-destructive/10 text-destructive border-destructive/20'
                               : role === 'host'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200'
-                              : 'bg-cyan-50 text-cyan-700 border-cyan-200'
+                              ? 'bg-primary/10 text-primary border-primary/20'
+                              : 'bg-secondary/10 text-secondary border-secondary/20'
                           }`}
                         >
                           {role === 'admin' && <Crown className="mr-1 h-3 w-3" />}
@@ -496,7 +715,7 @@ export default function AccountClient({ user }: AccountClientProps) {
                     </Button>
                   ) : (
                     <Link href="/subscribe" className="block">
-                      <Button className="w-full bg-gray-900 hover:bg-gray-800">
+                      <Button variant="secondary" className="w-full">
                         Manage Subscription
                       </Button>
                     </Link>
@@ -508,7 +727,7 @@ export default function AccountClient({ user }: AccountClientProps) {
                     </div>
                   )}
                   {cancelSuccess && (
-                    <div className="mt-2 flex items-start gap-2 rounded-md bg-green-50 p-2 text-xs text-green-700">
+                    <div className="mt-2 flex items-start gap-2 rounded-md bg-secondary/10 p-2 text-xs text-secondary">
                       <CheckCircle2 className="mt-0.5 h-4 w-4" />
                       <span>{cancelSuccess}</span>
                     </div>
@@ -516,69 +735,134 @@ export default function AccountClient({ user }: AccountClientProps) {
                 </div>
               </div>
 
-              {/* Available Features */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Available Features
+              {/* Available Packages */}
+              <div className="bg-card border border-primary/20 rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-foreground mb-4">
+                  Available Packages
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    {
-                      title: 'Booking Estimates',
-                      desc: 'Get pricing estimates',
-                    },
-                    {
-                      title: 'Plek Booking',
-                      desc: 'Book available spaces',
-                    },
-                    {
-                      title: 'Edit Posts/Pleks',
-                      desc: 'Manage listings',
-                    },
-                    {
-                      title: 'Create Blog Posts',
-                      desc: 'Publish content',
-                    },
-                    {
-                      title: 'Manage Pleks',
-                      desc: 'Property management',
-                    },
-                    {
-                      title: 'Luxury Hosting',
-                      desc: 'Premium packages',
-                    },
-                    {
-                      title: 'Concierge Service',
-                      desc: '24/7 support',
-                    },
-                    {
-                      title: 'Priority Booking',
-                      desc: 'Early access',
-                    },
-                  ].map((feature, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
-                    >
-                      <div className="flex-shrink-0 h-2 w-2 bg-green-500 rounded-full mt-1.5"></div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-900">
-                          {feature.title}
+                {loadingProducts ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading packages...</span>
+                  </div>
+                ) : availableProducts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">No packages available.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {availableProducts.map((product) => {
+                      const isActive = activeProducts.has(product.id)
+                      const canToggle = isSubscribed || product.entitlement === 'none'
+                      
+                      return (
+                        <div
+                          key={product.id}
+                          className={`flex items-center justify-between rounded-lg border p-4 transition-colors ${
+                            isActive
+                              ? 'border-primary bg-primary/5 shadow-sm'
+                              : 'border-primary/20 bg-background hover:bg-secondary/5'
+                          }`}
+                        >
+                          <div className="flex items-start gap-4 flex-1">
+                            {product.icon && (
+                              <div className={`flex h-10 w-10 items-center justify-center rounded-lg text-2xl ${
+                                isActive 
+                                  ? 'bg-primary/10 text-primary' 
+                                  : 'bg-secondary/10 text-secondary'
+                              }`}>
+                                {product.icon}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className={`text-sm font-semibold ${
+                                  isActive ? 'text-primary' : 'text-foreground'
+                                }`}>
+                                  {product.title}
+                                </h4>
+                                {product.entitlement && (
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    product.entitlement === 'pro'
+                                      ? 'bg-primary/10 text-primary border border-primary/20'
+                                      : product.entitlement === 'standard'
+                                      ? 'bg-secondary/10 text-secondary border border-secondary/20'
+                                      : 'bg-muted text-muted-foreground'
+                                  }`}>
+                                    {product.entitlement}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mb-2">
+                                {product.description}
+                              </p>
+                              {product.features && product.features.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {product.features.slice(0, 3).map((feature, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="text-xs px-2 py-0.5 rounded bg-secondary/10 text-secondary"
+                                    >
+                                      {feature}
+                                    </span>
+                                  ))}
+                                  {product.features.length > 3 && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                                      +{product.features.length - 3} more
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                                <span>
+                                  {product.currency} {product.price.toFixed(2)}
+                                </span>
+                                {product.period && (
+                                  <span>
+                                    / {product.periodCount} {product.period}
+                                    {product.periodCount > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4">
+                            {canToggle ? (
+                              <Switch
+                                checked={isActive}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setActiveProducts(prev => new Set(prev).add(product.id))
+                                    // TODO: Handle subscription activation
+                                  } else {
+                                    setActiveProducts(prev => {
+                                      const next = new Set(prev)
+                                      next.delete(product.id)
+                                      return next
+                                    })
+                                    // TODO: Handle subscription deactivation
+                                  }
+                                }}
+                                disabled={!canToggle}
+                              />
+                            ) : (
+                              <Link href="/subscribe" className="no-underline">
+                                <button className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm">
+                                  Subscribe
+                                </button>
+                              </Link>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-600 mt-0.5">
-                          {feature.desc}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Sidebar */}
             <div className="space-y-6">
-              <div className="bg-white border border-gray-200 rounded-xl p-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">
+              <div className="bg-card border border-primary/20 rounded-xl p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-foreground mb-4">
                   Resources
                 </h3>
                 <div className="space-y-2">
@@ -596,17 +880,21 @@ export default function AccountClient({ user }: AccountClientProps) {
                       href: '#',
                     },
                     {
+                      label: 'FAQ',
+                      href: '/faq',
+                    },
+                    {
                       label: 'Community',
                       href: '#',
                     },
                   ].map((link, idx) => (
-                    <a
+                    <Link
                       key={idx}
                       href={link.href}
-                      className="block text-sm text-gray-600 hover:text-gray-900 transition-colors py-1"
+                      className="block text-sm text-muted-foreground hover:text-primary transition-colors py-1"
                     >
                       {link.label} →
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -615,14 +903,14 @@ export default function AccountClient({ user }: AccountClientProps) {
         )}
 
         {activeTab === 'transactions' && (
-          <div className="bg-white border border-gray-200 rounded-xl">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-card border border-primary/20 rounded-xl shadow-sm">
+            <div className="p-6 border-b border-primary/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
+                  <h3 className="text-lg font-semibold text-foreground">
                     Transaction History
                   </h3>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     View and manage your payment history
                   </p>
                 </div>
@@ -631,8 +919,8 @@ export default function AccountClient({ user }: AccountClientProps) {
                     onClick={() => setStatusFilter('all')}
                     className={`flex items-center gap-1.5 h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
                       statusFilter === 'all'
-                        ? 'text-white bg-gray-900'
-                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                        ? 'text-primary-foreground bg-primary'
+                        : 'text-foreground bg-background border border-primary/20 hover:bg-secondary/10'
                     }`}
                   >
                     <Filter className="h-3.5 w-3.5" />
@@ -642,8 +930,8 @@ export default function AccountClient({ user }: AccountClientProps) {
                     onClick={() => setStatusFilter('completed')}
                     className={`h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
                       statusFilter === 'completed'
-                        ? 'text-white bg-gray-900'
-                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                        ? 'text-primary-foreground bg-primary'
+                        : 'text-foreground bg-background border border-primary/20 hover:bg-secondary/10'
                     }`}
                   >
                     Completed
@@ -652,8 +940,8 @@ export default function AccountClient({ user }: AccountClientProps) {
                     onClick={() => setStatusFilter('pending')}
                     className={`h-9 text-xs font-medium rounded-lg px-3 transition-colors ${
                       statusFilter === 'pending'
-                        ? 'text-white bg-gray-900'
-                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                        ? 'text-primary-foreground bg-primary'
+                        : 'text-foreground bg-background border border-primary/20 hover:bg-secondary/10'
                     }`}
                   >
                     Pending
@@ -664,45 +952,45 @@ export default function AccountClient({ user }: AccountClientProps) {
 
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead className="bg-secondary/10 border-b border-primary/20">
                   <tr>
-                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                    <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">
                       Description
                     </th>
-                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                    <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">
                       <button
                         onClick={() => toggleSort('date')}
-                        className="inline-flex items-center gap-1 hover:text-gray-900"
+                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
                       >
                         Date <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </th>
-                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                    <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">
                       <button
                         onClick={() => toggleSort('amount')}
-                        className="inline-flex items-center gap-1 hover:text-gray-900"
+                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
                       >
                         Amount <ArrowUpDown className="h-3 w-3" />
                       </button>
                     </th>
-                    <th className="text-left text-xs font-medium text-gray-600 px-6 py-3">
+                    <th className="text-left text-xs font-medium text-muted-foreground px-6 py-3">
                       Status
                     </th>
-                    <th className="text-right text-xs font-medium text-gray-600 px-6 py-3">
+                    <th className="text-right text-xs font-medium text-muted-foreground px-6 py-3">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-primary/10">
                   {loadingTransactions ? (
                     <tr>
                       <td colSpan={5} className="px-6 py-8 text-center">
-                        <Loader2 className="h-5 w-5 animate-spin text-gray-600 mx-auto" />
+                        <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" />
                       </td>
                     </tr>
                   ) : filteredTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">
+                      <td colSpan={5} className="px-6 py-8 text-center text-sm text-muted-foreground">
                         No transactions found.
                       </td>
                     </tr>
@@ -710,22 +998,22 @@ export default function AccountClient({ user }: AccountClientProps) {
                     filteredTransactions.map((transaction) => (
                       <tr
                         key={transaction.id}
-                        className="hover:bg-gray-50 transition-colors"
+                        className="hover:bg-secondary/5 transition-colors"
                       >
                         <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-sm font-medium text-foreground">
                             {transaction.packageName || 'Subscription payment'}
                           </div>
-                          <div className="text-xs text-gray-600 mt-0.5">
+                          <div className="text-xs text-muted-foreground mt-0.5">
                             {transaction.category || 'Payment'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-700">
+                        <td className="px-6 py-4 text-sm text-foreground">
                           {transaction.createdAt
                             ? new Date(transaction.createdAt).toLocaleDateString('en-GB')
                             : 'Unknown date'}
                         </td>
-                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        <td className="px-6 py-4 text-sm font-medium text-foreground">
                           {transaction.currency || 'ZAR'} {transaction.amount?.toFixed(2) ?? '0.00'}
                         </td>
                         <td className="px-6 py-4">
@@ -735,7 +1023,7 @@ export default function AccountClient({ user }: AccountClientProps) {
                                 ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                 : transaction.status === 'completed'
                                 ? 'bg-green-50 text-green-700 border border-green-200'
-                                : 'bg-gray-50 text-gray-700 border border-gray-200'
+                                : 'bg-muted text-muted-foreground border border-primary/20'
                             }`}
                           >
                             {transaction.status || 'pending'}
@@ -743,13 +1031,13 @@ export default function AccountClient({ user }: AccountClientProps) {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-1">
-                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary/10 rounded-lg transition-colors">
                               <Eye className="h-4 w-4" />
                             </button>
-                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary/10 rounded-lg transition-colors">
                               <Download className="h-4 w-4" />
                             </button>
-                            <button className="h-8 w-8 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                            <button className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary/10 rounded-lg transition-colors">
                               <MoreHorizontal className="h-4 w-4" />
                             </button>
                           </div>
@@ -761,13 +1049,13 @@ export default function AccountClient({ user }: AccountClientProps) {
               </table>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex items-center justify-between">
-              <p className="text-sm text-gray-600">
+            <div className="p-6 border-t border-primary/20 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
                 Showing {filteredTransactions.length} of {transactions.length} transactions
               </p>
               <Link
                 href="/subscribe"
-                className="text-sm font-medium text-gray-900 hover:text-gray-700"
+                className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
               >
                 View all transactions →
               </Link>
@@ -777,96 +1065,108 @@ export default function AccountClient({ user }: AccountClientProps) {
 
         {activeTab === 'activity' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[
-              {
-                title: 'Browse Properties',
-                desc: 'View available spaces',
-                icon: Calendar,
-                color: 'blue',
-                href: '/posts',
-              },
-              {
-                title: 'My Bookings',
-                desc: 'View your schedule',
-                icon: Calendar,
-                color: 'purple',
-                href: '/bookings',
-                show: isHost || isAdmin,
-              },
-              {
-                title: 'Manage Pleks',
-                desc: 'Admin dashboard',
-                icon: FileText,
-                color: 'green',
-                href: '/plek/adminPage',
-                show: isHost || isAdmin,
-              },
-              {
-                title: 'Edit Posts',
-                desc: 'Manage content',
-                icon: Edit3,
-                color: 'orange',
-                href: '#',
-                component: EditPostsLink,
-              },
-              {
-                title: 'Book a Plek',
-                desc: 'Reserve a space',
-                icon: FileText,
-                color: 'indigo',
-                href: '/plek',
-                show: isSubscribed,
-              },
-            ]
-              .filter((action) => action.show !== false)
-              .map((action, idx) => {
-                const Icon = action.icon
-                const colorClasses = {
-                  blue: 'bg-blue-50 text-blue-600',
-                  purple: 'bg-purple-50 text-purple-600',
-                  green: 'bg-green-50 text-green-600',
-                  orange: 'bg-orange-50 text-orange-600',
-                  indigo: 'bg-indigo-50 text-indigo-600',
-                }
-                if (action.component) {
-                  const Component = action.component
+            {loadingProducts ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading packages...</span>
+              </div>
+            ) : availableProducts.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No packages available.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {availableProducts
+                  .filter((product) => product.category !== 'addon')
+                  .slice(0, 4)
+                  .map((product) => {
+                  const isActive = activeProducts.has(product.id)
+                  const canToggle = isSubscribed || product.entitlement === 'none'
+                  
                   return (
-                    <Component key={idx} className="no-underline">
-                      <button className="flex items-center gap-4 p-6 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all text-left w-full">
-                        <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${colorClasses[action.color as keyof typeof colorClasses]}`}>
-                          <Icon className="h-6 w-6" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {action.title}
+                    <div
+                      key={product.id}
+                      className={`flex items-center justify-between p-6 bg-card border rounded-xl transition-all shadow-sm ${
+                        isActive
+                          ? 'border-primary bg-primary/5'
+                          : 'border-primary/20 hover:border-primary/40 hover:shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 flex-1">
+                        {product.icon && (
+                          <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${
+                            isActive 
+                              ? 'bg-primary/10 text-primary' 
+                              : 'bg-secondary/10 text-secondary'
+                          } text-2xl`}>
+                            {product.icon}
                           </div>
-                          <div className="text-sm text-gray-600 mt-0.5">
-                            {action.desc}
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className={`text-sm font-semibold ${
+                              isActive ? 'text-primary' : 'text-foreground'
+                            }`}>
+                              {product.title}
+                            </h4>
+                            {product.entitlement && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                product.entitlement === 'pro'
+                                  ? 'bg-primary/10 text-primary border border-primary/20'
+                                  : product.entitlement === 'standard'
+                                  ? 'bg-secondary/10 text-secondary border border-secondary/20'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {product.entitlement}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {product.description}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <span>
+                              {product.currency} {product.price.toFixed(2)}
+                            </span>
+                            {product.period && (
+                              <span>
+                                / {product.periodCount} {product.period}
+                                {product.periodCount > 1 ? 's' : ''}
+                              </span>
+                            )}
                           </div>
                         </div>
-                      </button>
-                    </Component>
+                      </div>
+                      <div className="ml-4">
+                        {canToggle ? (
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setActiveProducts(prev => new Set(prev).add(product.id))
+                                // TODO: Handle subscription activation
+                              } else {
+                                setActiveProducts(prev => {
+                                  const next = new Set(prev)
+                                  next.delete(product.id)
+                                  return next
+                                })
+                                // TODO: Handle subscription deactivation
+                              }
+                            }}
+                            disabled={!canToggle}
+                          />
+                        ) : (
+                          <Link href="/subscribe" className="no-underline">
+                            <button className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm">
+                              Subscribe
+                            </button>
+                          </Link>
+                        )}
+                      </div>
+                    </div>
                   )
-                }
-                
-                return (
-                  <Link key={idx} href={action.href} className="no-underline">
-                    <button className="flex items-center gap-4 p-6 bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition-all text-left w-full">
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${colorClasses[action.color as keyof typeof colorClasses]}`}>
-                        <Icon className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {action.title}
-                        </div>
-                        <div className="text-sm text-gray-600 mt-0.5">
-                          {action.desc}
-                        </div>
-                      </div>
-                    </button>
-                  </Link>
-                )
-              })}
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

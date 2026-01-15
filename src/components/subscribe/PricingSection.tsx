@@ -100,22 +100,33 @@ export function PricingSection({
           </div>
 
           <ul className="mb-8 flex-1 space-y-3 text-sm text-slate-600">
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
-              <span>Book pleks for weekly retreats</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
-              <span>Virtual wine curation with local makers</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
-              <span>Member pricing on hosted add-ons</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
-              <span>Supports CID greening events</span>
-            </li>
+            {standardProduct?.features && Array.isArray(standardProduct.features) && standardProduct.features.length > 0 ? (
+              standardProduct.features.map((feature, index) => (
+                <li key={index} className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
+                  <span>{typeof feature === 'string' ? feature : (feature as any).feature || feature}</span>
+                </li>
+              ))
+            ) : (
+              <>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
+                  <span>Book pleks for weekly retreats</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
+                  <span>Virtual wine curation with local makers</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
+                  <span>Member pricing on hosted add-ons</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#2dd4bf]" />
+                  <span>Supports CID greening events</span>
+                </li>
+              </>
+            )}
           </ul>
 
           <Button
@@ -197,22 +208,33 @@ export function PricingSection({
           </div>
 
           <ul className="mb-8 flex-1 space-y-3 text-sm text-slate-600">
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
-              <span>Publish & manage masterclasses</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
-              <span>Annual access to garden events</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
-              <span>Pro-level revenue share entitlements</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
-              <span>Admin/Host upgrades unlocked</span>
-            </li>
+            {proProduct?.features && Array.isArray(proProduct.features) && proProduct.features.length > 0 ? (
+              proProduct.features.map((feature, index) => (
+                <li key={index} className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
+                  <span>{typeof feature === 'string' ? feature : (feature as any).feature || feature}</span>
+                </li>
+              ))
+            ) : (
+              <>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
+                  <span>Publish & manage masterclasses</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
+                  <span>Annual access to garden events</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
+                  <span>Pro-level revenue share entitlements</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Check className="h-5 w-5 shrink-0 text-[#0891b2]" />
+                  <span>Admin/Host upgrades unlocked</span>
+                </li>
+              </>
+            )}
           </ul>
 
           <Button
