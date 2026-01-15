@@ -25,7 +25,9 @@ function TabButton({
       onClick={onClick}
       className={`
         flex-1 flex items-center justify-center h-9 text-sm font-medium rounded-md transition-all duration-200
-        ${isActive ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500 hover:text-zinc-900'}
+        ${isActive 
+          ? 'bg-primary text-primary-foreground shadow-sm' 
+          : 'bg-secondary/50 text-secondary-foreground hover:bg-secondary/70'}
       `}
     >
       {label}
@@ -66,12 +68,12 @@ export default function LoginPage() {
           <TabButton
             isActive={mode === 'password'}
             onClick={() => setMode('password')}
-            label="Password"
+            label="Email"
           />
           <TabButton
             isActive={mode === 'email'}
             onClick={() => setMode('email')}
-            label="Email Link / OTP"
+            label="One time pin"
           />
         </div>
 

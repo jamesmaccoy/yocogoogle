@@ -38,8 +38,9 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
       </InputOTP>
       <Button
         type="submit"
-        className="w-full h-10 bg-zinc-900 text-white hover:bg-zinc-800"
+        className="w-full h-10"
         disabled={loading || value.length < 6}
+        variant="default"
       >
         {loading ? (
           <span className="flex items-center gap-2">
@@ -139,9 +140,10 @@ export default function EmailAuthForm() {
             />
           </div>
           <Button
-            className="w-full mt-2 h-10 bg-zinc-900 text-white hover:bg-zinc-800"
+            className="w-full mt-2 h-10"
             type="submit"
             disabled={loading}
+            variant="default"
           >
             {loading ? (
               <span className="flex items-center gap-2">

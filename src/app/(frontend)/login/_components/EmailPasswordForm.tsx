@@ -133,8 +133,9 @@ export default function EmailPasswordForm() {
         </div>
       </div>
       <Button
-        className="w-full mt-2 h-10 bg-zinc-900 text-white hover:bg-zinc-800"
+        className="w-full mt-2 h-10"
         type="submit"
+        variant="default"
       >
         Sign in
       </Button>
