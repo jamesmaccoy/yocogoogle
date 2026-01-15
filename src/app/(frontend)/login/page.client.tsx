@@ -140,15 +140,33 @@ export default function LoginPage() {
           {mode === 'password' ? <EmailPasswordForm /> : <EmailAuthForm />}
 
           {/* Footer */}
-          <p className="mt-6 text-center text-sm text-zinc-500">
-            Don&apos;t have an account?{' '}
-            <Link
-              href="/register"
-              className="font-medium text-primary hover:underline"
-            >
-              Register now
-            </Link>
-          </p>
+          <div className="mt-6 space-y-3">
+            <p className="text-center text-sm text-zinc-500">
+              Don&apos;t have an account?{' '}
+              <Link
+                href="/register"
+                className="font-medium text-primary hover:underline"
+              >
+                Register now
+              </Link>
+            </p>
+            <p className="text-center text-xs text-zinc-400">
+              By continuing, you agree to our{' '}
+              <Link
+                href="/terms-of-service"
+                className="hover:text-zinc-600 underline underline-offset-2"
+              >
+                Terms of Service
+              </Link>
+              {' '}and{' '}
+              <Link
+                href="/privacy-policy"
+                className="hover:text-zinc-600 underline underline-offset-2"
+              >
+                Privacy Policy
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>
