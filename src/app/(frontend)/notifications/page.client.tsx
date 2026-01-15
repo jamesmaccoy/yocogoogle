@@ -355,8 +355,8 @@ export default function NotificationsClient({ initialNotifications, user }: Prop
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="h-5 w-5 text-amber-500" />
-            <span className="text-sm font-medium text-amber-600">
-              AI Assistant
+            <span className="text-sm font-medium text-primary-600">
+              simpleplek curreny
             </span>
           </div>
           <h1 className="text-4xl font-bold text-slate-900 mb-2">
