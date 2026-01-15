@@ -15,6 +15,11 @@ type EmailFormValues = {
 function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; loading: boolean }) {
   const [value, setValue] = React.useState('')
 
+  const COLORS = {
+    teal: 'rgb(45, 212, 191)',
+    tealDark: 'rgb(22, 78, 99)',
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -36,8 +41,23 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
           <InputOTPSlot index={5} />
         </InputOTPGroup>
       </InputOTP>
-      <Button type="submit" className="w-full" disabled={loading || value.length < 6}>
-        Verify OTP
+      <Button
+        type="submit"
+        className="w-full h-10"
+        disabled={loading || value.length < 6}
+        style={{
+          backgroundColor: COLORS.teal,
+          color: COLORS.tealDark,
+        }}
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Verifying...
+          </span>
+        ) : (
+          'Verify OTP'
+        )}
       </Button>
     </form>
   )
@@ -104,19 +124,51 @@ export default function EmailAuthForm() {
     }
   }
 
+  const COLORS = {
+    teal: 'rgb(45, 212, 191)',
+    tealDark: 'rgb(22, 78, 99)',
+  }
+
   return (
     <div>
       {step === 'email' && (
-        <form onSubmit={form.handleSubmit(handleSendEmail)} className="space-y-3">
-          {error && <div className="bg-red-100 text-red-700 p-3 rounded-md my-3">{error}</div>}
-          <Input
-            type="email"
-            placeholder="Email Address"
-            autoComplete="email"
-            {...form.register('email', { required: true })}
-          />
-          <Button className="w-full" type="submit" disabled={loading}>
-            {loading ? 'Sending...' : 'Send Login Link'}
+        <form onSubmit={form.handleSubmit(handleSendEmail)} className="grid gap-4">
+          {error && <div className="bg-red-100 text-red-700 p-3 rounded-md">{error}</div>}
+          <div className="grid gap-2">
+            <label
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              htmlFor="email"
+            >
+              Email
+            </label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="name@example.com"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              {...form.register('email', { required: true })}
+              className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <Button
+            className="w-full mt-2 h-10"
+            type="submit"
+            disabled={loading}
+            style={{
+              backgroundColor: COLORS.teal,
+              color: COLORS.tealDark,
+            }}
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Sending...
+              </span>
+            ) : (
+              'Send Login Link'
+            )}
           </Button>
         </form>
       )}
