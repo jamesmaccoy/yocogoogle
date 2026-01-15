@@ -94,7 +94,7 @@ export default function RegisterPage() {
           <img
             src="https://www.simpleplek.co.za/api/media/file/sport.jpg?q=80&w=2564&auto=format&fit=crop"
             alt="Abstract background"
-            className="w-full h-full object-cover opacity-20"
+            className="w-full h-full object-cover opacity-100"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/50 to-transparent" />
         </div>
@@ -114,7 +114,7 @@ export default function RegisterPage() {
               <Quote className="h-8 w-8 rotate-180 opacity-50" />
             </div>
             <p className="text-xl font-medium leading-relaxed">
-              "What a dream!! From the sounds of the ocean, to the birds in the morning, what a peaceful and grounding place. It was such a treat having the beach right on the door step, and being able to take a hot shower outside to warm up! Ihad such a wholesome weekend at the shack and definitely be back sometime soon! :"
+              "What a dream! From the sounds of the ocean, to the birds in the morning, what a peaceful and grounding place. It was such a treat having the beach right on the door step, and being able to take a hot shower outside to warm up! Ihad such a wholesome weekend at the shack and definitely be back sometime soon! :"
             </p>
             <footer className="text-sm text-zinc-400 mt-4">
               Anonymous Guest
