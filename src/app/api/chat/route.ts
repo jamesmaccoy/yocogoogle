@@ -23,12 +23,17 @@ const serializeUsageMetadata = (usage: any) => {
 
 export async function POST(req: Request) {
   try {
-    const { message, bookingContext, context, packageId, postId } = await req.json()
+    const { message, bookingContext, context, packageId, postId, pageData } = await req.json()
     const { user } = await getMeUser()
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Check if user is host/admin for MCP capabilities
+    const userRole = (user as any).role
+    const roleArray = Array.isArray(userRole) ? userRole : userRole ? [userRole] : []
+    const isHostOrAdmin = roleArray.includes('host') || roleArray.includes('admin')
 
     // Fetch user's bookings, estimates, and available packages
     const payload = await getPayload({ config: configPromise })
@@ -743,6 +748,63 @@ Respond concisely with just the essential information using relative date refere
             'Sorry, I encountered an error while planning the cleaning schedule. Please try again in a moment.',
         })
       }
+    }
+
+    // Handle manage context with MCP capabilities
+    if (context === 'manage' && isHostOrAdmin && pageData) {
+      const posts = pageData.posts || []
+      const systemPrompt = `You are an AI assistant helping a host manage their property packages using MCP (Model Context Protocol) tools.
+
+MCP CAPABILITIES:
+You have access to MCP tools that allow you to create, update, delete, and find packages through the Payload CMS MCP server. The MCP endpoint is available at /api/mcp.
+
+AVAILABLE MCP TOOLS FOR PACKAGES:
+- Create Package: Create new packages for properties
+- Update Package: Modify existing package details (name, description, baseRate, category, minNights, maxNights, multiplier, entitlement, isEnabled)
+- Delete Package: Remove packages
+- Find Packages: Search and list packages
+
+HOST'S PROPERTIES:
+${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
+
+PACKAGE MANAGEMENT GUIDELINES:
+1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents
+2. Categories: standard, hosted, addon, special
+3. Entitlements: standard, pro
+4. Always confirm which property (post) the package should be associated with
+5. When creating packages, include: name, description, category, minNights, maxNights, baseRate (in cents), multiplier, entitlement, and isEnabled status
+6. When updating packages, you can modify any field
+7. Be helpful and guide the host through package management decisions
+
+INSTRUCTIONS:
+- When asked to create a package, guide the user through providing all necessary details
+- When asked to update a package, confirm which package and what changes to make
+- When asked to delete a package, confirm before proceeding
+- Always format currency as R (Rands), not $
+- Provide clear, actionable responses
+- Use MCP tools when appropriate to actually perform package operations
+
+Respond naturally and helpfully to package management requests.`
+
+      const chat = model.startChat({
+        history: [
+          {
+            role: 'user',
+            parts: [{ text: systemPrompt }],
+          },
+          {
+            role: 'model',
+            parts: [{ text: 'I understand. I can help you manage packages using MCP tools. What would you like to do?' }],
+          },
+        ],
+      })
+
+      const result = await chat.sendMessage(message)
+      const response = await result.response
+      const text = response.text()
+      const usage = serializeUsageMetadata(response.usageMetadata)
+
+      return NextResponse.json({ message: text, response: text, usage })
     }
 
     // Create enhanced prompt for booking assistant

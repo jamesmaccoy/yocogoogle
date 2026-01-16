@@ -26,6 +26,7 @@ import { YocoTransactions } from './collections/YocoTransactions'
 import { handleSubscriptionEvent } from './jobs/tasks/handleSubscriptionEvent'
 import { subscriptionDowngradeCheck } from './jobs/tasks/subscriptionDowngradeCheck'
 import { requeueFailedSubscriptions } from './jobs/tasks/requeueFailedSubscriptions'
+import { mcpPlugin } from '@payloadcms/plugin-mcp'
 //import analyticsRouter from '@/app/api/analytics/route'
 
 const filename = fileURLToPath(import.meta.url)
@@ -132,6 +133,24 @@ export default buildConfig({
       },
       collections: {
         media: true,
+      },
+    }),
+    mcpPlugin({
+      collections: {
+        packages: {
+          description: 'Property packages for hosts to manage pricing tiers, availability, and booking options',
+          enabled: {
+            create: true,
+            delete: true,
+            find: true,
+            update: true,
+          },
+        },
+      },
+      mcp: {
+        handlerOptions: {
+          verboseLogs: process.env.NODE_ENV === 'development',
+        },
       },
     }),
   ],

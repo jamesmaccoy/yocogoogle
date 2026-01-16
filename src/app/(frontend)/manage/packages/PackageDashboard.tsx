@@ -10,6 +10,7 @@ import { Loader2, RefreshCw, AlertCircle, Sparkles, Check, Star, Crown, Package,
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { formatAmountToZAR } from "@/lib/currency";
 
 interface Package {
   id: string;
@@ -291,11 +292,9 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
   };
 
   const formatCurrency = (cents: number | undefined) => {
-    if (!cents) return "$0.00";
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(cents / 100);
+    if (!cents) return formatAmountToZAR(0);
+    // baseRate is stored in cents, convert to Rands
+    return formatAmountToZAR(cents / 100);
   };
 
   const calculateStats = () => {
