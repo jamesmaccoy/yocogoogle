@@ -6,9 +6,10 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, RefreshCw, AlertCircle, Sparkles, Check, Star, Crown } from "lucide-react";
+import { Loader2, RefreshCw, AlertCircle, Sparkles, Check, Star, Crown, Package, TrendingUp, DollarSign, Calendar, CheckCircle, Users, Clock, MoreHorizontal } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 interface Package {
   id: string;
@@ -289,6 +290,59 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
     }
   };
 
+  const formatCurrency = (cents: number | undefined) => {
+    if (!cents) return "$0.00";
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(cents / 100);
+  };
+
+  const calculateStats = () => {
+    const totalPackages = packages.length;
+    const totalRevenue = packages.reduce((acc, pkg) => acc + (pkg.baseRate || 0), 0);
+    const activePackages = packages.filter((p) => p.isEnabled).length;
+    const avgMinNights = packages.length > 0
+      ? packages.reduce((acc, pkg) => acc + pkg.minNights, 0) / totalPackages
+      : 0;
+    const avgMaxNights = packages.length > 0
+      ? packages.reduce((acc, pkg) => acc + pkg.maxNights, 0) / totalPackages
+      : 0;
+    const avgStay = Math.round((avgMinNights + avgMaxNights) / 2);
+    return {
+      totalPackages,
+      totalRevenue,
+      activePackages,
+      avgStay,
+    };
+  };
+
+  const stats = calculateStats();
+  const [editingPackage, setEditingPackage] = useState<Package | null>(null);
+
+  const StatCard = ({
+    title,
+    value,
+    icon: Icon,
+    subtext,
+  }: {
+    title: string;
+    value: string;
+    icon: any;
+    subtext?: string;
+  }) => (
+    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between">
+      <div>
+        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+        <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
+        {subtext && <p className="text-xs text-slate-400 mt-1">{subtext}</p>}
+      </div>
+      <div className="p-2 bg-slate-50 rounded-lg text-slate-600">
+        <Icon className="w-5 h-5" />
+      </div>
+    </div>
+  );
+
   if (loading) return (
     <div className="flex items-center gap-2 py-10">
       <Loader2 className="h-5 w-5 animate-spin" />
@@ -411,204 +465,376 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
   }
 
   return (
-    <div className="container py-10 max-w-6xl">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Manage Packages</h1>
-        <Button 
-          onClick={() => setShowSetup(true)} 
-          variant="default"
-          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-        >
-          <Sparkles className="h-4 w-4 mr-2" />
-          Setup New Packages
-        </Button>
-      </div>
-      
-      {error && (
-        <Alert className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      {success && (
-        <Alert className="mb-4">
-          <AlertDescription className="text-green-600">{success}</AlertDescription>
-        </Alert>
-      )}
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {packages.map(pkg => (
-          <Card key={pkg.id} className="w-full">
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Input
-                      value={pkg.name}
-                      onChange={e => handleFieldChange(pkg.id, 'name', e.target.value)}
-                      className="font-semibold text-lg border-none p-0 h-auto bg-transparent"
-                      disabled={!pkg.isEnabled}
-                    />
-                    {pkg.revenueCatId && (
-                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                        RevenueCat
-                      </span>
-                    )}
-                  </CardTitle>
+    <div className="min-h-screen bg-slate-50/50 text-slate-900">
+      <div className="max-w-[1400px] mx-auto px-6 py-8">
+        {/* Header Section */}
+        <header className="mb-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+              Package Dashboard
+            </h1>
+            <p className="text-slate-500 mt-1">
+              Manage your property packages and pricing tiers.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowSetup(true)}
+              className="border-slate-300 shadow-sm text-slate-700 bg-white hover:bg-slate-50"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Setup New Packages
+            </Button>
+            {packages.length > 0 && (
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Package className="w-4 h-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </header>
+
+        {error && (
+          <Alert className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {success && (
+          <Alert className="mb-6 bg-green-50 border-green-200">
+            <AlertDescription className="text-green-800">{success}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Stats Grid */}
+        {packages.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            <StatCard
+              title="Total Packages"
+              value={stats.totalPackages.toString()}
+              icon={Package}
+              subtext={`${packages.length} configured`}
+            />
+            <StatCard
+              title="Total Revenue Potential"
+              value={formatCurrency(stats.totalRevenue)}
+              icon={DollarSign}
+              subtext="Based on base rates"
+            />
+            <StatCard
+              title="Active Packages"
+              value={stats.activePackages.toString()}
+              icon={CheckCircle}
+              subtext={`${stats.totalPackages > 0 ? Math.round((stats.activePackages / stats.totalPackages) * 100) : 0}% utilization`}
+            />
+            <StatCard
+              title="Avg. Stay Duration"
+              value={`${stats.avgStay} nights`}
+              icon={Calendar}
+              subtext="Across all tiers"
+            />
+          </div>
+        )}
+
+        {/* Main Content Area */}
+        <div className="space-y-6">
+          {packages.length > 0 && (
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-900">
+                All Packages
+              </h2>
+            </div>
+          )}
+
+          {/* Package Grid */}
+          {packages.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="text-6xl mb-4">🎬</div>
+              <h3 className="text-2xl font-semibold text-gray-700 mb-2">Ready for Your First Setup?</h3>
+              <p className="text-gray-500 mb-6">Create magical experiences for your guests by setting up your first packages.</p>
+              <Button 
+                onClick={() => setShowSetup(true)}
+                size="lg"
+                className="bg-slate-900 hover:bg-slate-800 text-white"
+              >
+                <Sparkles className="h-5 w-5 mr-2" />
+                Start Package Setup
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {packages.map((pkg) => (
+                <div
+                  key={pkg.id}
+                  className="group bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-all duration-300 flex flex-col h-full"
+                >
+                  {/* Card Header / Visual Anchor */}
+                  <div className="h-32 bg-slate-50 border-b border-slate-100 p-6 flex items-center justify-center relative">
+                    <div className="text-4xl filter grayscale group-hover:grayscale-0 transition-all duration-300 transform group-hover:scale-110">
+                      {pkg.name.split(' ')[0] || '📦'}
+                    </div>
+                    <div className="absolute top-4 right-4">
+                      {pkg.isEnabled ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card Content */}
+                  <div className="p-5 flex-1 flex flex-col">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase text-slate-500 bg-slate-100 mb-2">
+                          {pkg.category}
+                        </span>
+                        <h3 className="text-lg font-semibold text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">
+                          {pkg.name.substring(pkg.name.indexOf(' ') + 1) || pkg.name}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-slate-500 mb-4 line-clamp-2 flex-1">
+                      {pkg.description || 'No description provided'}
+                    </p>
+
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-sm border-t border-slate-100 pt-4 mt-auto">
+                      <div className="flex items-center text-slate-600">
+                        <Clock className="w-4 h-4 mr-2 text-slate-400" />
+                        <span>
+                          {pkg.minNights}-{pkg.maxNights} nights
+                        </span>
+                      </div>
+                      <div className="flex items-center text-slate-600">
+                        <Users className="w-4 h-4 mr-2 text-slate-400" />
+                        <span className="capitalize">{pkg.entitlement || 'standard'}</span>
+                      </div>
+                    </div>
+
+                    {/* Footer Price */}
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-slate-400 font-medium">Base Rate</span>
+                        <span className="text-lg font-bold text-slate-900">
+                          {formatCurrency(pkg.baseRate)}
+                        </span>
+                      </div>
+                      <Dialog open={editingPackage?.id === pkg.id} onOpenChange={(open) => {
+                        if (!open) setEditingPackage(null);
+                        else setEditingPackage(pkg);
+                      }}>
+                        <DialogTrigger asChild>
+                          <button
+                            className="text-slate-400 hover:text-slate-600 hover:bg-slate-50 p-2 rounded-full transition-colors"
+                          >
+                            <MoreHorizontal className="w-5 h-5" />
+                          </button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Edit Package</DialogTitle>
+                            <DialogDescription>
+                              Update package details and settings
+                            </DialogDescription>
+                          </DialogHeader>
+                          {editingPackage && editingPackage.id === pkg.id && (
+                            <div className="space-y-4">
+                              <div>
+                                <label className="text-sm font-medium text-gray-600">Name</label>
+                                <Input
+                                  value={editingPackage.name}
+                                  onChange={e => setEditingPackage({ ...editingPackage, name: e.target.value })}
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium text-gray-600">Description</label>
+                                <Textarea
+                                  value={editingPackage.description || ""}
+                                  onChange={e => setEditingPackage({ ...editingPackage, description: e.target.value })}
+                                  className="mt-1"
+                                  rows={3}
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Category</label>
+                                  <Select
+                                    value={editingPackage.category || 'standard'}
+                                    onValueChange={value => setEditingPackage({ ...editingPackage, category: value as any })}
+                                  >
+                                    <SelectTrigger className="mt-1">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="standard">Standard</SelectItem>
+                                      <SelectItem value="hosted">Hosted</SelectItem>
+                                      <SelectItem value="addon">Add-on</SelectItem>
+                                      <SelectItem value="special">Special</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Entitlement</label>
+                                  <Select
+                                    value={editingPackage.entitlement || 'standard'}
+                                    onValueChange={value => setEditingPackage({ ...editingPackage, entitlement: value as any })}
+                                  >
+                                    <SelectTrigger className="mt-1">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="standard">Standard</SelectItem>
+                                      <SelectItem value="pro">Pro</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Min Nights</label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={editingPackage.minNights}
+                                    onChange={e => setEditingPackage({ ...editingPackage, minNights: parseInt(e.target.value) || 1 })}
+                                    className="mt-1"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Max Nights</label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={editingPackage.maxNights}
+                                    onChange={e => setEditingPackage({ ...editingPackage, maxNights: parseInt(e.target.value) || 7 })}
+                                    className="mt-1"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Multiplier</label>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.1"
+                                    max="3.0"
+                                    value={editingPackage.multiplier}
+                                    onChange={e => setEditingPackage({ ...editingPackage, multiplier: parseFloat(e.target.value) || 1 })}
+                                    className="mt-1"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-sm font-medium text-gray-600">Base Rate (cents)</label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={editingPackage.baseRate || ''}
+                                    onChange={e => setEditingPackage({ ...editingPackage, baseRate: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                    className="mt-1"
+                                    placeholder="Optional"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-sm font-medium text-gray-600">Custom Display Name</label>
+                                <Input
+                                  value={editingPackage.customName || ""}
+                                  onChange={e => setEditingPackage({ ...editingPackage, customName: e.target.value })}
+                                  className="mt-1"
+                                  placeholder="Override display name"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={editingPackage.isEnabled}
+                                  onCheckedChange={checked => setEditingPackage({ ...editingPackage, isEnabled: checked })}
+                                />
+                                <label className="text-sm font-medium">Enabled</label>
+                              </div>
+                              {editingPackage.revenueCatId && (
+                                <div className="text-xs text-gray-400">
+                                  RevenueCat ID: {editingPackage.revenueCatId}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <DialogFooter>
+                            <Button
+                              variant="outline"
+                              onClick={() => setEditingPackage(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              onClick={async () => {
+                                if (editingPackage) {
+                                  handleFieldChange(editingPackage.id, 'name', editingPackage.name);
+                                  handleFieldChange(editingPackage.id, 'description', editingPackage.description);
+                                  handleFieldChange(editingPackage.id, 'category', editingPackage.category);
+                                  handleFieldChange(editingPackage.id, 'entitlement', editingPackage.entitlement);
+                                  handleFieldChange(editingPackage.id, 'minNights', editingPackage.minNights);
+                                  handleFieldChange(editingPackage.id, 'maxNights', editingPackage.maxNights);
+                                  handleFieldChange(editingPackage.id, 'multiplier', editingPackage.multiplier);
+                                  handleFieldChange(editingPackage.id, 'baseRate', editingPackage.baseRate);
+                                  handleFieldChange(editingPackage.id, 'customName', editingPackage.customName);
+                                  handleFieldChange(editingPackage.id, 'isEnabled', editingPackage.isEnabled);
+                                  setEditingPackage(null);
+                                }
+                              }}
+                            >
+                              Save Changes
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
                 </div>
-                <Switch checked={pkg.isEnabled} onCheckedChange={() => handleToggle(pkg.id)} />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-gray-600">Description</label>
-                <Textarea
-                  value={pkg.description || ""}
-                  onChange={e => handleFieldChange(pkg.id, 'description', e.target.value)}
-                  disabled={!pkg.isEnabled}
-                  className="mt-1"
-                  rows={2}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Category</label>
-                  <Select
-                    value={pkg.category || 'standard'}
-                    onValueChange={value => handleFieldChange(pkg.id, 'category', value)}
-                    disabled={!pkg.isEnabled}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="hosted">Hosted</SelectItem>
-                      <SelectItem value="addon">Add-on</SelectItem>
-                      <SelectItem value="special">Special</SelectItem>
-                    </SelectContent>
-                  </Select>
+              ))}
+
+              {/* Add New Card Placeholder */}
+              <button
+                onClick={() => setShowSetup(true)}
+                className="group border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-slate-400 hover:bg-slate-50 transition-all duration-300 min-h-[300px]"
+              >
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4 group-hover:bg-white group-hover:shadow-sm transition-all">
+                  <Package className="w-6 h-6 text-slate-400 group-hover:text-slate-600" />
                 </div>
-                
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Entitlement</label>
-                  <Select
-                    value={pkg.entitlement || 'standard'}
-                    onValueChange={value => handleFieldChange(pkg.id, 'entitlement', value)}
-                    disabled={!pkg.isEnabled}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="pro">Pro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Multiplier</label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0.1"
-                    max="3.0"
-                    value={pkg.multiplier}
-                    onChange={e => handleFieldChange(pkg.id, 'multiplier', parseFloat(e.target.value) || 1)}
-                    disabled={!pkg.isEnabled}
-                    className="mt-1"
-                  />
-                </div>
-                
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Min Nights</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={pkg.minNights}
-                    onChange={e => handleFieldChange(pkg.id, 'minNights', parseInt(e.target.value) || 1)}
-                    disabled={!pkg.isEnabled}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <label className="text-xs font-medium text-gray-600">Max Nights</label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={pkg.maxNights}
-                  onChange={e => handleFieldChange(pkg.id, 'maxNights', parseInt(e.target.value) || 7)}
-                  disabled={!pkg.isEnabled}
-                  className="mt-1"
-                />
-              </div>
-              
-              <div>
-                <label className="text-xs font-medium text-gray-600">Base Rate</label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={pkg.baseRate || ''}
-                  onChange={e => handleFieldChange(pkg.id, 'baseRate', e.target.value ? parseFloat(e.target.value) : null)}
-                  disabled={!pkg.isEnabled}
-                  className="mt-1"
-                  placeholder="Optional base rate override"
-                />
-              </div>
-              
-              <div>
-                <label className="text-xs font-medium text-gray-600">Custom Display Name</label>
-                <Input
-                  value={pkg.customName || ""}
-                  onChange={e => handleFieldChange(pkg.id, 'customName', e.target.value)}
-                  disabled={!pkg.isEnabled}
-                  className="mt-1"
-                  placeholder="Override display name"
-                />
-              </div>
-              
-              {pkg.revenueCatId && (
-                <div className="text-xs text-gray-400 mt-1">
-                  RevenueCat ID: {pkg.revenueCatId}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      
-      {packages.length === 0 && (
-        <div className="text-center py-16">
-          <div className="text-6xl mb-4">🎬</div>
-          <h3 className="text-2xl font-semibold text-gray-700 mb-2">Ready for Your First Setup?</h3>
-          <p className="text-gray-500 mb-6">Create magical experiences for your guests by setting up your first packages.</p>
-          <Button 
-            onClick={() => setShowSetup(true)}
-            size="lg"
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-          >
-            <Sparkles className="h-5 w-5 mr-2" />
-            Start Package Setup
-          </Button>
+                <h3 className="text-lg font-medium text-slate-900 mb-1">
+                  Create New Package
+                </h3>
+                <p className="text-sm text-slate-500 max-w-[200px]">
+                  Add a new pricing tier or special offer to your inventory.
+                </p>
+              </button>
+            </div>
+          )}
         </div>
-      )}
-      
-      {packages.length > 0 && (
-        <CardFooter className="justify-end mt-6">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Save All Changes
-          </Button>
-        </CardFooter>
-      )}
+      </div>
     </div>
   );
 } 
