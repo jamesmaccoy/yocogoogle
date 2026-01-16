@@ -2,22 +2,27 @@
 
 ## Current Status
 
-⚠️ **MCP Plugin Temporarily Disabled**
+⚠️ **MCP Plugin Removed**
 
-The MCP plugin (`@payloadcms/plugin-mcp`) requires Payload CMS version 3.71.1+, but this project currently uses Payload 3.39.1. The plugin has been temporarily disabled to prevent build errors.
+The MCP plugin (`@payloadcms/plugin-mcp`) has been removed from the project because it requires Payload CMS version 3.71.1+, but this project currently uses Payload 3.39.1. The plugin was causing build failures on Vercel and has been removed from `package.json` and commented out in `payload.config.ts`.
 
 ## To Enable MCP Plugin
 
 ### Option 1: Upgrade Payload (Recommended)
 
-1. Upgrade Payload CMS to version 3.71.1 or higher:
+1. Install the MCP plugin:
+   ```bash
+   npm install @payloadcms/plugin-mcp@latest
+   ```
+
+2. Upgrade Payload CMS to version 3.71.1 or higher:
    ```bash
    npm install payload@latest @payloadcms/db-mongodb@latest @payloadcms/email-nodemailer@latest
    ```
 
-2. Update all Payload-related packages to match versions
+3. Update all Payload-related packages to match versions (check for compatibility)
 
-3. Uncomment the MCP plugin in `src/payload.config.ts`:
+4. Uncomment the MCP plugin in `src/payload.config.ts`:
    ```typescript
    import { mcpPlugin } from '@payloadcms/plugin-mcp'
    
