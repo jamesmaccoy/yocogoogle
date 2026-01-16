@@ -26,12 +26,8 @@ import { YocoTransactions } from './collections/YocoTransactions'
 import { handleSubscriptionEvent } from './jobs/tasks/handleSubscriptionEvent'
 import { subscriptionDowngradeCheck } from './jobs/tasks/subscriptionDowngradeCheck'
 import { requeueFailedSubscriptions } from './jobs/tasks/requeueFailedSubscriptions'
+import { mcpPlugin } from '@payloadcms/plugin-mcp'
 //import analyticsRouter from '@/app/api/analytics/route'
-
-// MCP plugin is temporarily disabled due to version mismatch
-// The plugin requires Payload 3.71.1 but project uses 3.39.1
-// To enable: upgrade Payload to 3.71.1+ or wait for compatible plugin version
-// import { mcpPlugin } from '@payloadcms/plugin-mcp'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -139,9 +135,6 @@ export default buildConfig({
         media: true,
       },
     }),
-    // MCP plugin temporarily disabled due to version incompatibility
-    // Uncomment when Payload is upgraded to 3.71.1+ or compatible version available
-    /*
     mcpPlugin({
       collections: {
         packages: {
@@ -160,7 +153,6 @@ export default buildConfig({
         },
       },
     }),
-    */
   ],
   secret: process.env.PAYLOAD_SECRET,
   sharp,

@@ -2,54 +2,37 @@
 
 ## Current Status
 
-⚠️ **MCP Plugin Removed**
+✅ **MCP Plugin Enabled**
 
-The MCP plugin (`@payloadcms/plugin-mcp`) has been removed from the project because it requires Payload CMS version 3.71.1+, but this project currently uses Payload 3.39.1. The plugin was causing build failures on Vercel and has been removed from `package.json` and commented out in `payload.config.ts`.
+The MCP plugin (`@payloadcms/plugin-mcp`) is now installed and enabled. Payload CMS has been upgraded to version 3.71.1, and the MCP plugin is configured and active in `payload.config.ts`.
 
-## To Enable MCP Plugin
+## Configuration
 
-### Option 1: Upgrade Payload (Recommended)
+The MCP plugin is configured in `src/payload.config.ts`:
 
-1. Install the MCP plugin:
-   ```bash
-   npm install @payloadcms/plugin-mcp@latest
-   ```
+```typescript
+import { mcpPlugin } from '@payloadcms/plugin-mcp'
 
-2. Upgrade Payload CMS to version 3.71.1 or higher:
-   ```bash
-   npm install payload@latest @payloadcms/db-mongodb@latest @payloadcms/email-nodemailer@latest
-   ```
-
-3. Update all Payload-related packages to match versions (check for compatibility)
-
-4. Uncomment the MCP plugin in `src/payload.config.ts`:
-   ```typescript
-   import { mcpPlugin } from '@payloadcms/plugin-mcp'
-   
-   // In plugins array:
-   mcpPlugin({
-     collections: {
-       packages: {
-         description: 'Property packages for hosts to manage pricing tiers, availability, and booking options',
-         enabled: {
-           create: true,
-           delete: true,
-           find: true,
-           update: true,
-         },
-       },
-     },
-     mcp: {
-       handlerOptions: {
-         verboseLogs: process.env.NODE_ENV === 'development',
-       },
-     },
-   }),
-   ```
-
-### Option 2: Wait for Compatible Version
-
-Wait for a version of `@payloadcms/plugin-mcp` that supports Payload 3.39.1, or use a compatible fork.
+// In plugins array:
+mcpPlugin({
+  collections: {
+    packages: {
+      description: 'Property packages for hosts to manage pricing tiers, availability, and booking options',
+      enabled: {
+        create: true,
+        delete: true,
+        find: true,
+        update: true,
+      },
+    },
+  },
+  mcp: {
+    handlerOptions: {
+      verboseLogs: process.env.NODE_ENV === 'development',
+    },
+  },
+}),
+```
 
 ## MCP Server Configuration
 
@@ -86,10 +69,10 @@ Add to your MCP configuration (usually in Cursor settings or `.cursor/mcp.json`)
 ### MCP Endpoint
 
 - **Development**: `http://localhost:3000/api/mcp`
-- **Production**: `https://yourdomain.com/api/mcp`
+- **Production**: `https://simpleplek.com/api/mcp`
 
 ## Available MCP Tools
-
+  
 Once connected, the MCP client will have access to:
 
 ### Package Management Tools
