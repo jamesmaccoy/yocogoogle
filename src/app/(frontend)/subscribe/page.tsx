@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertCircle, Plane, Calendar, Coins, QrCode, Ticket } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { format } from 'date-fns'
 import { useUserContext } from '@/context/UserContext'
 import { useYoco } from '@/providers/Yoco'
 import { useSubscription } from '@/hooks/useSubscription'
@@ -68,6 +70,8 @@ export default function SubscribePage() {
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [latestTokenUsage, setLatestTokenUsage] = useState<TokenUsageSummary | null>(null)
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [countdown, setCountdown] = useState(5)
 
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true)
@@ -109,12 +113,6 @@ export default function SubscribePage() {
       fetchTransactions()
     }
   }, [fetchProducts, fetchTransactions, isInitialized])
-
-  useEffect(() => {
-    if (!subscriptionStatus.isLoading && subscriptionStatus.isSubscribed) {
-      router.replace('/bookings')
-    }
-  }, [subscriptionStatus.isLoading, subscriptionStatus.isSubscribed, router])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -258,6 +256,34 @@ export default function SubscribePage() {
   // Get latest pending transaction for notification
   const latestPendingTransaction = transactions.find((tx) => tx.status === 'pending')
 
+  // Get active subscription transaction for boarding pass
+  const activeTransaction = transactions.find((tx) => {
+    if (!tx || tx.status !== 'completed' || tx.intent !== 'subscription') return false
+    if (!tx.expiresAt) return true
+    return new Date(tx.expiresAt) > new Date()
+  })
+
+  // Countdown timer for redirect
+  useEffect(() => {
+    if (!subscriptionStatus.isSubscribed) return
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          setIsRedirecting(true)
+          setTimeout(() => {
+            router.push('/bookings')
+          }, 800)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [subscriptionStatus.isSubscribed, router])
+
   if (!isInitialized || subscriptionStatus.isLoading) {
     return (
       <div className="container py-16">
@@ -270,18 +296,217 @@ export default function SubscribePage() {
   }
 
   if (subscriptionStatus.isSubscribed) {
+    const validFrom = activeTransaction?.completedAt 
+      ? format(new Date(activeTransaction.completedAt), 'MMM d, yyyy')
+      : activeTransaction?.createdAt
+      ? format(new Date(activeTransaction.createdAt), 'MMM d, yyyy')
+      : 'Active'
+    
+    const validUntil = subscriptionStatus.expirationDate
+      ? format(subscriptionStatus.expirationDate, 'MMM d, yyyy')
+      : activeTransaction?.expiresAt
+      ? format(new Date(activeTransaction.expiresAt), 'MMM d, yyyy')
+      : 'Ongoing'
+
+    const isPro = subscriptionStatus.entitlements.some((entitlement) => entitlement.includes('pro'))
+    const tokenBalance = latestTokenUsage?.total ?? 0
+
     return (
-      <div className="container py-16">
-        <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-8 text-center">
-          <CheckCircle2 className="mx-auto mb-4 h-10 w-10 text-green-500" />
-          <h1 className="text-2xl font-semibold text-foreground">Subscription Active</h1>
-          <p className="mt-2 text-muted-foreground">
-            You already have an active Simple Plek membership. Head over to your bookings to start planning your stay.
-          </p>
-          <Button className="mt-6" onClick={() => router.push('/bookings')}>
-            Go to bookings
-          </Button>
+      <div className="min-h-screen w-full bg-gray-100 flex items-center justify-center p-4 font-[GeistSans] text-gray-900 overflow-hidden relative">
+        {/* Background decoration */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-teal-200/20 rounded-full blur-3xl" />
+          <div className="absolute top-[40%] -right-[10%] w-[40%] h-[40%] bg-cyan-200/20 rounded-full blur-3xl" />
         </div>
+
+        <AnimatePresence mode="wait">
+          {!isRedirecting ? (
+            <motion.div
+              key="boarding-pass"
+              initial={{
+                y: 50,
+                opacity: 0,
+                scale: 0.95,
+              }}
+              animate={{
+                y: 0,
+                opacity: 1,
+                scale: 1,
+              }}
+              exit={{
+                y: -100,
+                opacity: 0,
+                scale: 0.95,
+                transition: {
+                  duration: 0.5,
+                  ease: 'backIn',
+                },
+              }}
+              transition={{
+                type: 'spring',
+                stiffness: 300,
+                damping: 30,
+              }}
+              className="w-full max-w-md relative drop-shadow-2xl"
+            >
+              {/* Ticket Container */}
+              <div className="bg-white rounded-3xl overflow-hidden relative">
+                {/* Top Section: Header & Status */}
+                <div className="bg-teal-500 p-6 text-white relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <Plane size={120} strokeWidth={1} />
+                  </div>
+
+                  <div className="flex justify-between items-start relative z-10">
+                    <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-medium tracking-wider uppercase">
+                      <CheckCircle2 size={14} />
+                      <span>Active</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-teal-100 text-xs font-mono uppercase tracking-widest">
+                        Class
+                      </p>
+                      <p className="font-bold text-lg">{isPro ? 'PRO' : 'STANDARD'}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <h1 className="text-3xl font-bold tracking-tight">
+                      Simple Plek
+                    </h1>
+                    <p className="text-teal-100 text-sm mt-1">
+                      Global Membership Access
+                    </p>
+                  </div>
+                </div>
+
+                {/* Middle Section: Details */}
+                <div className="p-6 pb-8 space-y-6">
+                  {/* Token Balance - Prominent */}
+                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 flex items-center justify-between group">
+                    <div>
+                      <p className="text-gray-400 text-xs font-mono uppercase tracking-wider mb-1">
+                        Token Balance
+                      </p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-bold text-gray-900">
+                          {typeof tokenBalance === 'number' ? tokenBalance.toLocaleString() : '—'}
+                        </span>
+                        <span className="text-sm text-gray-500 font-medium">
+                          TKN
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-12 w-12 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                      <Coins size={24} />
+                    </div>
+                  </div>
+
+                  {/* Flight/Membership Details Grid */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-400 mb-1">
+                        <Calendar size={14} />
+                        <span className="text-xs font-mono uppercase tracking-wider">
+                          Valid From
+                        </span>
+                      </div>
+                      <p className="font-semibold text-gray-900">{validFrom}</p>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-400 mb-1">
+                        <Calendar size={14} />
+                        <span className="text-xs font-mono uppercase tracking-wider">
+                          Valid Until
+                        </span>
+                      </div>
+                      <p className="font-semibold text-gray-900">{validUntil}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Perforation / Cutout Line */}
+                <div className="relative h-8 bg-white flex items-center">
+                  <div className="absolute left-0 w-8 h-8 bg-gray-100 rounded-full -translate-x-1/2" />
+                  <div className="w-full border-b-2 border-dashed border-gray-200 mx-4" />
+                  <div className="absolute right-0 w-8 h-8 bg-gray-100 rounded-full translate-x-1/2" />
+                </div>
+
+                {/* Bottom Section: Stub / Redirect */}
+                <div className="p-6 bg-gray-50 flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-gray-400 font-mono uppercase">
+                      Boarding in
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-bold text-teal-600 tabular-nums">
+                        00:0{countdown}
+                      </span>
+                      <span className="text-xs text-gray-400">seconds</span>
+                    </div>
+                  </div>
+
+                  {/* Barcode Visual */}
+                  <div className="h-12 flex items-center gap-1 opacity-60 mix-blend-multiply">
+                    {[...Array(12)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-full bg-gray-800 ${i % 3 === 0 ? 'w-1' : i % 2 === 0 ? 'w-2' : 'w-0.5'}`}
+                      />
+                    ))}
+                    <QrCode className="ml-2 text-gray-800" size={40} />
+                  </div>
+                </div>
+
+                {/* Progress Bar at bottom */}
+                <motion.div
+                  className="h-1 bg-teal-500 absolute bottom-0 left-0"
+                  initial={{
+                    width: '0%',
+                  }}
+                  animate={{
+                    width: '100%',
+                  }}
+                  transition={{
+                    duration: 5,
+                    ease: 'linear',
+                  }}
+                />
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="redirecting"
+              initial={{
+                opacity: 0,
+                scale: 0.9,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+              }}
+              className="text-center"
+            >
+              <div className="w-16 h-16 bg-white rounded-full shadow-xl flex items-center justify-center mx-auto mb-6">
+                <motion.div
+                  animate={{
+                    rotate: 360,
+                  }}
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    ease: 'linear',
+                  }}
+                >
+                  <Ticket className="text-teal-500" size={32} />
+                </motion.div>
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Taking you to bookings...
+              </h2>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }

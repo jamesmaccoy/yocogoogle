@@ -23,8 +23,7 @@ const serializeUsageMetadata = (usage: any) => {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { message, bookingContext, context, packageId, postId } = body
+    const { message, bookingContext, context, packageId, postId } = await req.json()
     const { user } = await getMeUser()
 
     if (!user) {
@@ -159,62 +158,6 @@ export async function POST(req: Request) {
 
     // Get the generative model
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
-
-    // Handle account page context
-    if (context === 'account-page') {
-      const { user: contextUser, subscription, transactionsSummary } = body
-
-      const systemPrompt = `You are a helpful account assistant for the user ${contextUser?.name || 'Guest'}.
-      
-USER CONTEXT:
-- Name: ${contextUser?.name}
-- Email: ${contextUser?.email}
-- Roles: ${contextUser?.roles?.join(', ') || 'user'}
-- Subscription Plan: ${subscription?.plan || 'None'}
-- Tier: ${subscription?.tier || 'Basic'}
-- Is Subscribed: ${subscription?.isSubscribed ? 'Yes' : 'No'}
-
-TRANSACTION SUMMARY:
-- Total Transactions: ${transactionsSummary?.total || 0}
-- Completed Transactions: ${transactionsSummary?.completed || 0}
-- Latest Transaction Status: ${transactionsSummary?.latest?.status || 'None'}
-
-INSTRUCTIONS:
-1. Answer questions about the user's account, subscription status, and billing history.
-2. If the user asks about features, explain what their current tier (${subscription?.tier}) allows.
-   - Basic: Standard features
-   - Member: Access to member-only packages
-   - Premium: All features plus concierge
-3. If asked about cancelling, guide them to the button on the account page.
-4. Be clear, concise, and helpful.
-5. If the user asks about booking history, refer to the global booking context if needed, or suggest checking the "Transactions" tab.
-
-Your goal is to help the user understand their current account standing and available features.`
-
-      const chat = model.startChat({
-        history: [
-          {
-            role: 'user',
-            parts: [{ text: systemPrompt }],
-          },
-          {
-            role: 'model',
-            parts: [{ text: "I understand. I am ready to assist with account and subscription questions." }],
-          },
-        ],
-      })
-
-      try {
-        const result = await chat.sendMessage(message)
-        const response = await result.response
-        const text = response.text()
-        const usage = serializeUsageMetadata(response.usageMetadata)
-        return NextResponse.json({ response: text, usage })
-      } catch (error) {
-        console.error('Error in account context chat:', error)
-        return NextResponse.json({ response: 'I apologize, but I encountered an error processing your request.' })
-      }
-    }
 
     // Handle package update context
     if (context === 'package-update' && packageId && postId) {

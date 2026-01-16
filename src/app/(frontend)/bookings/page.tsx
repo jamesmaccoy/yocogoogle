@@ -5,7 +5,7 @@ import { Post, User } from '@/payload-types'
 import { getMeUser } from '@/utilities/getMeUser'
 import PageClient from './page.client'
 import SuggestedPackages from '@/components/Bookings/SuggestedPackages'
-import { InsightsPanel } from '@/components/Bookings/InsightsPanel'
+import { BookingsAIAssistant } from '@/components/Bookings/BookingsAIAssistant'
 import { BookingsClient } from './page.client.bookings'
 import { redirect } from 'next/navigation'
 import { getPayload } from 'payload'
@@ -166,7 +166,11 @@ export default async function Bookings() {
       <PageClient />
       <EstimateAds estimate={estimateForAds} />
       <div className="my-10 container space-y-10">
-        <InsightsPanel userId={user.id} />
+        <BookingsAIAssistant
+          userId={user.id}
+          upcomingBookings={formattedUpcomingBookings}
+          pastBookings={formattedPastBookings}
+        />
 
         {upcomingBookings.docs.length === 0 && pastBookings.docs.length === 0 ? (
           <div className="text-center py-10">

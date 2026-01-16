@@ -1,12 +1,11 @@
 "use client"
 
-import { useEffect } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Package, FileText } from 'lucide-react'
+import { Package, FileText, Sparkles } from 'lucide-react'
 import AnnualStatementClient from '@/app/(frontend)/bookings/annual-statement/page.client'
-import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
+import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 
 type ManagePageClientProps = {
   posts: Post[]
@@ -14,18 +13,6 @@ type ManagePageClientProps = {
 }
 
 export default function ManagePageClient({ posts, latestEstimatePostId }: ManagePageClientProps) {
-  useEffect(() => {
-    ; (window as any).manageContext = {
-      context: 'manage-page',
-      posts: posts.map(p => ({
-        id: p.id,
-        title: p.title,
-        slug: p.slug
-      })),
-      postCount: posts.length
-    }
-  }, [posts])
-
   return (
     <div className="container py-10">
       <h1 className="text-3xl font-bold mb-6">Manage</h1>
@@ -71,7 +58,31 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
       </Tabs>
 
       {/* AI Assistant */}
-      <AIAssistant />
+      <div className="mt-12 border-t border-primary/20 pt-12">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center bg-primary rounded-xl mb-4 shadow-sm">
+              <Sparkles className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <h2 className="text-2xl font-semibold text-foreground mb-2">
+              AI Assistant
+            </h2>
+            <p className="text-muted-foreground">
+              Ask about packages, statements, or management features
+            </p>
+          </div>
+
+          <PageAIAssistant
+            context={{
+              type: 'manage',
+              data: {
+                posts,
+                latestEstimatePostId,
+              },
+            }}
+          />
+        </div>
+      </div>
     </div>
   )
 }

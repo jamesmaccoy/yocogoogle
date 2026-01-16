@@ -4,14 +4,14 @@ import React, { useEffect, useState } from 'react'
 import { User } from '@/payload-types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2, AlertCircle, CheckCircle2, ArrowUpDown, Filter, Eye, Download, MoreHorizontal, Send, Sparkles, CreditCard, Activity } from 'lucide-react'
+import { Settings, User as UserIcon, Crown, Calendar, FileText, Edit3, Loader2, AlertCircle, CheckCircle2, ArrowUpDown, Filter, Eye, Download, MoreHorizontal, CreditCard, Activity, Sparkles } from 'lucide-react'
+import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 import { useSubscription } from '@/hooks/useSubscription'
 import { EditPostsLink } from '@/components/EditPostsLink'
 import { Switch } from '@/components/ui/switch'
 import Link from 'next/link'
 import { getGravatarUrl } from '@/utils/gravatar'
 import { Gravatar } from '@/components/Gravatar'
-import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 
 type YocoTransaction = {
   id: string
@@ -38,12 +38,6 @@ type AvailableProduct = {
   icon?: string
 }
 
-type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: Date
-}
 
 interface AccountClientProps {
   user: User | null
@@ -178,34 +172,6 @@ export default function AccountClient({ user }: AccountClientProps) {
     }
   }
 
-  // Set AI context for the account page
-  useEffect(() => {
-    if (user) {
-      ; (window as any).accountContext = {
-        context: 'account-page',
-        user: {
-          name: user.name,
-          email: user.email,
-          roles: userRoles,
-        },
-        subscription: {
-          isSubscribed,
-          tier,
-          plan: user.subscriptionStatus?.plan,
-        },
-        transactionsSummary: {
-          total: transactions.length,
-          completed: transactions.filter((t) => t.status === 'completed').length,
-          latest: transactions[0],
-        },
-      }
-
-      // Dispatch event to notify AI Assistant if it's already listening
-      window.dispatchEvent(new CustomEvent('openAIAssistant', {
-        detail: (window as any).accountContext
-      }))
-    }
-  }, [user, userRoles, isSubscribed, tier, transactions])
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -288,7 +254,6 @@ export default function AccountClient({ user }: AccountClientProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <AIAssistant />
       {/* Header */}
       <div className="border-b border-primary/20 bg-card">
         <div className="mx-auto max-w-7xl px-6 py-4">
@@ -316,7 +281,32 @@ export default function AccountClient({ user }: AccountClientProps) {
         </div>
       </div>
 
+      {/* AI Assistant */}
+      <div className="border-b border-primary/20 bg-card">
+        <div className="mx-auto max-w-3xl px-6 py-12">
+          <div className="text-center mb-8">
+            <div className="inline-flex h-12 w-12 items-center justify-center bg-primary rounded-xl mb-4 shadow-sm">
+              <Sparkles className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <h2 className="text-2xl font-semibold text-foreground mb-2">
+              AI Assistant
+            </h2>
+            <p className="text-muted-foreground">
+              Ask anything about your bookings, payments, or account features
+            </p>
+          </div>
 
+          <PageAIAssistant
+            context={{
+              type: 'account',
+              data: {
+                transactions,
+                products: availableProducts,
+              },
+            }}
+          />
+        </div>
+      </div>
 
       {/* Tabs Navigation */}
       <div className="border-b border-primary/20 bg-card">

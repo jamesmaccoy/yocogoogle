@@ -215,12 +215,6 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   }, [addonPackages, data, relatedPages])
 
   const bookingContext = React.useMemo(() => getBookingContext(), [getBookingContext])
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && bookingContext) {
-      ; (window as any).bookingContext = bookingContext
-    }
-  }, [bookingContext])
   const bookingContextJson = React.useMemo(() => JSON.stringify(bookingContext ?? {}), [bookingContext])
 
   const handleAskAssistant = useCallback(() => {
