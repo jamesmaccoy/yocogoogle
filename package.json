@@ -24,6 +24,7 @@
   "dependencies": {
     "@google/genai": "^1.0.1",
     "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@payloadcms/db-mongodb": "3.71.1",
     "@payloadcms/email-nodemailer": "3.71.1",
     "@payloadcms/graphql": "3.71.1",
@@ -84,11 +85,11 @@
     "payload": "3.71.1",
     "payload-admin-bar": "^1.0.6",
     "prism-react-renderer": "^2.3.1",
-    "react": "^19.0.0",
+    "react": "19.0.0",
     "react-chartjs-2": "^5.3.0",
     "react-datepicker": "^8.3.0",
     "react-day-picker": "^9.11.1",
-    "react-dom": "^19.0.0",
+    "react-dom": "19.0.0",
     "react-hook-form": "^7.66.0",
     "resend": "^6.6.0",
     "sass": "^1.85.1",
@@ -156,6 +157,8 @@
     "@payloadcms/plugin-seo": "3.71.1",
     "@payloadcms/richtext-lexical": "3.71.1",
     "@payloadcms/storage-s3": "3.71.1",
-    "@payloadcms/ui": "3.71.1"
+    "@payloadcms/ui": "3.71.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   }
 }
