@@ -27,6 +27,21 @@ export async function POST(request: NextRequest) {
 
     const payload = await getPayload({ config: configPromise })
     const posts = pageData?.posts || []
+    const postId = pageData?.postId || (posts.length > 0 ? posts[0].id : null)
+
+    // Fetch post details for better context
+    let postDetails: any = null
+    if (postId) {
+      try {
+        postDetails = await payload.findByID({
+          collection: 'posts',
+          id: postId,
+          depth: 1,
+        })
+      } catch (e) {
+        console.warn('Could not fetch post details:', e)
+      }
+    }
 
     // Fetch existing packages for context
     const existingPackages = await payload.find({
@@ -40,36 +55,126 @@ export async function POST(request: NextRequest) {
       limit: 100,
     })
 
+    // Helper function to guess missing package values
+    const guessPackageDefaults = (category: string, userInput: any) => {
+      const defaults: any = {
+        addon: {
+          baseRate: 30000, // R300
+          minNights: 1,
+          maxNights: 1,
+          multiplier: 1,
+          features: ['Professional service', 'One-time fee', 'Quick setup', 'Quality guaranteed'],
+        },
+        standard: {
+          baseRate: 20000, // R200
+          minNights: 2,
+          maxNights: 7,
+          multiplier: 1,
+          features: ['Comfortable accommodation', 'Essential amenities', 'Flexible check-in', 'Free WiFi', 'Self-service'],
+        },
+        hosted: {
+          baseRate: 45000, // R450
+          minNights: 3,
+          maxNights: 14,
+          multiplier: 1.2,
+          features: ['Concierge service', 'Premium amenities', 'Personalized experience', '24/7 support', 'Luxury touches'],
+        },
+        special: {
+          baseRate: 35000, // R350
+          minNights: 1,
+          maxNights: 7,
+          multiplier: 0.9,
+          features: ['Special offer', 'Limited availability', 'Unique experience', 'Best value', 'Exclusive deal'],
+        },
+      }
+
+      const categoryDefaults = defaults[category as keyof typeof defaults] || defaults.standard
+      
+      // Use user input if provided, otherwise use defaults
+      return {
+        baseRate: userInput.baseRate || categoryDefaults.baseRate,
+        minNights: userInput.minNights || categoryDefaults.minNights,
+        maxNights: userInput.maxNights || categoryDefaults.maxNights,
+        multiplier: userInput.multiplier || categoryDefaults.multiplier,
+        features: userInput.features && userInput.features.length > 0 
+          ? userInput.features 
+          : categoryDefaults.features,
+      }
+    }
+
     // Create a tool for previewing package creation
     const previewPackageTool = tool({
-      description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. Use this when the user wants to create a new package.',
+      description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. Use this when the user wants to create a new package.',
       parameters: z.object({
-        name: z.string().describe('Package display name (include emoji if appropriate, e.g., "🏖️ Weekend Getaway")'),
-        description: z.string().describe('Detailed description of what the package offers'),
-        category: z.enum(['standard', 'hosted', 'addon', 'special']).describe('Package category'),
+        name: z.string().optional().describe('Package display name (include emoji if appropriate). If not provided, generate based on category and description.'),
+        description: z.string().optional().describe('Detailed description of what the package offers. If not provided, generate based on category.'),
+        category: z.enum(['standard', 'hosted', 'addon', 'special']).optional().describe('Package category. If not specified, infer from description or default to "standard".'),
         entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement level'),
-        minNights: z.number().int().min(1).describe('Minimum number of nights'),
-        maxNights: z.number().int().min(1).describe('Maximum number of nights'),
-        baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR). For example, R150.00 = 15000 cents. Leave undefined if not specified.'),
-        multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
-        features: z.array(z.string()).default([]).describe('Array of key features/amenities'),
-        postId: z.string().describe('The property (post) ID this package belongs to'),
+        minNights: z.number().int().min(1).optional().describe('Minimum number of nights. If not provided, will be guessed based on category.'),
+        maxNights: z.number().int().min(1).optional().describe('Maximum number of nights. If not provided, will be guessed based on category.'),
+        baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR). If not provided, will be guessed based on category (addon: R300, standard: R200, hosted: R450, special: R350).'),
+        multiplier: z.number().min(0.1).max(3.0).optional().describe('Price multiplier. If not provided, will be guessed (addon/standard: 1.0, hosted: 1.2, special: 0.9).'),
+        features: z.array(z.string()).optional().describe('Array of key features/amenities. If not provided, will generate 4-5 relevant features based on category.'),
+        postId: z.string().optional().describe('The property (post) ID this package belongs to. If not provided, use the first available property.'),
         revenueCatId: z.string().optional().describe('RevenueCat product ID if known'),
       }),
-      execute: async ({ name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId }) => {
-        // Return preview data - this will be rendered as a UI component
+      execute: async (input) => {
+        // Determine category if not provided
+        const category = input.category || (() => {
+          const desc = (input.description || '').toLowerCase()
+          if (desc.includes('addon') || desc.includes('cleaning') || desc.includes('wine') || desc.includes('service')) return 'addon'
+          if (desc.includes('hosted') || desc.includes('concierge') || desc.includes('luxury')) return 'hosted'
+          if (desc.includes('special') || desc.includes('promo') || desc.includes('deal')) return 'special'
+          return 'standard'
+        })()
+
+        // Get defaults for the category
+        const defaults = guessPackageDefaults(category, input)
+
+        // Generate name if not provided
+        const name = input.name || (() => {
+          const emojis: Record<string, string> = {
+            addon: '🧹',
+            standard: '🏠',
+            hosted: '✨',
+            special: '🎁',
+          }
+          const categoryNames: Record<string, string> = {
+            addon: 'Add-on Service',
+            standard: 'Standard Package',
+            hosted: 'Hosted Experience',
+            special: 'Special Offer',
+          }
+          return `${emojis[category] || '📦'} ${categoryNames[category] || 'Package'}`
+        })()
+
+        // Generate description if not provided
+        const description = input.description || (() => {
+          const descs: Record<string, string> = {
+            addon: 'Professional add-on service to enhance your stay experience.',
+            standard: 'Comfortable accommodation with essential amenities for a pleasant stay.',
+            hosted: 'Premium hosted experience with concierge services and personalized attention.',
+            special: 'Special promotional package offering great value and unique experiences.',
+          }
+          return descs[category] || 'A great package option for your stay.'
+        })()
+
+        // Use provided postId or default to first available
+        const finalPostId = input.postId || postId || (posts.length > 0 ? posts[0].id : '')
+
+        // Return preview data with ALL values filled in
         return {
           name,
           description,
           category,
-          entitlement,
-          minNights,
-          maxNights,
-          baseRate: baseRate || undefined,
-          multiplier,
-          features,
-          postId,
-          revenueCatId: revenueCatId || undefined,
+          entitlement: input.entitlement || 'standard',
+          minNights: input.minNights || defaults.minNights,
+          maxNights: input.maxNights || defaults.maxNights,
+          baseRate: input.baseRate || defaults.baseRate,
+          multiplier: input.multiplier || defaults.multiplier,
+          features: input.features && input.features.length > 0 ? input.features : defaults.features,
+          postId: finalPostId,
+          revenueCatId: input.revenueCatId || undefined,
           isPreview: true,
         }
       },
@@ -133,6 +238,153 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Tool for reading/finding packages
+    const findPackagesTool = tool({
+      description: 'Find and list packages for a property. Use this when user asks to see, list, or view their packages.',
+      parameters: z.object({
+        postId: z.string().optional().describe('Property ID to filter packages. If not provided, shows all packages for user\'s properties.'),
+        category: z.enum(['standard', 'hosted', 'addon', 'special']).optional().describe('Filter by category'),
+        isEnabled: z.boolean().optional().describe('Filter by enabled status'),
+      }),
+      execute: async ({ postId, category, isEnabled }) => {
+        try {
+          const where: any = {}
+          
+          if (postId) {
+            where.post = { equals: postId }
+          } else if (posts.length > 0) {
+            where.post = { in: posts.map((p: any) => p.id) }
+          }
+          
+          if (category) {
+            where.category = { equals: category }
+          }
+          
+          if (isEnabled !== undefined) {
+            where.isEnabled = { equals: isEnabled }
+          }
+
+          const result = await payload.find({
+            collection: 'packages',
+            where: Object.keys(where).length > 0 ? where : undefined,
+            depth: 1,
+            limit: 100,
+          })
+
+          return {
+            success: true,
+            packages: result.docs.map((pkg: any) => ({
+              id: pkg.id,
+              name: pkg.name,
+              description: pkg.description,
+              category: pkg.category,
+              isEnabled: pkg.isEnabled,
+              minNights: pkg.minNights,
+              maxNights: pkg.maxNights,
+              baseRate: pkg.baseRate,
+              multiplier: pkg.multiplier,
+              entitlement: pkg.entitlement,
+              postTitle: typeof pkg.post === 'object' ? pkg.post.title : 'Unknown',
+            })),
+            count: result.docs.length,
+            message: `Found ${result.docs.length} package(s)`,
+          }
+        } catch (error: any) {
+          return {
+            success: false,
+            error: error.message || 'Failed to find packages',
+            message: `Failed to find packages: ${error.message || 'Unknown error'}`,
+          }
+        }
+      },
+    })
+
+    // Tool for updating packages
+    const updatePackageTool = tool({
+      description: 'Update an existing package. Use this when user wants to modify package details like name, description, price, or settings.',
+      parameters: z.object({
+        packageId: z.string().describe('The ID of the package to update'),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        category: z.enum(['standard', 'hosted', 'addon', 'special']).optional(),
+        entitlement: z.enum(['standard', 'pro']).optional(),
+        minNights: z.number().int().min(1).optional(),
+        maxNights: z.number().int().min(1).optional(),
+        baseRate: z.number().int().min(0).optional(),
+        multiplier: z.number().min(0.1).max(3.0).optional(),
+        features: z.array(z.string()).optional(),
+        isEnabled: z.boolean().optional(),
+      }),
+      execute: async ({ packageId, ...updates }) => {
+        try {
+          // Remove undefined values
+          const updateData: any = {}
+          Object.entries(updates).forEach(([key, value]) => {
+            if (value !== undefined) {
+              if (key === 'features' && Array.isArray(value)) {
+                updateData[key] = value.map(f => ({ feature: f }))
+              } else {
+                updateData[key] = value
+              }
+            }
+          })
+
+          const updated = await payload.update({
+            collection: 'packages',
+            id: packageId,
+            data: updateData,
+            user,
+          })
+
+          return {
+            success: true,
+            package: {
+              id: updated.id,
+              name: updated.name,
+              description: updated.description,
+              category: updated.category,
+              isEnabled: updated.isEnabled,
+            },
+            message: `Package "${updated.name}" has been updated successfully!`,
+          }
+        } catch (error: any) {
+          return {
+            success: false,
+            error: error.message || 'Failed to update package',
+            message: `Failed to update package: ${error.message || 'Unknown error'}`,
+          }
+        }
+      },
+    })
+
+    // Tool for deleting packages
+    const deletePackageTool = tool({
+      description: 'Delete a package. Use this when user wants to remove a package permanently. Always confirm before deleting.',
+      parameters: z.object({
+        packageId: z.string().describe('The ID of the package to delete'),
+      }),
+      execute: async ({ packageId }) => {
+        try {
+          const deleted = await payload.delete({
+            collection: 'packages',
+            id: packageId,
+            user,
+          })
+
+          return {
+            success: true,
+            message: `Package "${deleted.name || 'Unknown'}" has been deleted successfully!`,
+          }
+        } catch (error: any) {
+          return {
+            success: false,
+            error: error.message || 'Failed to delete package',
+            message: `Failed to delete package: ${error.message || 'Unknown error'}`,
+          }
+        }
+      },
+    })
+
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
     const systemPrompt = `You are an AI assistant helping a host manage their property packages.
@@ -148,19 +400,26 @@ PACKAGE MANAGEMENT GUIDELINES:
 2. Categories: standard (regular accommodation), hosted (with concierge/services), addon (one-time extras like cleaning/wine), special (promotional/unique)
 3. Entitlements: standard (all customers), pro (premium customers only)
 4. When user wants to create a package:
-   - FIRST use previewPackageTool to show them a preview card
+   - FIRST use previewPackageTool to show them a preview card with ALL guessed values filled in
+   - The preview should show complete package details including guessed baseRate, features, nights, etc.
    - Wait for user confirmation
    - THEN use createPackageTool to actually create it
 5. Guess reasonable defaults if user doesn't specify:
-   - For addon packages: baseRate 20000-50000 cents (R200-R500)
-   - For standard packages: baseRate based on property context or 15000-30000 cents
-   - minNights: 1 for addons, 2-3 for standard packages
-   - maxNights: 1-3 for addons, 7-14 for standard packages
-   - features: Generate 3-5 relevant features based on category
-6. Always format currency as R (Rands), not $
-7. Be helpful and guide the host through decisions
+   - For addon packages: baseRate 20000-50000 cents (R200-R500), minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
+   - For standard packages: baseRate 15000-30000 cents (R150-R300), minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]
+   - For hosted packages: baseRate 30000-60000 cents (R300-R600), minNights: 3, maxNights: 14, features: ["Concierge service", "Premium amenities", "Personalized experience"]
+   - For special packages: baseRate 25000-50000 cents (R250-R500), minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience"]
+   - Always generate 3-5 relevant features based on category and package type
+6. CRUD Operations:
+   - CREATE: Use previewPackageTool first, then createPackageTool after confirmation
+   - READ: Use findPackagesTool when user asks to see, list, or view packages
+   - UPDATE: Use updatePackageTool to modify existing packages (name, price, settings, etc.)
+   - DELETE: Use deletePackageTool to remove packages (always confirm first!)
+7. Always format currency as R (Rands), not $
+8. Be helpful and guide the host through decisions
+9. When showing package previews, ensure ALL fields are filled with reasonable guesses so the user can see a complete package before confirming
 
-When user asks to create a package, use previewPackageTool first to show them what it will look like.`
+When user asks to create a package, use previewPackageTool first to show them what it will look like with all guessed values filled in.`
 
     const result = streamText({
       model: model as any,
@@ -169,6 +428,9 @@ When user asks to create a package, use previewPackageTool first to show them wh
       tools: {
         previewPackage: previewPackageTool,
         createPackage: createPackageTool,
+        findPackages: findPackagesTool,
+        updatePackage: updatePackageTool,
+        deletePackage: deletePackageTool,
       },
       maxSteps: 5,
       stopWhen: stepCountIs(5),

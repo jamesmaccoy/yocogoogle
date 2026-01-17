@@ -48,7 +48,7 @@ import {
   type BasePackageConfig,
   type PackageCategory
 } from "@/lib/package-types"
-import { AIAssistant } from "@/components/AIAssistant/AIAssistant"
+import { PageAIAssistant } from "@/components/AIAssistant/PageAIAssistant"
 
 interface Props {
   user: User
@@ -499,8 +499,20 @@ export default function ManagePackagesPage({ postId }: { postId: string }) {
         </Dialog>
       </div>
 
-      {/* AI Assistant - docked bottom right */}
-      <AIAssistant />
+      {/* AI Assistant */}
+      <div className="mt-12 border-t border-primary/20 pt-12">
+        <div className="max-w-3xl mx-auto">
+          <PageAIAssistant
+            context={{
+              type: 'manage',
+              data: {
+                posts: [{ id: postId }], // Pass postId in posts array for context
+                postId,
+              },
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }

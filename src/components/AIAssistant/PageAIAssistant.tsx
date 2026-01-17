@@ -51,7 +51,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
   // Use AI SDK's useChat hook for manage context (generative UI)
   const isManageContext = context?.type === 'manage' && isHostOrAdmin
-  const { messages, input: chatInput, handleInputChange, handleSubmit, isLoading, setInput: setChatInput } = useChat({
+  const chatHook = useChat({
     api: '/api/chat/manage',
     body: {
       pageData: context?.data || {},
@@ -68,6 +68,16 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
       }
     },
   })
+  
+  // Extract values from chat hook with fallbacks
+  const { 
+    messages = [], 
+    input: chatInput = '', 
+    handleInputChange: handleChatInputChange, 
+    handleSubmit, 
+    isLoading = false, 
+    setInput: setChatInput 
+  } = chatHook || {}
 
   // Use simple fetch for non-manage contexts
   const [isLoadingSimple, setIsLoadingSimple] = useState(false)
@@ -90,8 +100,14 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript
         }
+        // Use the appropriate input handler
         if (isManageContext) {
-          setChatInput(transcript)
+          if (setChatInput && typeof setChatInput === 'function') {
+            setChatInput(transcript)
+          } else if (handleChatInputChange) {
+            // Fallback to handleInputChange if setInput not available
+            handleChatInputChange({ target: { value: transcript } } as React.ChangeEvent<HTMLTextAreaElement>)
+          }
         } else {
           setInput(transcript)
         }
@@ -236,7 +252,9 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 
   // Sync input state for manage context
   const currentInput = isManageContext ? (chatInput || '') : (input || '')
-  const setCurrentInput = isManageContext ? setChatInput : setInput
+  const handleCurrentInputChange = isManageContext 
+    ? handleChatInputChange 
+    : (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)
   const currentIsLoading = isManageContext ? isLoading : isLoadingSimple
 
   const defaultPlaceholder = useMemo(() => {
@@ -438,6 +456,104 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                   }
                 }
 
+                if (part.type === 'tool-findPackages') {
+                  switch (part.state) {
+                    case 'input-available':
+                      return (
+                        <div key={index} className="text-sm text-slate-500 italic">
+                          Finding packages...
+                        </div>
+                      )
+                    case 'output-available':
+                      const packages = part.output.packages || []
+                      return (
+                        <div key={index} className="text-sm">
+                          <div className="mb-2 font-medium">{part.output.message}</div>
+                          {packages.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                              {packages.map((pkg: any, idx: number) => (
+                                <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                  <div className="font-medium">{pkg.name}</div>
+                                  <div className="text-xs text-slate-500 mt-1">
+                                    {pkg.category} • {pkg.minNights}-{pkg.maxNights} nights • {pkg.isEnabled ? 'Enabled' : 'Disabled'}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    case 'output-error':
+                      return (
+                        <div key={index} className="text-sm text-red-600">
+                          Error: {part.errorText || 'Failed to find packages'}
+                        </div>
+                      )
+                    default:
+                      return null
+                  }
+                }
+
+                if (part.type === 'tool-updatePackage') {
+                  switch (part.state) {
+                    case 'input-available':
+                      return (
+                        <div key={index} className="text-sm text-slate-500 italic">
+                          Updating package...
+                        </div>
+                      )
+                    case 'output-available':
+                      return (
+                        <div key={index} className={cn(
+                          "text-sm p-3 rounded-lg",
+                          part.output.success 
+                            ? "bg-green-50 text-green-800 border border-green-200"
+                            : "bg-red-50 text-red-800 border border-red-200"
+                        )}>
+                          {part.output.message}
+                        </div>
+                      )
+                    case 'output-error':
+                      return (
+                        <div key={index} className="text-sm text-red-600">
+                          Error: {part.errorText || 'Failed to update package'}
+                        </div>
+                      )
+                    default:
+                      return null
+                  }
+                }
+
+                if (part.type === 'tool-deletePackage') {
+                  switch (part.state) {
+                    case 'input-available':
+                      return (
+                        <div key={index} className="text-sm text-slate-500 italic">
+                          Deleting package...
+                        </div>
+                      )
+                    case 'output-available':
+                      return (
+                        <div key={index} className={cn(
+                          "text-sm p-3 rounded-lg",
+                          part.output.success 
+                            ? "bg-green-50 text-green-800 border border-green-200"
+                            : "bg-red-50 text-red-800 border border-red-200"
+                        )}>
+                          {part.output.message}
+                        </div>
+                      )
+                    case 'output-error':
+                      return (
+                        <div key={index} className="text-sm text-red-600">
+                          Error: {part.errorText || 'Failed to delete package'}
+                        </div>
+                      )
+                    default:
+                      return null
+                  }
+                }
+
                 return null
               })}
             </div>
@@ -489,7 +605,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
           <InputGroupTextarea
             ref={textareaRef}
             value={currentInput}
-            onChange={(e) => setCurrentInput(e.target.value)}
+            onChange={handleCurrentInputChange}
             onKeyDown={handleKeyDown}
             placeholder={placeholder || defaultPlaceholder}
             className="min-h-[60px] max-h-[120px] py-3"

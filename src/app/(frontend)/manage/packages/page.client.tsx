@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
+import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 import { 
   Dialog, 
   DialogContent, 
@@ -67,7 +67,7 @@ interface PackagePreview {
   total: number
 }
 
-export default function ManagePackagesPage({ postId }: { postId: string }) {
+export default function ManagePackagesPage({ postId, posts }: { postId: string; posts?: any[] }) {
   const { packages, loading, error, setPackages } = useHostPackages(postId);
 
   // Add or update a package
@@ -155,6 +155,21 @@ export default function ManagePackagesPage({ postId }: { postId: string }) {
           );
         })}
       </div>
+
+      {/* AI Assistant */}
+      <div className="mt-12 border-t border-primary/20 pt-12">
+        <div className="max-w-3xl mx-auto">
+          <PageAIAssistant
+            context={{
+              type: 'manage',
+              data: {
+                posts: posts || [],
+                postId,
+              },
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -179,7 +194,7 @@ function useHostPackages(postId: string) {
       });
   }, [postId]);
 
-  return { packages, loading, error, setPackages }; <AIAssistant />
+  return { packages, loading, error, setPackages };
 }
 
 const PACKAGE_TEMPLATES = [

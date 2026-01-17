@@ -292,9 +292,19 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
   };
 
   const formatCurrency = (cents: number | undefined) => {
-    if (!cents) return formatAmountToZAR(0);
+    if (!cents || cents === 0) return formatAmountToZAR(0);
     // baseRate is stored in cents, convert to Rands
     return formatAmountToZAR(cents / 100);
+  };
+
+  // Calculate token value (placeholder - can be customized based on your token system)
+  // Example: 1 token = R10, or based on package multiplier, etc.
+  const calculateTokenValue = (baseRateCents: number | undefined, multiplier: number = 1) => {
+    if (!baseRateCents || baseRateCents === 0) return 0;
+    const randsValue = baseRateCents / 100;
+    // Example conversion: R10 = 1 token (adjust ratio as needed)
+    const tokenRatio = 10; // R10 per token
+    return Math.round((randsValue * multiplier) / tokenRatio);
   };
 
   const calculateStats = () => {
@@ -533,7 +543,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
               title="Total Revenue Potential"
               value={formatCurrency(stats.totalRevenue)}
               icon={DollarSign}
-              subtext="Based on base rates"
+              subtext={`${formatCurrency(stats.totalRevenue)} • ${Math.round(stats.totalRevenue / 1000)} tokens`}
             />
             <StatCard
               title="Active Packages"
@@ -632,13 +642,31 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                     </div>
 
                     {/* Footer Price */}
-                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-xs text-slate-400 font-medium">Base Rate</span>
-                        <span className="text-lg font-bold text-slate-900">
-                          {formatCurrency(pkg.baseRate)}
-                        </span>
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400 font-medium">Base Rate</span>
+                          <span className="text-lg font-bold text-slate-900">
+                            {formatCurrency(pkg.baseRate)}
+                          </span>
+                        </div>
+                        {pkg.multiplier !== 1 && (
+                          <div className="text-xs text-slate-500">
+                            {pkg.multiplier > 1 ? '+' : ''}{((pkg.multiplier - 1) * 100).toFixed(0)}% multiplier
+                          </div>
+                        )}
                       </div>
+                      {/* Token Value Display */}
+                      {pkg.baseRate && pkg.baseRate > 0 && (
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                            🪙 {calculateTokenValue(pkg.baseRate, pkg.multiplier)} tokens
+                          </Badge>
+                          <span className="text-xs text-slate-400">
+                            (R10 = 1 token)
+                          </span>
+                        </div>
+                      )}
                       <Dialog open={editingPackage?.id === pkg.id} onOpenChange={(open) => {
                         if (!open) setEditingPackage(null);
                         else setEditingPackage(pkg);
@@ -662,7 +690,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                               <div>
                                 <label className="text-sm font-medium text-gray-600">Name</label>
                                 <Input
-                                  value={editingPackage.name}
+                                  value={editingPackage.name || ''}
                                   onChange={e => setEditingPackage({ ...editingPackage, name: e.target.value })}
                                   className="mt-1"
                                 />
@@ -670,7 +698,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                               <div>
                                 <label className="text-sm font-medium text-gray-600">Description</label>
                                 <Textarea
-                                  value={editingPackage.description || ""}
+                                  value={editingPackage.description || ''}
                                   onChange={e => setEditingPackage({ ...editingPackage, description: e.target.value })}
                                   className="mt-1"
                                   rows={3}
@@ -684,7 +712,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                     onValueChange={value => setEditingPackage({ ...editingPackage, category: value as any })}
                                   >
                                     <SelectTrigger className="mt-1">
-                                      <SelectValue />
+                                      <SelectValue placeholder="Select category" />
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="standard">Standard</SelectItem>
@@ -701,7 +729,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                     onValueChange={value => setEditingPackage({ ...editingPackage, entitlement: value as any })}
                                   >
                                     <SelectTrigger className="mt-1">
-                                      <SelectValue />
+                                      <SelectValue placeholder="Select entitlement" />
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="standard">Standard</SelectItem>
@@ -716,7 +744,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                   <Input
                                     type="number"
                                     min="1"
-                                    value={editingPackage.minNights}
+                                    value={editingPackage.minNights || 1}
                                     onChange={e => setEditingPackage({ ...editingPackage, minNights: parseInt(e.target.value) || 1 })}
                                     className="mt-1"
                                   />
@@ -726,7 +754,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                   <Input
                                     type="number"
                                     min="1"
-                                    value={editingPackage.maxNights}
+                                    value={editingPackage.maxNights || 7}
                                     onChange={e => setEditingPackage({ ...editingPackage, maxNights: parseInt(e.target.value) || 7 })}
                                     className="mt-1"
                                   />
@@ -740,7 +768,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                     step="0.01"
                                     min="0.1"
                                     max="3.0"
-                                    value={editingPackage.multiplier}
+                                    value={editingPackage.multiplier || 1}
                                     onChange={e => setEditingPackage({ ...editingPackage, multiplier: parseFloat(e.target.value) || 1 })}
                                     className="mt-1"
                                   />
@@ -751,7 +779,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                                     type="number"
                                     min="0"
                                     step="1"
-                                    value={editingPackage.baseRate || ''}
+                                    value={editingPackage.baseRate ?? ''}
                                     onChange={e => setEditingPackage({ ...editingPackage, baseRate: e.target.value ? parseFloat(e.target.value) : undefined })}
                                     className="mt-1"
                                     placeholder="Optional"
@@ -761,7 +789,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                               <div>
                                 <label className="text-sm font-medium text-gray-600">Custom Display Name</label>
                                 <Input
-                                  value={editingPackage.customName || ""}
+                                  value={editingPackage.customName || ''}
                                   onChange={e => setEditingPackage({ ...editingPackage, customName: e.target.value })}
                                   className="mt-1"
                                   placeholder="Override display name"
