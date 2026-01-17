@@ -50,6 +50,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const subscriptionPlan = currentUser?.subscriptionStatus?.plan || 'none'
 
   // Use AI SDK's useChat hook for manage context (generative UI)
+  // Always call useChat hook (React hooks must be called unconditionally)
   const isManageContext = context?.type === 'manage' && isHostOrAdmin
   const chatHook = useChat({
     api: '/api/chat/manage',
@@ -78,6 +79,18 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     isLoading = false, 
     setInput: setChatInput 
   } = chatHook || {}
+  
+  // Ensure handleChatInputChange is always a function
+  const safeHandleChatInputChange = useMemo(() => {
+    if (handleChatInputChange && typeof handleChatInputChange === 'function') {
+      return handleChatInputChange
+    }
+    return (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (setChatInput && typeof setChatInput === 'function') {
+        setChatInput(e.target.value)
+      }
+    }
+  }, [handleChatInputChange, setChatInput])
 
   // Use simple fetch for non-manage contexts
   const [isLoadingSimple, setIsLoadingSimple] = useState(false)
@@ -239,6 +252,52 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     setPendingPackagePreview(null)
   }
 
+  // Test MCP endpoint
+  const [testingMCP, setTestingMCP] = useState(false)
+  const [mcpTestResult, setMcpTestResult] = useState<string | null>(null)
+
+  const handleTestMCP = async () => {
+    if (testingMCP) return
+    
+    setTestingMCP(true)
+    setMcpTestResult(null)
+    
+    try {
+      // Test MCP endpoint by calling the list packages tool
+      const response = await fetch('/api/mcp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.error) {
+        setMcpTestResult(`Error: ${data.error.message || 'Unknown error'}`)
+      } else {
+        const tools = data.result?.tools || []
+        const packageTools = tools.filter((t: any) => t.name?.includes('package') || t.name?.includes('Package'))
+        setMcpTestResult(
+          `✅ MCP endpoint is working! Found ${tools.length} tool(s), ${packageTools.length} package tool(s) available.`
+        )
+      }
+    } catch (error: any) {
+      setMcpTestResult(`❌ MCP test failed: ${error.message || 'Unknown error'}`)
+    } finally {
+      setTestingMCP(false)
+    }
+  }
+
   const handleActionClick = (action: string) => {
     sendMessage(action)
   }
@@ -253,7 +312,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   // Sync input state for manage context
   const currentInput = isManageContext ? (chatInput || '') : (input || '')
   const handleCurrentInputChange = isManageContext 
-    ? handleChatInputChange 
+    ? safeHandleChatInputChange
     : (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)
   const currentIsLoading = isManageContext ? isLoading : isLoadingSimple
 
@@ -600,6 +659,18 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         </div>
       )}
 
+      {/* MCP Test Result */}
+      {mcpTestResult && (
+        <div className={cn(
+          "rounded-lg border p-3 text-sm",
+          mcpTestResult.includes('✅') 
+            ? "bg-green-50 text-green-800 border-green-200" 
+            : "bg-red-50 text-red-800 border-red-200"
+        )}>
+          {mcpTestResult}
+        </div>
+      )}
+
       <form onSubmit={handleSendMessage}>
         <InputGroup className="shadow-sm">
           <InputGroupTextarea
@@ -612,6 +683,27 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
             disabled={currentIsLoading}
           />
           <InputGroupAddon align="block-end">
+            {isManageContext && (
+              <>
+                <InputGroupButton
+                  variant="outline"
+                  size="icon-xs"
+                  onClick={handleTestMCP}
+                  disabled={testingMCP}
+                  type="button"
+                  className="rounded-full"
+                  title="Test MCP endpoint"
+                >
+                  {testingMCP ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  <span className="sr-only">Test MCP</span>
+                </InputGroupButton>
+                <Separator orientation="vertical" className="!h-4" />
+              </>
+            )}
             <InputGroupButton
               variant={isListening ? 'destructive' : 'outline'}
               size="icon-xs"
