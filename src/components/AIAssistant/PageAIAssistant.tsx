@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Sparkles, ArrowUpIcon, Mic, Loader2, Package, Calendar, TrendingUp, Home, Star } from 'lucide-react'
+import { Sparkles, ArrowUpIcon, Mic, Loader2, Package, Calendar, TrendingUp, Home, Star, FileText, BarChart2 } from 'lucide-react'
 import {
   InputGroup,
   InputGroupTextarea,
@@ -26,9 +26,10 @@ interface PageAIAssistantProps {
   placeholder?: string
   className?: string
   showActions?: boolean
+  variant?: 'default' | 'primary'
 }
 
-export function PageAIAssistant({ context, placeholder, className, showActions = true }: PageAIAssistantProps) {
+export function PageAIAssistant({ context, placeholder, className, showActions = true, variant }: PageAIAssistantProps) {
   const { currentUser } = useUserContext()
   const { isSubscribed } = useSubscription()
   const router = useRouter()
@@ -263,32 +264,81 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     setMcpTestResult(null)
     
     try {
-      // Test MCP endpoint by calling the list packages tool
+      // First verify we're authenticated
+      const meResponse = await fetch('/api/users/me')
+      if (!meResponse.ok) {
+        throw new Error('Not authenticated. Please log in.')
+      }
+
+      // Try to get an API key for MCP (MCP endpoint requires API key auth)
+      let apiKey: string | null = null
+      try {
+        const apiKeysResponse = await fetch(`/api/payload-mcp-api-keys?where[user][equals]=${currentUser?.id}`)
+        if (apiKeysResponse.ok) {
+          const apiKeysData = await apiKeysResponse.json()
+          if (apiKeysData.docs && apiKeysData.docs.length > 0) {
+            apiKey = apiKeysData.docs[0].apiKey || null
+          }
+        }
+      } catch (e) {
+        console.warn('Could not fetch API keys:', e)
+      }
+
+      // Test MCP endpoint by calling the list tools method
+      // MCP uses JSON-RPC 2.0 protocol and requires API key authentication
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      
+      // Add API key if available
+      if (apiKey) {
+        headers['Authorization'] = apiKey
+      }
+
       const response = await fetch('/api/mcp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
+        credentials: 'include', // Include cookies as fallback
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
           method: 'tools/list',
+          params: {},
         }),
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorText = await response.text()
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.errors?.[0]?.message || errorData.error?.message || errorMessage
+        } catch {
+          errorMessage = errorText || errorMessage
+        }
+        
+        if (response.status === 401) {
+          errorMessage += '\n\n💡 MCP endpoint requires an API key. Create one in Payload Admin → Collections → API Keys (Payload MCP API Keys)'
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
       
       if (data.error) {
-        setMcpTestResult(`Error: ${data.error.message || 'Unknown error'}`)
+        setMcpTestResult(`Error: ${data.error.message || JSON.stringify(data.error)}`)
       } else {
         const tools = data.result?.tools || []
-        const packageTools = tools.filter((t: any) => t.name?.includes('package') || t.name?.includes('Package'))
+        const packageTools = tools.filter((t: any) => 
+          t.name?.toLowerCase().includes('package') || 
+          t.name?.toLowerCase().includes('create') ||
+          t.name?.toLowerCase().includes('update') ||
+          t.name?.toLowerCase().includes('delete') ||
+          t.name?.toLowerCase().includes('find')
+        )
         setMcpTestResult(
-          `✅ MCP endpoint is working! Found ${tools.length} tool(s), ${packageTools.length} package tool(s) available.`
+          `✅ MCP endpoint is working! Found ${tools.length} tool(s), ${packageTools.length} package-related tool(s) available.`
         )
       }
     } catch (error: any) {
@@ -622,6 +672,147 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     )
   }
 
+  // Primary variant for Magic Patterns design
+  if (variant === 'primary' && isManageContext) {
+    return (
+      <div className={cn("w-full max-w-3xl mx-auto mb-12", className)}>
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center p-2 bg-teal-50 rounded-full mb-4 ring-1 ring-teal-100">
+            <Sparkles className="h-5 w-5 text-teal-600 mr-2" />
+            <span className="text-sm font-medium text-teal-900">
+              AI Assistant
+            </span>
+          </div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-3 tracking-tight">
+            How can I help manage your properties today?
+          </h1>
+          <p className="text-slate-500 text-lg">
+            Generate packages, analyze pricing, or draft statements instantly.
+          </p>
+        </div>
+
+        {/* Render manage context messages with generative UI */}
+        {renderManageMessages()}
+
+        {/* Pending package preview */}
+        {pendingPackagePreview && (
+          <div className="my-4">
+            <PackagePreview
+              {...pendingPackagePreview}
+              onConfirm={handleConfirmPackage}
+              onCancel={handleCancelPackage}
+              isSaving={isSavingPackage}
+            />
+          </div>
+        )}
+
+        {/* MCP Test Result */}
+        {mcpTestResult && (
+          <div className={cn(
+            "rounded-lg border p-3 text-sm mb-6",
+            mcpTestResult.includes('✅') 
+              ? "bg-green-50 text-green-800 border-green-200" 
+              : "bg-red-50 text-red-800 border-red-200"
+          )}>
+            {mcpTestResult}
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-2 mb-6 transition-shadow hover:shadow-md duration-300">
+          <form onSubmit={handleSendMessage}>
+            <textarea
+              ref={textareaRef}
+              value={currentInput}
+              onChange={handleCurrentInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={placeholder || "Describe a new package for your property or ask about recent bookings..."}
+              className="w-full min-h-[120px] p-4 text-base text-slate-900 placeholder:text-slate-400 bg-transparent border-none focus:ring-0 resize-none outline-none"
+              disabled={currentIsLoading}
+            />
+            <div className="flex items-center justify-between px-2 pb-2">
+              <div className="flex items-center gap-2">
+                {isManageContext && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleTestMCP}
+                      disabled={testingMCP}
+                      className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors"
+                      title="Test MCP endpoint"
+                    >
+                      {testingMCP ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-5 w-5" />
+                      )}
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={isListening ? stopListening : startListening}
+                  className={cn(
+                    "p-2 rounded-full transition-colors",
+                    isListening 
+                      ? "text-red-500 hover:text-red-600 hover:bg-red-50" 
+                      : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                  )}
+                >
+                  <Mic className="h-5 w-5" />
+                </button>
+              </div>
+              <button
+                type="submit"
+                disabled={!currentInput.trim() || currentIsLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {currentIsLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Generate</span>
+                    <ArrowUpIcon className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Quick Action Buttons */}
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button
+            onClick={() => handleActionClick('Create a new package for my property')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
+          >
+            <Package className="h-4 w-4" />
+            Generate Packages
+          </button>
+          <button
+            onClick={() => handleActionClick('Show booking statement')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
+          >
+            <FileText className="h-4 w-4" />
+            Draft Statement
+          </button>
+          <button
+            onClick={() => handleActionClick('Show my packages')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
+          >
+            <BarChart2 className="h-4 w-4" />
+            View Analytics
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Default variant (existing design)
   return (
     <div className={cn("space-y-4", className)}>
       {getActionButtons()}

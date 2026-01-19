@@ -6,7 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, RefreshCw, AlertCircle, Sparkles, Check, Star, Crown, Package, TrendingUp, DollarSign, Calendar, CheckCircle, Users, Clock, MoreHorizontal } from "lucide-react";
+import { Loader2, RefreshCw, AlertCircle, Sparkles, Check, Star, Crown, Package, TrendingUp, DollarSign, Calendar, CheckCircle, Users, Clock, MoreHorizontal, Bot } from "lucide-react";
+import { PackageOnboarding } from "@/components/PackageOnboarding/PackageOnboarding";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -53,7 +54,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [showSetup, setShowSetup] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -220,7 +221,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
       setSuccess(`Successfully setup ${result.importedPackages?.length || 0} packages!`);
       
       // Close setup and reload packages
-      setShowSetup(false);
+      // Note: This function is for RevenueCat sync, not onboarding
       setSelectedProducts(new Set());
       await loadPackages();
     } catch (e: any) {
@@ -359,116 +360,18 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
     </div>
   );
 
-  if (showSetup) {
+  if (showOnboarding) {
     return (
       <div className="container py-10 max-w-7xl">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-              ✨ Package Setup
-            </h1>
-            <p className="text-lg text-gray-600 mt-2">Choose your magical experiences like selecting Disney movies</p>
-          </div>
-          <Button 
-            onClick={() => setShowSetup(false)} 
-            variant="outline"
-          >
-            Back to Dashboard
-          </Button>
-        </div>
-
-        {error && (
-          <Alert className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {availableProducts.map(product => (
-            <Card 
-              key={product.id}
-              className={`cursor-pointer transition-all duration-300 hover:shadow-xl ${
-                selectedProducts.has(product.id) 
-                  ? 'ring-2 ring-purple-500 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50' 
-                  : 'hover:shadow-md'
-              }`}
-              onClick={() => handleProductSelection(product.id)}
-            >
-              <CardHeader className="relative">
-                <div className="flex justify-between items-start">
-                  <div className="text-4xl mb-2">{product.icon}</div>
-                  {selectedProducts.has(product.id) && (
-                    <div className="absolute top-4 right-4 bg-purple-500 text-white rounded-full p-1">
-                      <Check className="h-4 w-4" />
-                    </div>
-                  )}
-                </div>
-                <CardTitle className="text-xl text-gray-800">
-                  {product.title}
-                </CardTitle>
-                <div className="flex gap-2 flex-wrap">
-                  <Badge variant={product.entitlement === 'pro' ? 'default' : 'secondary'} className="text-xs">
-                    {product.entitlement === 'pro' ? (
-                      <>
-                        <Crown className="h-3 w-3 mr-1" />
-                        Pro
-                      </>
-                    ) : (
-                      <>
-                        <Star className="h-3 w-3 mr-1" />
-                        Standard
-                      </>
-                    )}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs capitalize">
-                    {product.category}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600 text-sm mb-3">{product.description}</p>
-                <div className="text-2xl font-bold text-purple-600 mb-3">
-                  ${product.price} <span className="text-sm text-gray-500">/ {product.periodCount} {product.period}{product.periodCount > 1 ? 's' : ''}</span>
-                </div>
-                <div className="space-y-1">
-                  {product.features.slice(0, 3).map((feature, idx) => (
-                    <div key={idx} className="flex items-center text-sm text-gray-600">
-                      <Sparkles className="h-3 w-3 mr-2 text-purple-400" />
-                      {feature}
-                    </div>
-                  ))}
-                  {product.features.length > 3 && (
-                    <div className="text-xs text-gray-400">
-                      +{product.features.length - 3} more features
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <div className="flex justify-center">
-          <Button 
-            onClick={handleSetupProducts}
-            disabled={selectedProducts.size === 0 || syncing}
-            size="lg"
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-3"
-          >
-            {syncing ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                Setting up magic...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-5 w-5 mr-2" />
-                Setup {selectedProducts.size} Selected Package{selectedProducts.size !== 1 ? 's' : ''}
-              </>
-            )}
-          </Button>
-        </div>
+        <PackageOnboarding
+          postId={postId}
+          onComplete={(packageData) => {
+            setShowOnboarding(false)
+            loadPackages() // Reload packages to show the new one
+            setSuccess(`Package "${packageData.name}" created successfully!`)
+          }}
+          onCancel={() => setShowOnboarding(false)}
+        />
       </div>
     );
   }
@@ -489,11 +392,11 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
-              onClick={() => setShowSetup(true)}
+              onClick={() => setShowOnboarding(true)}
               className="border-slate-300 shadow-sm text-slate-700 bg-white hover:bg-slate-50"
             >
               <Sparkles className="w-4 h-4 mr-2" />
-              Setup New Packages
+              Create New Package
             </Button>
             {packages.length > 0 && (
               <Button
@@ -562,28 +465,33 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
 
         {/* Main Content Area */}
         <div className="space-y-6">
-          {packages.length > 0 && (
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">
-                All Packages
-              </h2>
-            </div>
-          )}
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">
+              Active Packages
+            </h2>
+            <span className="text-sm text-slate-500">
+              {packages.length} {packages.length === 1 ? 'package' : 'packages'} found
+            </span>
+          </div>
 
           {/* Package Grid */}
           {packages.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-6xl mb-4">🎬</div>
-              <h3 className="text-2xl font-semibold text-gray-700 mb-2">Ready for Your First Setup?</h3>
-              <p className="text-gray-500 mb-6">Create magical experiences for your guests by setting up your first packages.</p>
-              <Button 
-                onClick={() => setShowSetup(true)}
-                size="lg"
-                className="bg-slate-900 hover:bg-slate-800 text-white"
-              >
-                <Sparkles className="h-5 w-5 mr-2" />
-                Start Package Setup
-              </Button>
+            <div className="bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-xl p-12 text-center">
+              <div className="w-16 h-16 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-6">
+                <Bot className="h-8 w-8 text-teal-500" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                Let AI Build Your Packages
+              </h3>
+              <p className="text-slate-500 max-w-md mx-auto mb-8">
+                Instead of manually setting up packages, simply tell the AI
+                Assistant above what you need. For example: "Create a weekend
+                getaway package for couples with spa access."
+              </p>
+              <div className="inline-flex items-center gap-2 text-sm font-medium text-teal-600 bg-teal-50 px-4 py-2 rounded-full border border-teal-100">
+                <Sparkles className="h-4 w-4" />
+                Try asking the assistant above
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -845,7 +753,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
 
               {/* Add New Card Placeholder */}
               <button
-                onClick={() => setShowSetup(true)}
+                onClick={() => setShowOnboarding(true)}
                 className="group border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-slate-400 hover:bg-slate-50 transition-all duration-300 min-h-[300px]"
               >
                 <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4 group-hover:bg-white group-hover:shadow-sm transition-all">
@@ -855,7 +763,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                   Create New Package
                 </h3>
                 <p className="text-sm text-slate-500 max-w-[200px]">
-                  Add a new pricing tier or special offer to your inventory.
+                  Describe your package and let AI generate the details.
                 </p>
               </button>
             </div>

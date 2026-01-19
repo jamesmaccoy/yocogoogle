@@ -133,8 +133,8 @@ const BookingCard: FC<Props> = ({ booking, onToggleAddon }) => {
           </div>
           <div className="flex items-center text-muted-foreground text-sm">
             <Calendar className="w-3.5 h-3.5 mr-1" />
-            {new Date(booking.fromDate).toLocaleDateString()} -{' '}
-            {booking.toDate ? new Date(booking.toDate).toLocaleDateString() : 'TBD'}
+            {formatDate(new Date(booking.fromDate), 'dd/MM/yyyy')} -{' '}
+            {booking.toDate ? formatDate(new Date(booking.toDate), 'dd/MM/yyyy') : 'TBD'}
           </div>
         </div>
 
