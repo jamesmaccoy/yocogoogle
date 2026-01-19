@@ -43,7 +43,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
 
-  const userRole = useMemo(() => 
+  const userRole = useMemo(() =>
     Array.isArray(currentUser?.role) ? currentUser?.role : [currentUser?.role].filter(Boolean),
     [currentUser]
   )
@@ -61,7 +61,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     onFinish: (message) => {
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
-        const previewPart = message.parts.find((part: any) => 
+        const previewPart = message.parts.find((part: any) =>
           part.type === 'tool-previewPackage' && part.state === 'output-available'
         )
         if (previewPart?.output) {
@@ -70,17 +70,17 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
       }
     },
   })
-  
+
   // Extract values from chat hook with fallbacks
-  const { 
-    messages = [], 
-    input: chatInput = '', 
-    handleInputChange: handleChatInputChange, 
-    handleSubmit, 
-    isLoading = false, 
-    setInput: setChatInput 
+  const {
+    messages = [],
+    input: chatInput = '',
+    handleInputChange: handleChatInputChange,
+    handleSubmit,
+    isLoading = false,
+    setInput: setChatInput
   } = chatHook || {}
-  
+
   // Ensure handleChatInputChange is always a function
   const safeHandleChatInputChange = useMemo(() => {
     if (handleChatInputChange && typeof handleChatInputChange === 'function') {
@@ -152,7 +152,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
   const sendMessage = async (messageToSend: string) => {
     if (isLoadingSimple) return
-    
+
     setIsLoadingSimple(true)
     setLastResponse(null)
 
@@ -203,7 +203,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    
+
     if (isManageContext) {
       // Use AI SDK's handleSubmit for manage context
       handleSubmit(e)
@@ -218,11 +218,11 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
   const handleConfirmPackage = async () => {
     if (!pendingPackagePreview || !isManageContext) return
-    
+
     setIsSavingPackage(true)
     const previewData = { ...pendingPackagePreview }
     setPendingPackagePreview(null)
-    
+
     // Create a message that explicitly asks the AI to use createPackageTool
     const createMessage = `Please create the package using createPackageTool with these details:
 - name: "${previewData.name}"
@@ -236,13 +236,13 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 - postId: "${previewData.postId}"
 - features: ${JSON.stringify(previewData.features || [])}
 ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}`
-    
+
     setChatInput(createMessage)
-    
+
     // Wait a tick for input to update, then submit
     setTimeout(() => {
       const syntheticEvent = {
-        preventDefault: () => {},
+        preventDefault: () => { },
       } as React.FormEvent<HTMLFormElement>
       handleSubmit(syntheticEvent)
       setIsSavingPackage(false)
@@ -259,10 +259,10 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 
   const handleTestMCP = async () => {
     if (testingMCP) return
-    
+
     setTestingMCP(true)
     setMcpTestResult(null)
-    
+
     try {
       // First verify we're authenticated
       const meResponse = await fetch('/api/users/me')
@@ -272,27 +272,51 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 
       // Try to get an API key for MCP (MCP endpoint requires API key auth)
       let apiKey: string | null = null
+      let apiKeyError: string | null = null
+
       try {
         const apiKeysResponse = await fetch(`/api/payload-mcp-api-keys?where[user][equals]=${currentUser?.id}`)
-        if (apiKeysResponse.ok) {
+
+        if (!apiKeysResponse.ok) {
+          apiKeyError = `Failed to fetch API keys (HTTP ${apiKeysResponse.status})`
+        } else {
           const apiKeysData = await apiKeysResponse.json()
+          console.log('API Keys Response:', apiKeysData) // Debug log
+
           if (apiKeysData.docs && apiKeysData.docs.length > 0) {
-            apiKey = apiKeysData.docs[0].apiKey || null
+            // The API key value should be in the 'apiKey' field
+            const firstKey = apiKeysData.docs[0]
+            apiKey = firstKey.apiKey || firstKey.key || null
+
+            if (!apiKey) {
+              apiKeyError = 'API key found but value is empty. Please regenerate the API key in Payload Admin.'
+            }
+          } else {
+            apiKeyError = 'No API keys found for your account.'
           }
         }
       } catch (e) {
         console.warn('Could not fetch API keys:', e)
+        apiKeyError = `Error fetching API keys: ${e instanceof Error ? e.message : 'Unknown error'}`
+      }
+
+      // If no API key, provide helpful message
+      if (!apiKey) {
+        throw new Error(
+          `${apiKeyError || 'No API key available'}\n\n💡 To use MCP:\n` +
+          `1. Go to Payload Admin → Collections → API Keys (Payload MCP API Keys)\n` +
+          `2. Create a new API key\n` +
+          `3. Copy the key value and use it in your MCP client configuration\n\n` +
+          `Note: The generative UI package creation works without MCP API keys!`
+        )
       }
 
       // Test MCP endpoint by calling the list tools method
-      // MCP uses JSON-RPC 2.0 protocol and requires API key authentication
+      // MCP uses JSON-RPC 2.0 protocol and requires API key authentication with Bearer token
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-      }
-      
-      // Add API key if available
-      if (apiKey) {
-        headers['Authorization'] = apiKey
+        'Accept': 'application/json, text/event-stream', // MCP requires both (returns SSE format)
+        'Authorization': `Bearer ${apiKey}`, // MCP endpoint expects "Bearer <token>" format
       }
 
       const response = await fetch('/api/mcp', {
@@ -316,22 +340,41 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         } catch {
           errorMessage = errorText || errorMessage
         }
-        
+
         if (response.status === 401) {
-          errorMessage += '\n\n💡 MCP endpoint requires an API key. Create one in Payload Admin → Collections → API Keys (Payload MCP API Keys)'
+          errorMessage += '\n\n💡 The API key may be invalid or expired. Try creating a new one in Payload Admin → Collections → API Keys (Payload MCP API Keys)'
         }
-        
+
         throw new Error(errorMessage)
       }
 
-      const data = await response.json()
-      
+      // Parse SSE (Server-Sent Events) response
+      const responseText = await response.text()
+
+      // SSE format: "event: message\ndata: {...}\n\n"
+      // Extract JSON from SSE data field
+      let data: any
+      if (responseText.startsWith('event:')) {
+        // Parse SSE format
+        const lines = responseText.split('\n')
+        const dataLine = lines.find(line => line.startsWith('data:'))
+        if (dataLine) {
+          const jsonStr = dataLine.substring(5).trim() // Remove "data:" prefix
+          data = JSON.parse(jsonStr)
+        } else {
+          throw new Error('Invalid SSE response format')
+        }
+      } else {
+        // Plain JSON response
+        data = JSON.parse(responseText)
+      }
+
       if (data.error) {
         setMcpTestResult(`Error: ${data.error.message || JSON.stringify(data.error)}`)
       } else {
         const tools = data.result?.tools || []
-        const packageTools = tools.filter((t: any) => 
-          t.name?.toLowerCase().includes('package') || 
+        const packageTools = tools.filter((t: any) =>
+          t.name?.toLowerCase().includes('package') ||
           t.name?.toLowerCase().includes('create') ||
           t.name?.toLowerCase().includes('update') ||
           t.name?.toLowerCase().includes('delete') ||
@@ -361,7 +404,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 
   // Sync input state for manage context
   const currentInput = isManageContext ? (chatInput || '') : (input || '')
-  const handleCurrentInputChange = isManageContext 
+  const handleCurrentInputChange = isManageContext
     ? safeHandleChatInputChange
     : (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)
   const currentIsLoading = isManageContext ? isLoading : isLoadingSimple
@@ -504,7 +547,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                     </p>
                   )
                 }
-                
+
                 if (part.type === 'tool-previewPackage') {
                   switch (part.state) {
                     case 'input-available':
@@ -547,7 +590,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                       return (
                         <div key={index} className={cn(
                           "text-sm p-3 rounded-lg",
-                          part.output.success 
+                          part.output.success
                             ? "bg-green-50 text-green-800 border border-green-200"
                             : "bg-red-50 text-red-800 border border-red-200"
                         )}>
@@ -615,7 +658,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                       return (
                         <div key={index} className={cn(
                           "text-sm p-3 rounded-lg",
-                          part.output.success 
+                          part.output.success
                             ? "bg-green-50 text-green-800 border border-green-200"
                             : "bg-red-50 text-red-800 border border-red-200"
                         )}>
@@ -645,7 +688,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                       return (
                         <div key={index} className={cn(
                           "text-sm p-3 rounded-lg",
-                          part.output.success 
+                          part.output.success
                             ? "bg-green-50 text-green-800 border border-green-200"
                             : "bg-red-50 text-red-800 border border-red-200"
                         )}>
@@ -711,8 +754,8 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         {mcpTestResult && (
           <div className={cn(
             "rounded-lg border p-3 text-sm mb-6",
-            mcpTestResult.includes('✅') 
-              ? "bg-green-50 text-green-800 border-green-200" 
+            mcpTestResult.includes('✅')
+              ? "bg-green-50 text-green-800 border-green-200"
               : "bg-red-50 text-red-800 border-red-200"
           )}>
             {mcpTestResult}
@@ -755,8 +798,8 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                   onClick={isListening ? stopListening : startListening}
                   className={cn(
                     "p-2 rounded-full transition-colors",
-                    isListening 
-                      ? "text-red-500 hover:text-red-600 hover:bg-red-50" 
+                    isListening
+                      ? "text-red-500 hover:text-red-600 hover:bg-red-50"
                       : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
                   )}
                 >
@@ -816,10 +859,10 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   return (
     <div className={cn("space-y-4", className)}>
       {getActionButtons()}
-      
+
       {/* Render manage context messages with generative UI */}
       {isManageContext && renderManageMessages()}
-      
+
       {/* Render simple response for other contexts */}
       {!isManageContext && lastResponse && (
         <div className="rounded-lg border border-primary/20 bg-card p-4">
@@ -854,8 +897,8 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
       {mcpTestResult && (
         <div className={cn(
           "rounded-lg border p-3 text-sm",
-          mcpTestResult.includes('✅') 
-            ? "bg-green-50 text-green-800 border-green-200" 
+          mcpTestResult.includes('✅')
+            ? "bg-green-50 text-green-800 border-green-200"
             : "bg-red-50 text-red-800 border-red-200"
         )}>
           {mcpTestResult}

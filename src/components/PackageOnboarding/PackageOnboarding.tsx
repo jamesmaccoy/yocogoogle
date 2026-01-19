@@ -60,11 +60,21 @@ export function PackageOnboarding({
         const createPart = message.parts.find((part: any) => 
           part.type === 'tool-createPackage' && part.state === 'output-available'
         )
-        if (createPart?.output?.success && onComplete) {
-          // Package created successfully
-          setTimeout(() => {
-            onComplete(pendingPackagePreview || createPart.output)
-          }, 500)
+        if (createPart?.output?.success) {
+          setIsSavingPackage(false)
+          // Use the actual created package data from the API response
+          const createdPackage = createPart.output.package || createPart.output
+          if (onComplete) {
+            // Pass the full created package data including ID
+            onComplete({
+              ...createdPackage,
+              ...pendingPackagePreview, // Merge preview data for any missing fields
+            })
+          }
+        } else if (createPart?.output?.success === false) {
+          // Handle creation failure
+          setIsSavingPackage(false)
+          console.error('Package creation failed:', createPart.output.error)
         }
       }
     },
@@ -117,33 +127,27 @@ Please use the previewPackageTool to show me the package details including minNi
     
     setIsSavingPackage(true)
     const previewData = { ...pendingPackagePreview }
-    setPendingPackagePreview(null)
     
     // Create a message that explicitly asks the AI to use createPackageTool
-    const createMessage = `Please create the package using createPackageTool with these details:
+    const createMessage = `Please create the package using createPackageTool with these exact details:
 - name: "${previewData.name}"
 - description: "${previewData.description}"
 - category: "${previewData.category}"
 - minNights: ${previewData.minNights}
 - maxNights: ${previewData.maxNights}
 - baseRate: ${previewData.baseRate || 0}
-- multiplier: ${previewData.multiplier}
-- entitlement: "${previewData.entitlement}"
+- multiplier: ${previewData.multiplier || 1}
+- entitlement: "${previewData.entitlement || 'standard'}"
 - postId: "${postId}"
 - features: ${JSON.stringify(previewData.features || [])}
-${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}`
+${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}
+
+Create this package now.`
     
     // Use append method if available, otherwise use handleInputChange + handleSubmit
     if (append && typeof append === 'function') {
       await append({ role: 'user', content: createMessage })
-      
-      // Check for successful creation in the response
-      setTimeout(() => {
-        if (onComplete) {
-          onComplete(previewData)
-        }
-        setIsSavingPackage(false)
-      }, 2000)
+      // Don't call onComplete here - wait for onFinish callback to handle it
     } else if (handleChatInputChange && handleSubmit) {
       // Create synthetic event to set input
       const syntheticChangeEvent = {
@@ -157,14 +161,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
           preventDefault: () => {},
         } as React.FormEvent<HTMLFormElement>
         handleSubmit(syntheticSubmitEvent)
-        
-        // Check for successful creation in the response
-        setTimeout(() => {
-          if (onComplete) {
-            onComplete(previewData)
-          }
-          setIsSavingPackage(false)
-        }, 2000)
+        // Don't call onComplete here - wait for onFinish callback to handle it
       }, 100)
     } else {
       setIsSavingPackage(false)

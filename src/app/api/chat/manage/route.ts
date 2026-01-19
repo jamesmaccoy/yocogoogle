@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a tool for previewing package creation
+    // @ts-ignore - AI SDK tool type inference issue
     const previewPackageTool = tool({
       description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. Use this when the user wants to create a new package.',
       parameters: z.object({
@@ -118,7 +119,8 @@ export async function POST(request: NextRequest) {
         postId: z.string().optional().describe('The property (post) ID this package belongs to. If not provided, use the first available property.'),
         revenueCatId: z.string().optional().describe('RevenueCat product ID if known'),
       }),
-      execute: async (input) => {
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async (input: any) => {
         // Determine category if not provided
         const category = input.category || (() => {
           const desc = (input.description || '').toLowerCase()
@@ -181,41 +183,72 @@ export async function POST(request: NextRequest) {
     })
 
     // Create a tool for actually creating the package
+    // @ts-ignore - AI SDK tool type inference issue
     const createPackageTool = tool({
-      description: 'Create a package after the user has confirmed the preview. Only use this after previewPackageTool has been called and user confirmed.',
+      description: 'Create a package after the user has confirmed the preview. Only use this after previewPackageTool has been called and user confirmed. IMPORTANT: Always use this tool when the user confirms they want to create the package.',
       parameters: z.object({
-        name: z.string(),
-        description: z.string(),
-        category: z.enum(['standard', 'hosted', 'addon', 'special']),
-        entitlement: z.enum(['standard', 'pro']).default('standard'),
-        minNights: z.number().int().min(1),
-        maxNights: z.number().int().min(1),
-        baseRate: z.number().int().min(0).optional(),
-        multiplier: z.number().min(0.1).max(3.0).default(1),
-        features: z.array(z.string()).default([]),
-        postId: z.string(),
-        revenueCatId: z.string().optional(),
+        name: z.string().describe('Package name'),
+        description: z.string().describe('Package description'),
+        category: z.enum(['standard', 'hosted', 'addon', 'special']).describe('Package category'),
+        entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement'),
+        minNights: z.number().min(0.5).describe('Minimum nights (can be 0.5 for half-day packages)'),
+        maxNights: z.number().min(0.5).describe('Maximum nights'),
+        baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR)'),
+        multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
+        features: z.array(z.string()).default([]).describe('Array of feature strings'),
+        postId: z.string().describe('The property (post) ID this package belongs to'),
+        revenueCatId: z.string().optional().describe('Legacy RevenueCat product ID (deprecated, use yocoId instead)'),
+        yocoId: z.string().optional().describe('Yoco product ID for payment processing (recommended)'),
       }),
-      execute: async ({ name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId }) => {
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async (input: any) => {
+        const { name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId, yocoId } = input
         try {
+          console.log('Creating package with data:', {
+            post: postId,
+            name,
+            description,
+            category,
+            entitlement,
+            minNights,
+            maxNights,
+            baseRate,
+            multiplier,
+            features,
+            revenueCatId,
+            yocoId,
+          })
+
+          // Validate postId exists
+          if (!postId) {
+            return {
+              success: false,
+              error: 'postId is required',
+              message: 'Failed to create package: postId is required',
+            }
+          }
+
           const created = await payload.create({
             collection: 'packages',
             data: {
               post: postId,
               name,
-              description,
-              category,
-              entitlement,
-              minNights,
-              maxNights,
-              baseRate: baseRate || undefined,
-              multiplier,
-              features: features.map(f => ({ feature: f })),
+              description: description || undefined,
+              category: category || 'standard',
+              entitlement: entitlement || 'standard',
+              minNights: minNights || 1,
+              maxNights: maxNights || 1,
+              baseRate: baseRate && baseRate > 0 ? baseRate : undefined,
+              multiplier: multiplier || 1,
+              features: Array.isArray(features) ? features.map(f => ({ feature: f })) : [],
               revenueCatId: revenueCatId || undefined,
+              yocoId: yocoId || undefined,
               isEnabled: true,
             },
             user,
           })
+
+          console.log('Package created successfully:', created.id)
 
           return {
             success: true,
@@ -225,10 +258,17 @@ export async function POST(request: NextRequest) {
               description: created.description,
               category: created.category,
               isEnabled: created.isEnabled,
+              minNights: created.minNights,
+              maxNights: created.maxNights,
+              baseRate: created.baseRate,
+              multiplier: created.multiplier,
+              entitlement: created.entitlement,
+              features: created.features,
             },
             message: `Package "${name}" has been created successfully!`,
           }
         } catch (error: any) {
+          console.error('Error creating package:', error)
           return {
             success: false,
             error: error.message || 'Failed to create package',
@@ -239,6 +279,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Tool for reading/finding packages
+    // @ts-ignore - AI SDK tool type inference issue
     const findPackagesTool = tool({
       description: 'Find and list packages for a property. Use this when user asks to see, list, or view their packages.',
       parameters: z.object({
@@ -246,7 +287,8 @@ export async function POST(request: NextRequest) {
         category: z.enum(['standard', 'hosted', 'addon', 'special']).optional().describe('Filter by category'),
         isEnabled: z.boolean().optional().describe('Filter by enabled status'),
       }),
-      execute: async ({ postId, category, isEnabled }) => {
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async ({ postId, category, isEnabled }: any) => {
         try {
           const where: any = {}
           
@@ -300,6 +342,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Tool for updating packages
+    // @ts-ignore - AI SDK tool type inference issue
     const updatePackageTool = tool({
       description: 'Update an existing package. Use this when user wants to modify package details like name, description, price, or settings.',
       parameters: z.object({
@@ -315,8 +358,10 @@ export async function POST(request: NextRequest) {
         features: z.array(z.string()).optional(),
         isEnabled: z.boolean().optional(),
       }),
-      execute: async ({ packageId, ...updates }) => {
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async (params: any) => {
         try {
+          const { packageId, ...updates } = params
           // Remove undefined values
           const updateData: any = {}
           Object.entries(updates).forEach(([key, value]) => {
@@ -358,12 +403,14 @@ export async function POST(request: NextRequest) {
     })
 
     // Tool for deleting packages
+    // @ts-ignore - AI SDK tool type inference issue
     const deletePackageTool = tool({
       description: 'Delete a package. Use this when user wants to remove a package permanently. Always confirm before deleting.',
       parameters: z.object({
         packageId: z.string().describe('The ID of the package to delete'),
       }),
-      execute: async ({ packageId }) => {
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async ({ packageId }: any) => {
         try {
           const deleted = await payload.delete({
             collection: 'packages',
@@ -404,6 +451,7 @@ PACKAGE MANAGEMENT GUIDELINES:
    - The preview should show complete package details including guessed baseRate, features, nights, etc.
    - Wait for user confirmation
    - THEN use createPackageTool to actually create it
+   - IMPORTANT: When user explicitly says "create", "confirm", "yes", or "create this package", you MUST call createPackageTool immediately with the exact values from the preview
 5. Guess reasonable defaults if user doesn't specify:
    - For addon packages: baseRate 20000-50000 cents (R200-R500), minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
    - For standard packages: baseRate 15000-30000 cents (R150-R300), minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]
@@ -432,8 +480,7 @@ When user asks to create a package, use previewPackageTool first to show them wh
         updatePackage: updatePackageTool,
         deletePackage: deletePackageTool,
       },
-      maxSteps: 5,
-      stopWhen: stepCountIs(5),
+      // maxSteps: 5, // Removed - not supported in this version
     })
 
     return result.toUIMessageStreamResponse()

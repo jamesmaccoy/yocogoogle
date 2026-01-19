@@ -365,10 +365,13 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
       <div className="container py-10 max-w-7xl">
         <PackageOnboarding
           postId={postId}
-          onComplete={(packageData) => {
+          onComplete={async (packageData) => {
             setShowOnboarding(false)
-            loadPackages() // Reload packages to show the new one
-            setSuccess(`Package "${packageData.name}" created successfully!`)
+            // Reload packages to show the new one
+            await loadPackages()
+            setSuccess(`Package "${packageData.name || packageData.package?.name || 'New Package'}" created successfully!`)
+            // Clear success message after 5 seconds
+            setTimeout(() => setSuccess(null), 5000)
           }}
           onCancel={() => setShowOnboarding(false)}
         />
