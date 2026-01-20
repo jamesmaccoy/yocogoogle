@@ -53,6 +53,17 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   // Use AI SDK's useChat hook for manage context (generative UI)
   // Always call useChat hook (React hooks must be called unconditionally)
   const isManageContext = context?.type === 'manage' && isHostOrAdmin
+  
+  // Debug logging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 PageAIAssistant context:', {
+      contextType: context?.type,
+      isHostOrAdmin,
+      isManageContext,
+      hasData: !!context?.data,
+    })
+  }
+  
   const chatHook = useChat({
     api: '/api/chat/manage',
     body: {
@@ -392,7 +403,22 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   }
 
   const handleActionClick = (action: string) => {
-    sendMessage(action)
+    if (isManageContext) {
+      // For manage context, use the useChat hook's setInput and handleSubmit
+      if (setChatInput && typeof setChatInput === 'function') {
+        setChatInput(action)
+        // Wait a tick for input to update, then submit
+        setTimeout(() => {
+          const syntheticEvent = {
+            preventDefault: () => {},
+          } as React.FormEvent<HTMLFormElement>
+          handleSubmit(syntheticEvent)
+        }, 100)
+      }
+    } else {
+      // For other contexts, use simple sendMessage
+      sendMessage(action)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -522,8 +548,21 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   const renderManageMessages = () => {
     if (!isManageContext) return null
 
+    // Debug: log messages to help troubleshoot
+    if (process.env.NODE_ENV === 'development' && messages.length > 0) {
+      console.log('📨 Rendering manage messages:', { 
+        messageCount: messages.length, 
+        messages: messages.map(m => ({ id: m.id, role: m.role, parts: m.parts?.length || 0 }))
+      })
+    }
+
     return (
       <div className="space-y-4">
+        {messages.length === 0 && (
+          <div className="text-sm text-slate-500 text-center py-4">
+            Start a conversation to see messages here...
+          </div>
+        )}
         {messages.map((message) => (
           <div key={message.id} className="flex gap-3">
             <div className="flex-shrink-0">

@@ -5,6 +5,27 @@ import configPromise from '@/payload.config'
 export async function GET(request: NextRequest) {
   try {
     const payload = await getPayload({ config: configPromise })
+    
+    // Check authentication - packages collection requires authenticated access
+    let user = null
+    try {
+      const authResult = await payload.auth({ headers: request.headers })
+      user = authResult.user
+    } catch (authError) {
+      // User not authenticated
+      return NextResponse.json(
+        { error: 'Unauthorized. Please log in to access packages.' },
+        { status: 401 }
+      )
+    }
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized. Please log in to access packages.' },
+        { status: 401 }
+      )
+    }
+    
     const { searchParams } = new URL(request.url)
     
     // Build where clause from query parameters
@@ -26,13 +47,15 @@ export async function GET(request: NextRequest) {
       collection: 'packages',
       where: Object.keys(where).length > 0 ? where : undefined,
       depth: 2, // Increased depth to include related page data
+      user, // Pass user for access control
     })
     
     return NextResponse.json(packages)
   } catch (error) {
     console.error('Error fetching packages:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch packages'
     return NextResponse.json(
-      { error: 'Failed to fetch packages' },
+      { error: errorMessage, details: process.env.NODE_ENV === 'development' ? String(error) : undefined },
       { status: 500 }
     )
   }

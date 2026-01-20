@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
+import { AssignPackageToPost } from '@/components/PackageAssignment/AssignPackageToPost'
 import { 
   Dialog, 
   DialogContent, 
@@ -156,7 +157,18 @@ export default function ManagePackagesPage({ postId, posts }: { postId: string; 
         })}
       </div>
 
-      {/* AI Assistant */}
+      {/* Package Assignment Assistant */}
+      <div className="mt-12 border-t border-primary/20 pt-12">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl font-bold mb-6">Assign Package to Post</h2>
+          <AssignPackageToPost
+            postId={postId}
+            posts={posts || []}
+          />
+        </div>
+      </div>
+
+      {/* General AI Assistant */}
       <div className="mt-12 border-t border-primary/20 pt-12">
         <div className="max-w-3xl mx-auto">
           <PageAIAssistant
