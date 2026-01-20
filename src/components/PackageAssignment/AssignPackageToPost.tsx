@@ -270,6 +270,44 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               }
             }
 
+            if (part.type === 'tool-createPost') {
+              switch (part.state) {
+                case 'input-available':
+                  return (
+                    <div key={partIndex} className="text-sm text-slate-500 italic">
+                      Creating property...
+                    </div>
+                  )
+                case 'output-available':
+                  return (
+                    <div
+                      key={partIndex}
+                      className={cn(
+                        'text-sm p-3 rounded-lg',
+                        part.output.success
+                          ? 'bg-green-50 text-green-800 border border-green-200'
+                          : 'bg-red-50 text-red-800 border border-red-200'
+                      )}
+                    >
+                      <div className="font-medium mb-1">{part.output.message}</div>
+                      {part.output.post && (
+                        <div className="text-xs mt-2 text-slate-600">
+                          Property: {part.output.post.title} (ID: {part.output.post.id})
+                        </div>
+                      )}
+                    </div>
+                  )
+                case 'output-error':
+                  return (
+                    <div key={partIndex} className="text-sm text-red-600">
+                      Error: {part.errorText || 'Failed to create property'}
+                    </div>
+                  )
+                default:
+                  return null
+              }
+            }
+
             if (part.type === 'tool-createPackage') {
               switch (part.state) {
                 case 'input-available':

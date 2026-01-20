@@ -432,9 +432,104 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Tool for creating posts (properties)
+    // @ts-ignore - AI SDK tool type inference issue
+    const createPostTool = tool({
+      description: 'Create a new property (post) for the host. Use this when user wants to create a property listing. After creating the post, you can then create packages for it.',
+      parameters: z.object({
+        title: z.string().describe('Property title/name (e.g., "Beachfront Studio", "Mountain Cabin")'),
+        description: z.string().optional().describe('Property description. If not provided, will generate based on title.'),
+        baseRate: z.number().int().min(0).optional().describe('Base rate per night in cents (ZAR). If not provided, will default to 0.'),
+        featured: z.boolean().optional().default(false).describe('Feature this property on the home page'),
+        metaTitle: z.string().optional().describe('SEO meta title'),
+        metaDescription: z.string().optional().describe('SEO meta description'),
+      }),
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async (input: any) => {
+        try {
+          const { title, description, baseRate, featured, metaTitle, metaDescription } = input
+
+          // Generate description if not provided
+          const postDescription = description || `A beautiful ${title.toLowerCase()} property available for booking.`
+
+          // Create minimal content structure for Lexical editor
+          const content = {
+            root: {
+              type: 'root',
+              children: [
+                {
+                  type: 'paragraph',
+                  children: [
+                    {
+                      type: 'text',
+                      text: postDescription,
+                      format: 0,
+                      style: '',
+                      mode: 'normal',
+                      detail: 0,
+                    },
+                  ],
+                  direction: 'ltr',
+                  format: '',
+                  indent: 0,
+                  version: 1,
+                },
+              ],
+              direction: 'ltr',
+              format: '',
+              indent: 0,
+              version: 1,
+            },
+          }
+
+          const postData: any = {
+            title,
+            content,
+            _status: 'draft', // Create as draft, user can publish later
+            baseRate: baseRate || undefined,
+            featured: featured || false,
+          }
+
+          // Add meta fields if provided
+          if (metaTitle || metaDescription) {
+            postData.meta = {}
+            if (metaTitle) postData.meta.title = metaTitle
+            if (metaDescription) postData.meta.description = metaDescription
+          }
+
+          const created = await payload.create({
+            collection: 'posts',
+            data: postData,
+            user,
+          })
+
+          console.log('Post created successfully:', created.id)
+
+          return {
+            success: true,
+            post: {
+              id: created.id,
+              title: created.title,
+              slug: created.slug,
+              baseRate: created.baseRate,
+              status: created._status,
+            },
+            message: `Property "${title}" has been created successfully! You can now create packages for this property.`,
+          }
+        } catch (error: any) {
+          console.error('Error creating post:', error)
+          return {
+            success: false,
+            error: error.message || 'Failed to create post',
+            message: `Failed to create property: ${error.message || 'Unknown error'}`,
+          }
+        }
+      },
+    })
+
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
-    const systemPrompt = `You are an AI assistant helping a host manage their property packages.
+    const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 
 HOST'S PROPERTIES:
 ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
@@ -442,7 +537,19 @@ ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})
 EXISTING PACKAGES:
 ${existingPackages.docs.map((pkg: any) => `- ${pkg.name} (${pkg.category}, ${pkg.minNights}-${pkg.maxNights} nights, ${pkg.isEnabled ? 'enabled' : 'disabled'})`).join('\n') || 'No packages yet'}
 
-PACKAGE MANAGEMENT GUIDELINES:
+PROPERTY & PACKAGE MANAGEMENT GUIDELINES:
+
+PROPERTY CREATION:
+1. When user wants to create a property from a package they offer:
+   - FIRST use createPostTool to create the property (post)
+   - THEN use previewPackageTool to show them the package preview
+   - FINALLY use createPackageTool to create and assign the package to the new property
+2. If user wants to create a package but doesn't specify a property:
+   - Check if they have existing properties
+   - If they have properties, ask which one to use or use the first one
+   - If they have NO properties, use createPostTool first to create a property, then create the package
+
+PACKAGE MANAGEMENT:
 1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents
 2. Categories: standard (regular accommodation), hosted (with concierge/services), addon (one-time extras like cleaning/wine), special (promotional/unique)
 3. Entitlements: standard (all customers), pro (premium customers only)
@@ -459,21 +566,24 @@ PACKAGE MANAGEMENT GUIDELINES:
    - For special packages: baseRate 25000-50000 cents (R250-R500), minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience"]
    - Always generate 3-5 relevant features based on category and package type
 6. CRUD Operations:
-   - CREATE: Use previewPackageTool first, then createPackageTool after confirmation
+   - CREATE PROPERTY: Use createPostTool when user wants to create a new property
+   - CREATE PACKAGE: Use previewPackageTool first, then createPackageTool after confirmation
    - READ: Use findPackagesTool when user asks to see, list, or view packages
    - UPDATE: Use updatePackageTool to modify existing packages (name, price, settings, etc.)
    - DELETE: Use deletePackageTool to remove packages (always confirm first!)
 7. Always format currency as R (Rands), not $
 8. Be helpful and guide the host through decisions
 9. When showing package previews, ensure ALL fields are filled with reasonable guesses so the user can see a complete package before confirming
+10. After creating a property, automatically offer to create a package for it
 
-When user asks to create a package, use previewPackageTool first to show them what it will look like with all guessed values filled in.`
+When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.`
 
     const result = streamText({
       model: model as any,
       system: systemPrompt,
       messages: await convertToModelMessages(messages),
       tools: {
+        createPost: createPostTool,
         previewPackage: previewPackageTool,
         createPackage: createPackageTool,
         findPackages: findPackagesTool,

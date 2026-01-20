@@ -88,9 +88,19 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     input: chatInput = '',
     handleInputChange: handleChatInputChange,
     handleSubmit,
-    isLoading = false,
+    isLoading: chatIsLoading = false,
     setInput: setChatInput
   } = chatHook || {}
+  
+  // Debug: Log loading state in development
+  if (process.env.NODE_ENV === 'development' && isManageContext) {
+    console.log('🔍 PageAIAssistant loading state:', {
+      chatIsLoading,
+      isManageContext,
+      hasChatHook: !!chatHook,
+      hasHandleSubmit: !!handleSubmit,
+    })
+  }
 
   // Ensure handleChatInputChange is always a function
   const safeHandleChatInputChange = useMemo(() => {
@@ -311,13 +321,16 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         apiKeyError = `Error fetching API keys: ${e instanceof Error ? e.message : 'Unknown error'}`
       }
 
-      // If no API key, provide helpful message
+      // If no API key, provide helpful message with link
       if (!apiKey) {
+        const adminUrl = '/admin/collections/payload-mcp-api-keys/create'
         throw new Error(
           `${apiKeyError || 'No API key available'}\n\n💡 To use MCP:\n` +
           `1. Go to Payload Admin → Collections → API Keys (Payload MCP API Keys)\n` +
+          `   Direct link: ${adminUrl}\n` +
           `2. Create a new API key\n` +
-          `3. Copy the key value and use it in your MCP client configuration\n\n` +
+          `3. Enable all package permissions (find, create, update, delete)\n` +
+          `4. Copy the key value and use it in your MCP client configuration\n\n` +
           `Note: The generative UI package creation works without MCP API keys!`
         )
       }
@@ -433,7 +446,11 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   const handleCurrentInputChange = isManageContext
     ? safeHandleChatInputChange
     : (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)
-  const currentIsLoading = isManageContext ? isLoading : isLoadingSimple
+  // Only disable input when actually loading
+  // Don't disable if handlers are missing - allow typing even if submit might not work yet
+  const currentIsLoading = isManageContext 
+    ? (!!chatHook && chatIsLoading === true)
+    : isLoadingSimple
 
   const defaultPlaceholder = useMemo(() => {
     if (context?.type === 'account') {
@@ -610,6 +627,41 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                       return (
                         <div key={index} className="text-sm text-red-600">
                           Error: {part.errorText || 'Failed to preview package'}
+                        </div>
+                      )
+                    default:
+                      return null
+                  }
+                }
+
+                if (part.type === 'tool-createPost') {
+                  switch (part.state) {
+                    case 'input-available':
+                      return (
+                        <div key={index} className="text-sm text-slate-500 italic">
+                          Creating property...
+                        </div>
+                      )
+                    case 'output-available':
+                      return (
+                        <div key={index} className={cn(
+                          "text-sm p-3 rounded-lg",
+                          part.output.success
+                            ? "bg-green-50 text-green-800 border border-green-200"
+                            : "bg-red-50 text-red-800 border border-red-200"
+                        )}>
+                          <div className="font-medium mb-1">{part.output.message}</div>
+                          {part.output.post && (
+                            <div className="text-xs mt-2 text-slate-600">
+                              Property: {part.output.post.title} (ID: {part.output.post.id})
+                            </div>
+                          )}
+                        </div>
+                      )
+                    case 'output-error':
+                      return (
+                        <div key={index} className="text-sm text-red-600">
+                          Error: {part.errorText || 'Failed to create property'}
                         </div>
                       )
                     default:
@@ -797,7 +849,20 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
               ? "bg-green-50 text-green-800 border-green-200"
               : "bg-red-50 text-red-800 border-red-200"
           )}>
-            {mcpTestResult}
+            <div className="whitespace-pre-line">{mcpTestResult}</div>
+            {mcpTestResult.includes('No API keys found') && (
+              <div className="mt-3 pt-3 border-t border-red-200">
+                <a
+                  href="/admin/collections/payload-mcp-api-keys/create"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Create API Key in Admin Panel
+                </a>
+              </div>
+            )}
           </div>
         )}
 
@@ -940,7 +1005,20 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
             ? "bg-green-50 text-green-800 border-green-200"
             : "bg-red-50 text-red-800 border-red-200"
         )}>
-          {mcpTestResult}
+          <div className="whitespace-pre-line">{mcpTestResult}</div>
+          {mcpTestResult.includes('No API keys found') && (
+            <div className="mt-3 pt-3 border-t border-red-200">
+              <a
+                href="/admin/collections/payload-mcp-api-keys/create"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-md transition-colors"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Create API Key in Admin Panel
+              </a>
+            </div>
+          )}
         </div>
       )}
 
