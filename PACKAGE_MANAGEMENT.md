@@ -22,16 +22,11 @@ This follows the **"Multi-tenant SaaS with Role-Based Access Control (RBAC) and 
 - Host verification with payment requirements
 - RevenueCat integration for subscription management
 
-### 2. **RevenueCat Integration**
-- Automatic product sync from RevenueCat
-- Real-time pricing from RevenueCat
-- Subscription validation for host promotion
-- Support for requested products:
-  - `week_x2_customer`
-  - `week_x3_customer`
-  - `week_x4_customer`
-  - `per_hour`
-  - `per_hour_luxury`
+### 2. **Yoco Payment Integration**
+- Yoco product integration for payment processing
+- Real-time pricing from Yoco products
+- Payment validation for bookings
+- Support for Yoco product IDs via `yocoId` field
 
 ### 3. **Enhanced User Experience**
 - Visual indicators for RevenueCat products
@@ -49,9 +44,9 @@ This follows the **"Multi-tenant SaaS with Role-Based Access Control (RBAC) and 
 - `PATCH /api/packages/[id]` - Update package
 - `DELETE /api/packages/[id]` - Delete single package
 
-### RevenueCat Integration
-- `POST /api/packages/sync-revenuecat` - Sync packages from RevenueCat
-- `GET /api/test-revenuecat` - Test RevenueCat integration
+### Yoco Payment Integration
+- Packages use `yocoId` field to link to Yoco products
+- Payment processing handled through Yoco payment gateway
 
 ### User Management
 - `POST /api/users/promote-host` - Promote user to host with payment validation
@@ -96,26 +91,39 @@ This follows the **"Multi-tenant SaaS with Role-Based Access Control (RBAC) and 
   category: 'standard' | 'hosted' | 'addon' | 'special'
   minNights: number (required)
   maxNights: number (required)
-  revenueCatId: string
+  yocoId: string                    // Yoco product ID for payment processing ⭐ USE THIS
+  revenueCatId: string | null        // ⚠️ DEPRECATED - Do not use, set to null
   isEnabled: boolean
   baseRate: number
   features: Array<{ feature: string }>
 }
 ```
 
+**⚠️ Important**: The `revenueCatId` field is deprecated and should be set to `null`. Use `yocoId` for all payment processing.
+
 ## Usage Examples
 
-### 1. Sync RevenueCat Products
+### 1. Create Package with Yoco Integration
 ```javascript
 // Frontend
-const response = await fetch('/api/packages/sync-revenuecat', {
+const response = await fetch('/api/packages', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ postId: 'your-post-id' })
+  body: JSON.stringify({
+    postId: 'your-post-id',
+    name: '📸 Studio hire',
+    description: 'Classic beach bungalow',
+    yocoId: 'per_hour',  // ⭐ Use yocoId for payment processing
+    revenueCatId: null,  // ⚠️ Set to null - deprecated field
+    baseRate: 1999,
+    category: 'standard',
+    minNights: 0.5,
+    maxNights: 1
+  })
 });
 
 const result = await response.json();
-console.log(`Imported ${result.importedPackages.length} packages`);
+console.log('Package created:', result.id);
 ```
 
 ### 2. Promote User to Host
@@ -136,24 +144,29 @@ if (result.message) {
 }
 ```
 
-### 3. Validate Subscription
+### 3. Use Package with Yoco Payment
 ```javascript
-// Backend
-const hasValidSubscription = await revenueCatService.validateSubscription(
-  customerId,
-  'pro_subscription_id'
-);
-
-if (hasValidSubscription) {
-  // Allow access to premium features
+// Frontend - Package selection uses yocoId
+const selectedPackage = {
+  id: '68a58832420e4517de8d2bdb',
+  name: '📸 Studio hire',
+  yocoId: 'per_hour',  // ⭐ This is used for payment processing
+  baseRate: 1999
 }
+
+// Payment processing uses yocoId to create payment link
+const paymentLink = await createYocoPaymentLink({
+  productId: selectedPackage.yocoId,  // Uses yocoId, not revenueCatId
+  amount: selectedPackage.baseRate
+})
 ```
 
 ## Environment Variables
 
 ```bash
-# RevenueCat Configuration
-NEXT_PUBLIC_REVENUECAT_PUBLIC_SDK_KEY=your_revenuecat_public_key
+# Yoco Configuration
+YOCO_SECRET_KEY=your_yoco_secret_key
+YOCO_PUBLIC_KEY=your_yoco_public_key
 
 # Server Configuration
 NEXT_PUBLIC_SITE_URL=https://your-domain.com
@@ -169,9 +182,9 @@ VERCEL_URL=your-vercel-url
 - Hosts have additional permissions for package management
 
 ### 2. **Payment Validation**
-- Subscription validation before host promotion
-- Payment status tracking
-- RevenueCat integration for real-time subscription checks
+- Payment validation before booking confirmation
+- Payment status tracking via Yoco transactions
+- Yoco integration for payment processing
 
 ### 3. **Data Validation**
 - Input sanitization and validation
@@ -180,54 +193,71 @@ VERCEL_URL=your-vercel-url
 
 ## Testing
 
-### Test RevenueCat Integration
+### Test Package Creation
 ```bash
-curl http://localhost:3000/api/test-revenuecat
-```
-
-### Test Package Sync
-```bash
-curl -X POST http://localhost:3000/api/packages/sync-revenuecat \
+curl -X POST http://localhost:3000/api/packages \
   -H "Content-Type: application/json" \
-  -d '{"postId": "your-post-id"}'
+  -H "Cookie: your-session-cookie" \
+  -d '{
+    "post": "your-post-id",
+    "name": "Test Package",
+    "yocoId": "test_product_id",
+    "revenueCatId": null,
+    "baseRate": 2000,
+    "category": "standard",
+    "minNights": 1,
+    "maxNights": 7
+  }'
 ```
 
 ## Deployment Considerations
 
-1. **Environment Variables**: Ensure all RevenueCat and server URLs are properly configured
-2. **Database Migration**: Run any necessary database migrations for new user fields
-3. **RevenueCat Setup**: Configure RevenueCat products and webhooks
+1. **Environment Variables**: Ensure all Yoco keys and server URLs are properly configured
+2. **Database Migration**: Update existing packages to set `revenueCatId: null` and use `yocoId` instead
+3. **Yoco Setup**: Configure Yoco products and ensure `yocoId` matches Yoco product IDs
 4. **Access Control**: Verify access control functions work correctly in production
+5. **Package Updates**: Remove `revenueCatId` from all packages (set to `null`) - example: Package ID `68a58832420e4517de8d2bdb` has been updated
 
 ## Future Enhancements
 
-1. **Webhook Integration**: Real-time RevenueCat webhook handling
+1. **Webhook Integration**: Real-time Yoco webhook handling for payment events
 2. **Analytics Dashboard**: Package usage and revenue analytics
 3. **Multi-currency Support**: International pricing support
 4. **Advanced Host Features**: Host rating system, verification badges
 5. **Automated Testing**: Comprehensive test suite for all endpoints
+6. **Migration Script**: Automated script to remove `revenueCatId` from all packages
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **RevenueCat Connection Failed**
-   - Check API key configuration
-   - Verify RevenueCat account status
+1. **Yoco Payment Failed**
+   - Check Yoco API key configuration
+   - Verify Yoco account status
+   - Ensure `yocoId` matches Yoco product ID
    - Check network connectivity
 
-2. **Package Sync Errors**
-   - Verify post ID exists
-   - Check user permissions
-   - Review RevenueCat product configuration
+2. **Package Payment Processing Errors**
+   - Verify `yocoId` is set correctly (not `revenueCatId`)
+   - Ensure `revenueCatId` is set to `null` (deprecated field)
+   - Check that Yoco product exists with matching ID
+   - Review package configuration
 
-3. **Role Promotion Failed**
-   - Verify subscription status
-   - Check payment validation
-   - Review user permissions
+3. **Package Not Found in Payment Flow**
+   - Verify package has valid `yocoId` field
+   - Check that package is enabled (`isEnabled: true`)
+   - Ensure package belongs to correct post
+
+### Migration Notes
+
+**Removing `revenueCatId` from packages**:
+- Example: Package `68a58832420e4517de8d2bdb` (📸 Studio hire) has been updated
+- Set `revenueCatId: null` for all packages
+- Use `yocoId` field exclusively for payment processing
+- Update any code that references `revenueCatId` to use `yocoId` instead
 
 ### Debug Endpoints
 
-- `/api/test-revenuecat` - Test RevenueCat integration
 - Check server logs for detailed error messages
-- Use browser developer tools for frontend debugging 
+- Use browser developer tools for frontend debugging
+- Verify package `yocoId` matches Yoco product configuration 

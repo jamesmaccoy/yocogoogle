@@ -13,10 +13,10 @@ This system implements **AI-powered package creation** using generative UI patte
 
 ### Payment Integration
 
-**⚠️ Important**: We've replaced RevenueCat with **Yoco** for payment processing.
+**⚠️ Important**: We use **Yoco** for payment processing.
 
-- **Legacy Field**: `revenueCatId` (deprecated, kept for backward compatibility)
-- **Current Field**: `yocoId` (Yoco product ID for payment processing)
+- **Current Field**: `yocoId` (Yoco product ID for payment processing) ⭐ **USE THIS**
+- **Legacy Field**: `revenueCatId` (deprecated, set to `null` - do not use)
 
 ## Generative UI Flow
 
@@ -50,7 +50,8 @@ The AI generates a complete package preview with intelligent defaults:
   multiplier: number              // 0.1-3.0
   features: string[]              // Array of feature strings
   postId: string                  // Property ID
-  revenueCatId?: string           // Legacy (deprecated)
+  yocoId?: string                 // Yoco product ID ⭐ USE THIS for payments
+  revenueCatId?: null             // ⚠️ DEPRECATED - Set to null, do not use
   isPreview: true
 }
 ```
@@ -184,16 +185,17 @@ onFinish: (message) => {
 - `multiplier`: Price multiplier (number, 0.1-3.0, default: 1)
 - `entitlement`: standard | pro (default: standard)
 - `features`: Array of feature strings
-- `yocoId`: Yoco product ID (string) ⭐ **Use this for payments**
-- `revenueCatId`: Legacy RevenueCat ID (deprecated)
+- `yocoId`: Yoco product ID (string) ⭐ **Use this for payments - REQUIRED for payment processing**
+- `revenueCatId`: ⚠️ **DEPRECATED** - Set to `null`, do not use for new packages
 - `isEnabled`: Enable/disable package (boolean, default: true)
 
 ### Payment Integration
 
 **Yoco Integration**:
-- Use `yocoId` field to link packages to Yoco products
+- ⭐ **Use `yocoId` field exclusively** to link packages to Yoco products
 - Yoco product IDs are used for payment processing
-- Legacy `revenueCatId` field is kept for backward compatibility but should not be used for new packages
+- ⚠️ **`revenueCatId` is deprecated** - Set to `null` for all packages
+- Example: Package `68a58832420e4517de8d2bdb` (📸 Studio hire) uses `yocoId: "per_hour"` and `revenueCatId: null`
 
 ## Default Value Generation
 
@@ -363,7 +365,9 @@ createPackageTool({
   multiplier: 1,
   features: ["Romantic setting", "Couples amenities", "Weekend special"],
   postId: "property-id",
-  entitlement: "standard"
+  entitlement: "standard",
+  yocoId: "weekend_package_id",  // ⭐ Yoco product ID for payment processing
+  revenueCatId: null              // ⚠️ Set to null - deprecated field
 })
 ```
 
@@ -446,6 +450,20 @@ When MCP is properly configured, you should see:
   ]
 }
 ```
+
+## Migration Notes
+
+**Removing `revenueCatId` from packages**:
+- All packages should have `revenueCatId: null`
+- Use `yocoId` field exclusively for payment processing
+- Example: Package `68a58832420e4517de8d2bdb` (📸 Studio hire) has been updated:
+  - ✅ `yocoId: "per_hour"` (used for payments)
+  - ✅ `revenueCatId: null` (deprecated, removed)
+
+**When creating new packages**:
+- Always set `yocoId` to match your Yoco product ID
+- Always set `revenueCatId: null` (or omit the field)
+- Never use `revenueCatId` for payment processing
 
 ## References
 

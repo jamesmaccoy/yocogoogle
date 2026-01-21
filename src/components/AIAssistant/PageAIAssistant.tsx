@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Sparkles, ArrowUpIcon, Mic, Loader2, Package, Calendar, TrendingUp, Home, Star, FileText, BarChart2 } from 'lucide-react'
 import {
@@ -69,18 +69,50 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     body: {
       pageData: context?.data || {},
     },
-    onFinish: (message) => {
+    onFinish: (result: any) => {
+      // onFinish receives an object with a 'message' property, not the message directly
+      const message = result?.message || result
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Chat message finished:', {
+          role: message?.role,
+          hasParts: !!message?.parts,
+          partsCount: message?.parts?.length || 0,
+          parts: message?.parts?.map((p: any) => ({
+            type: p.type,
+            state: p.state,
+            hasOutput: !!p.output
+          }))
+        })
+      }
+      
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
         const previewPart = message.parts.find((part: any) =>
           part.type === 'tool-previewPackage' && part.state === 'output-available'
         )
         if (previewPart?.output) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📦 Package preview received:', previewPart.output)
+          }
           setPendingPackagePreview(previewPart.output)
+        } else {
+          // Check for other tool calls to debug
+          const toolParts = message.parts.filter((p: any) => p.type?.startsWith('tool-'))
+          if (toolParts.length > 0 && process.env.NODE_ENV === 'development') {
+            console.log('🔧 Tool calls found (but no previewPackage):', toolParts.map((p: any) => ({
+              type: p.type,
+              state: p.state
+            })))
+          }
         }
       }
     },
-  })
+    // Only make API calls when in manage context
+    onError: (error: any) => {
+      console.error('Chat error:', error)
+    },
+  } as any)
 
   // Extract values from chat hook with fallbacks
   const {
@@ -89,18 +121,45 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     handleInputChange: handleChatInputChange,
     handleSubmit,
     isLoading: chatIsLoading = false,
-    setInput: setChatInput
-  } = chatHook || {}
-  
-  // Debug: Log loading state in development
-  if (process.env.NODE_ENV === 'development' && isManageContext) {
-    console.log('🔍 PageAIAssistant loading state:', {
-      chatIsLoading,
-      isManageContext,
-      hasChatHook: !!chatHook,
-      hasHandleSubmit: !!handleSubmit,
-    })
-  }
+    setInput: setChatInput,
+    append
+  } = (chatHook || {}) as any
+
+  // Debug: Log chat hook structure in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && isManageContext && chatHook) {
+      console.log('🔍 Chat hook structure:', {
+        hasChatHook: !!chatHook,
+        chatHookType: typeof chatHook,
+        chatHookKeys: Object.keys(chatHook || {}),
+        hasAppend: 'append' in (chatHook || {}),
+        hasSetInput: 'setInput' in (chatHook || {}),
+        hasHandleSubmit: 'handleSubmit' in (chatHook || {}),
+        appendType: typeof (chatHook as any)?.append,
+        setInputType: typeof (chatHook as any)?.setInput,
+        handleSubmitType: typeof (chatHook as any)?.handleSubmit,
+      })
+    }
+  }, [chatHook, isManageContext])
+
+  // Monitor messages for package preview tool calls as they stream in
+  useEffect(() => {
+    if (!isManageContext || !messages.length) return
+
+    // Check the last message for tool calls
+    const lastMessage = messages[messages.length - 1]
+    if (lastMessage?.role === 'assistant' && lastMessage.parts) {
+      const previewPart = lastMessage.parts.find((part: any) =>
+        part.type === 'tool-previewPackage' && part.state === 'output-available'
+      )
+      if (previewPart?.output && !pendingPackagePreview) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📦 Package preview detected in messages:', previewPart.output)
+        }
+        setPendingPackagePreview(previewPart.output)
+      }
+    }
+  }, [messages, isManageContext, pendingPackagePreview])
 
   // Ensure handleChatInputChange is always a function
   const safeHandleChatInputChange = useMemo(() => {
@@ -227,6 +286,17 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
     if (isManageContext) {
       // Use AI SDK's handleSubmit for manage context
+      if (!handleSubmit) {
+        console.error('handleSubmit is not available')
+        return
+      }
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🚀 Submitting message via useChat:', {
+          currentInput: currentInput.substring(0, 50),
+          hasHandleSubmit: !!handleSubmit,
+          isManageContext,
+        })
+      }
       handleSubmit(e)
     } else {
       // Use simple fetch for other contexts
@@ -415,18 +485,113 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     }
   }
 
-  const handleActionClick = (action: string) => {
+  const handleActionClick = async (action: string) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔘 Action button clicked:', {
+        action,
+        isManageContext,
+        hasChatHook: !!chatHook,
+        chatHookType: typeof chatHook,
+        chatHookKeys: chatHook ? Object.keys(chatHook) : [],
+      })
+    }
+    
     if (isManageContext) {
-      // For manage context, use the useChat hook's setInput and handleSubmit
-      if (setChatInput && typeof setChatInput === 'function') {
-        setChatInput(action)
-        // Wait a tick for input to update, then submit
+      // Access methods directly from chatHook (they might not be destructured yet)
+      const hookAppend = (chatHook as any)?.append
+      const hookSetInput = (chatHook as any)?.setInput
+      const hookHandleSubmit = (chatHook as any)?.handleSubmit
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 Chat hook methods:', {
+          hasAppend: !!hookAppend,
+          hasSetInput: !!hookSetInput,
+          hasHandleSubmit: !!hookHandleSubmit,
+        })
+      }
+      
+      // Try append method first (preferred)
+      if (hookAppend && typeof hookAppend === 'function') {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🚀 Sending action via append:', action)
+        }
+        try {
+          await hookAppend({ role: 'user', content: action })
+          return
+        } catch (error) {
+          console.error('Error using append:', error)
+        }
+      }
+      
+      // Fallback: use setInput + handleSubmit
+      if (hookSetInput && typeof hookSetInput === 'function' && hookHandleSubmit) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🚀 Using setInput + handleSubmit fallback')
+        }
+        hookSetInput(action)
         setTimeout(() => {
           const syntheticEvent = {
             preventDefault: () => {},
           } as React.FormEvent<HTMLFormElement>
-          handleSubmit(syntheticEvent)
+          hookHandleSubmit(syntheticEvent)
         }, 100)
+        return
+      }
+      
+      // Last resort: try using the destructured values (they might be available now)
+      if (append && typeof append === 'function') {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🚀 Using destructured append')
+        }
+        await append({ role: 'user', content: action })
+        return
+      }
+      
+      // Last resort: manually set input and trigger form submission
+      // This works around the hook initialization issue by using the form directly
+      console.warn('⚠️ Chat hook methods not available. Using form fallback.')
+      
+      if (textareaRef.current) {
+        // Set the input value directly
+        const textarea = textareaRef.current
+        textarea.value = action
+        
+        // Update React state by triggering onChange
+        if (handleCurrentInputChange) {
+          const syntheticEvent = {
+            target: { value: action },
+            currentTarget: { value: action },
+          } as React.ChangeEvent<HTMLTextAreaElement>
+          handleCurrentInputChange(syntheticEvent)
+        }
+        
+        // Wait for state to update, then submit via handleSendMessage
+        setTimeout(() => {
+          // Try to call handleSendMessage directly if available
+          if (handleSendMessage) {
+            const syntheticEvent = {
+              preventDefault: () => {},
+            } as React.FormEvent<HTMLFormElement>
+            handleSendMessage(syntheticEvent)
+            if (process.env.NODE_ENV === 'development') {
+              console.log('✅ Form submitted via handleSendMessage')
+            }
+          } else {
+            // Fallback: dispatch submit event on form
+            const form = textarea.closest('form')
+            if (form) {
+              const submitEvent = new Event('submit', { bubbles: true, cancelable: true })
+              form.dispatchEvent(submitEvent)
+              if (process.env.NODE_ENV === 'development') {
+                console.log('✅ Form submitted via event dispatch')
+              }
+            } else {
+              console.error('❌ Form not found and handleSendMessage not available')
+            }
+          }
+        }, 150)
+      } else {
+        console.error('❌ Textarea ref not available')
       }
     } else {
       // For other contexts, use simple sendMessage
@@ -451,6 +616,29 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
   const currentIsLoading = isManageContext 
     ? (!!chatHook && chatIsLoading === true)
     : isLoadingSimple
+
+  // Debug: Log loading state and messages in development (after variables are declared)
+  if (process.env.NODE_ENV === 'development' && isManageContext) {
+    console.log('🔍 PageAIAssistant state:', {
+      chatIsLoading,
+      isManageContext,
+      hasChatHook: !!chatHook,
+      hasHandleSubmit: !!handleSubmit,
+      hasHandleInputChange: !!handleChatInputChange,
+      messagesCount: messages.length,
+      currentInput: currentInput.substring(0, 50),
+      chatInput: chatInput.substring(0, 50),
+    })
+    
+    if (messages.length > 0) {
+      console.log('📨 Current messages:', messages.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        hasParts: !!m.parts,
+        partsCount: m.parts?.length || 0,
+      })))
+    }
+  }
 
   const defaultPlaceholder = useMemo(() => {
     if (context?.type === 'account') {
@@ -569,7 +757,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     if (process.env.NODE_ENV === 'development' && messages.length > 0) {
       console.log('📨 Rendering manage messages:', { 
         messageCount: messages.length, 
-        messages: messages.map(m => ({ id: m.id, role: m.role, parts: m.parts?.length || 0 }))
+        messages: messages.map((m: any) => ({ id: m.id, role: m.role, parts: m.parts?.length || 0 }))
       })
     }
 
@@ -580,7 +768,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
             Start a conversation to see messages here...
           </div>
         )}
-        {messages.map((message) => (
+        {messages.map((message: any) => (
           <div key={message.id} className="flex gap-3">
             <div className="flex-shrink-0">
               <div className={cn(
@@ -595,14 +783,16 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
               </div>
             </div>
             <div className="flex-1 space-y-2">
-              {message.parts?.map((part: any, index: number) => {
-                if (part.type === 'text') {
-                  return (
-                    <p key={index} className="text-sm text-foreground leading-relaxed">
-                      {part.text}
-                    </p>
-                  )
-                }
+              {/* Render message parts (Generative UI pattern) */}
+              {message.parts && message.parts.length > 0 ? (
+                message.parts.map((part: any, index: number) => {
+                  if (part.type === 'text') {
+                    return (
+                      <p key={index} className="text-sm text-foreground leading-relaxed">
+                        {part.text}
+                      </p>
+                    )
+                  }
 
                 if (part.type === 'tool-previewPackage') {
                   switch (part.state) {
@@ -613,14 +803,18 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                         </div>
                       )
                     case 'output-available':
+                      // PackagePreview component shows immediately when previewPackage tool completes
+                      // Collection: 'packages' (from src/collections/Packages/index.ts)
                       return (
-                        <div key={index} className="my-4">
-                          <PackagePreview
-                            {...part.output}
-                            onConfirm={handleConfirmPackage}
-                            onCancel={handleCancelPackage}
-                            isSaving={isSavingPackage}
-                          />
+                        <div key={index} className="my-6 border-t border-slate-200 pt-6">
+                          <div className="max-w-2xl mx-auto">
+                            <PackagePreview
+                              {...part.output}
+                              onConfirm={handleConfirmPackage}
+                              onCancel={handleCancelPackage}
+                              isSaving={isSavingPackage}
+                            />
+                          </div>
                         </div>
                       )
                     case 'output-error':
@@ -797,8 +991,14 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
                   }
                 }
 
-                return null
-              })}
+                  return null
+                })
+              ) : (
+                // Fallback: render message content if no parts (backward compatibility)
+                <p className="text-sm text-foreground leading-relaxed">
+                  {message.content || 'No content'}
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -829,15 +1029,18 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         {/* Render manage context messages with generative UI */}
         {renderManageMessages()}
 
-        {/* Pending package preview */}
+        {/* Pending package preview - shown prominently when available */}
+        {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
         {pendingPackagePreview && (
-          <div className="my-4">
-            <PackagePreview
-              {...pendingPackagePreview}
-              onConfirm={handleConfirmPackage}
-              onCancel={handleCancelPackage}
-              isSaving={isSavingPackage}
-            />
+          <div className="my-6 border-t border-slate-200 pt-6">
+            <div className="max-w-2xl mx-auto">
+              <PackagePreview
+                {...pendingPackagePreview}
+                onConfirm={handleConfirmPackage}
+                onCancel={handleCancelPackage}
+                isSaving={isSavingPackage}
+              />
+            </div>
           </div>
         )}
 
@@ -985,15 +1188,17 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
         </div>
       )}
 
-      {/* Pending package preview (fallback) */}
+      {/* Pending package preview (shown prominently when available) */}
       {pendingPackagePreview && (
-        <div className="my-4">
-          <PackagePreview
-            {...pendingPackagePreview}
-            onConfirm={handleConfirmPackage}
-            onCancel={handleCancelPackage}
-            isSaving={isSavingPackage}
-          />
+        <div className="my-6 border-t border-slate-200 pt-6">
+          <div className="max-w-2xl mx-auto">
+            <PackagePreview
+              {...pendingPackagePreview}
+              onConfirm={handleConfirmPackage}
+              onCancel={handleCancelPackage}
+              isSaving={isSavingPackage}
+            />
+          </div>
         </div>
       )}
 

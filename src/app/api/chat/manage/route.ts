@@ -1,12 +1,15 @@
 import { streamText, tool, convertToModelMessages, UIMessage, stepCountIs } from 'ai'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMeUser } from '@/utilities/getMeUser'
 import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { z } from 'zod'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+// Initialize Google provider with custom API key
+const googleAI = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
+})
 
 export async function POST(request: NextRequest) {
   try {
@@ -527,7 +530,9 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    // Initialize the Google provider model using @ai-sdk/google
+    // Use the correct model name format with 'models/' prefix for AI SDK v5
+    const model = googleAI('models/gemini-2.0-flash-exp')
 
     const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 

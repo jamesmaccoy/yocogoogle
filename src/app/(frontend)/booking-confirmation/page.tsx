@@ -403,10 +403,61 @@ export default async function BookingConfirmationPage({
               const estimateSelectedPackage = estimate.selectedPackage || null
 
               // Resolve package information and custom name
+              // PRIORITY: Use selectedPackage.package (actual package ID) over packageType (ambiguous identifier)
               let resolvedSelectedPackage = estimateSelectedPackage
               let resolvedPackageType = estimatePackageType
 
-              if (estimatePackageType && postData) {
+              // First, check if selectedPackage has a populated package object (most reliable)
+              if (estimateSelectedPackage?.package && typeof estimateSelectedPackage.package === 'object' && estimateSelectedPackage.package.id) {
+                // Use the package from selectedPackage directly - this is the most accurate
+                const packageId = estimateSelectedPackage.package.id
+                resolvedPackageType = packageId
+                
+                // Get custom name from packageSettings if available
+                if (postData?.packageSettings && Array.isArray(postData.packageSettings)) {
+                  const packageSetting = postData.packageSettings.find((setting: any) => {
+                    const settingPackageId = typeof setting.package === 'object' ? setting.package.id : setting.package
+                    return settingPackageId === packageId
+                  })
+                  if (packageSetting?.customName) {
+                    resolvedSelectedPackage = {
+                      package: packageId,
+                      customName: packageSetting.customName,
+                      enabled: estimateSelectedPackage.enabled ?? true,
+                    }
+                  } else {
+                    // Use existing selectedPackage but ensure package ID is set
+                    resolvedSelectedPackage = {
+                      package: packageId,
+                      customName: estimateSelectedPackage.customName || null,
+                      enabled: estimateSelectedPackage.enabled ?? true,
+                    }
+                  }
+                } else {
+                  // Use existing selectedPackage
+                  resolvedSelectedPackage = {
+                    package: packageId,
+                    customName: estimateSelectedPackage.customName || null,
+                    enabled: estimateSelectedPackage.enabled ?? true,
+                  }
+                }
+                
+                console.log('✅ Using package from selectedPackage:', {
+                  packageId,
+                  packageName: estimateSelectedPackage.package.name,
+                  customName: resolvedSelectedPackage.customName
+                })
+              } else if (estimateSelectedPackage?.package && typeof estimateSelectedPackage.package === 'string') {
+                // Package is stored as string ID, use it directly
+                resolvedPackageType = estimateSelectedPackage.package
+                resolvedSelectedPackage = {
+                  package: estimateSelectedPackage.package,
+                  customName: estimateSelectedPackage.customName || null,
+                  enabled: estimateSelectedPackage.enabled ?? true,
+                }
+                console.log('✅ Using package ID from selectedPackage (string):', estimateSelectedPackage.package)
+              } else if (estimatePackageType && postData) {
+                // Fallback: Try to resolve from packageType (less reliable due to potential duplicates)
                 try {
                   // Get database packages for this post
                   const dbPackages = await payload.find({
@@ -447,6 +498,12 @@ export default async function BookingConfirmationPage({
                       customName: customName || null,
                       enabled: true,
                     }
+                    
+                    console.log('⚠️ Resolved package from packageType (fallback):', {
+                      packageType: estimatePackageType,
+                      matchedPackageId: matchedDbPackage.id,
+                      matchedPackageName: matchedDbPackage.name
+                    })
                   } else {
                     // Package not found in database - might be a Yoco product
                     // Check packageSettings for custom name by matching the packageType directly

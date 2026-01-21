@@ -51,13 +51,22 @@ export const AssignPackageToPost: React.FC<AssignPackageToPostProps> = ({
         postId,
       },
     },
-    onFinish: (message) => {
+    onFinish: (message: any) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Message finished:', {
+          role: message?.role,
+          hasParts: !!message?.parts,
+          partsCount: message?.parts?.length || 0,
+        })
+      }
+      
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
         const previewPart = message.parts.find((part: any) =>
           part.type === 'tool-previewPackage' && part.state === 'output-available'
         )
         if (previewPart?.output) {
+          console.log('📦 Package preview received:', previewPart.output)
           setPendingPackagePreview({
             ...previewPart.output,
             postId, // Ensure postId is included
@@ -71,15 +80,19 @@ export const AssignPackageToPost: React.FC<AssignPackageToPostProps> = ({
         if (createPart?.output?.success) {
           setIsSavingPackage(false)
           const createdPackage = createPart.output.package || createPart.output
+          console.log('✅ Package created:', createdPackage)
           setCreatedPackages((prev) => [...prev, createdPackage])
           setPendingPackagePreview(null)
         } else if (createPart?.output?.success === false) {
           setIsSavingPackage(false)
-          console.error('Package creation failed:', createPart.output.error)
+          console.error('❌ Package creation failed:', createPart.output.error)
         }
       }
     },
-  })
+    onError: (error: any) => {
+      console.error('❌ Chat error:', error)
+    },
+  } as any)
 
   // Extract values from chat hook with fallbacks
   const {
@@ -89,7 +102,35 @@ export const AssignPackageToPost: React.FC<AssignPackageToPostProps> = ({
     handleSubmit,
     isLoading = false,
     setInput: setChatInput,
-  } = chatHook || {}
+  } = (chatHook || {}) as any
+
+  // Debug: Log messages and state in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 AssignPackageToPost state:', {
+        messagesCount: messages.length,
+        isLoading,
+        hasChatHook: !!chatHook,
+        hasHandleSubmit: !!handleSubmit,
+        hasHandleInputChange: !!handleChatInputChange,
+        currentInput: (chatInput || input).substring(0, 50),
+      })
+      
+      if (messages.length > 0) {
+        console.log('📨 Messages:', messages.map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          hasParts: !!m.parts,
+          partsCount: m.parts?.length || 0,
+          parts: m.parts?.map((p: any) => ({
+            type: p.type,
+            state: p.state,
+            hasOutput: !!p.output,
+          })),
+        })))
+      }
+    }
+  }, [messages, isLoading, chatHook, handleSubmit, handleChatInputChange, chatInput, input])
 
   // Sync input state
   const currentInput = chatInput || input
@@ -208,6 +249,19 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
     if (e) e.preventDefault()
     if (!currentInput.trim() || isLoading) return
     
+    if (!handleSubmit) {
+      console.error('handleSubmit is not available')
+      return
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🚀 Submitting message:', {
+        message: currentInput.substring(0, 100),
+        hasHandleSubmit: !!handleSubmit,
+        isLoading,
+      })
+    }
+    
     handleSubmit(e)
   }
 
@@ -219,9 +273,20 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
   }
 
   // Render messages
-  const renderMessage = (message: any, index: number) => {
-    // Handle tool calls
-    if (message.parts) {
+  const renderMessage = (message: any, index: number): React.ReactNode => {
+    // Debug: Log message structure
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎨 Rendering message:', {
+        id: message.id,
+        role: message.role,
+        hasParts: !!message.parts,
+        partsCount: message.parts?.length || 0,
+        hasContent: !!message.content,
+      })
+    }
+    
+    // Handle tool calls - AI SDK 5.0 pattern: messages have parts array
+    if (message.parts && Array.isArray(message.parts) && message.parts.length > 0) {
       return (
         <div key={message.id || index} className="space-y-2">
           {message.parts.map((part: any, partIndex: number) => {
@@ -347,7 +412,10 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
       )
     }
 
-    // Default text message rendering
+    // Default text message rendering (fallback for messages without parts)
+    // In AI SDK 5.0, messages should have parts, but we handle both cases
+    const content = message.content || (message.parts?.find((p: any) => p.type === 'text')?.text) || 'No content'
+    
     return (
       <div
         key={message.id || index}
@@ -357,7 +425,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             : 'bg-zinc-100 text-slate-900 rounded-tl-sm'
         }`}
       >
-        {message.content || 'No content'}
+        {content}
       </div>
     )
   }
@@ -420,38 +488,54 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           )}
 
           {/* Messages */}
+          {messages.length === 0 && (
+            <div className="text-sm text-slate-500 text-center py-4">
+              No messages yet. Start a conversation to see messages here...
+            </div>
+          )}
           <AnimatePresence initial={false}>
-            {messages.map((message, index) => (
-              <motion.div
-                key={message.id || index}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
-              >
-                <div
-                  className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                    message.role === 'assistant'
-                      ? 'bg-teal-50 text-teal-600'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
+            {messages.map((message: any, index: number) => {
+              // Debug individual message rendering
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`🎨 Rendering message ${index}:`, {
+                  id: message.id,
+                  role: message.role,
+                  hasParts: !!message.parts,
+                })
+              }
+              
+              return (
+                <motion.div
+                  key={message.id || `msg-${index}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  {message.role === 'assistant' ? (
-                    <Bot className="h-5 w-5" />
-                  ) : (
-                    <User className="h-5 w-5" />
-                  )}
-                </div>
+                  <div
+                    className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                      message.role === 'assistant'
+                        ? 'bg-teal-50 text-teal-600'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {message.role === 'assistant' ? (
+                      <Bot className="h-5 w-5" />
+                    ) : (
+                      <User className="h-5 w-5" />
+                    )}
+                  </div>
 
-                <div
-                  className={`flex flex-col max-w-[85%] ${
-                    message.role === 'user' ? 'items-end' : 'items-start'
-                  }`}
-                >
-                  {renderMessage(message, index)}
-                </div>
-              </motion.div>
-            ))}
+                  <div
+                    className={`flex flex-col max-w-[85%] ${
+                      message.role === 'user' ? 'items-end' : 'items-start'
+                    }`}
+                  >
+                    {renderMessage(message, index)}
+                  </div>
+                </motion.div>
+              )
+            })}
           </AnimatePresence>
 
           {/* Pending package preview (fallback) */}
