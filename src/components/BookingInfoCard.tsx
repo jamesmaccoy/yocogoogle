@@ -303,8 +303,8 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
       <CardHeader className="space-y-4 bg-muted/40">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <CardTitle className="text-lg">Booking Summary</CardTitle>
-            {postTitle ? <CardDescription>{postTitle}</CardDescription> : null}
+            <CardTitle className="text-lg">Reschedule Booking</CardTitle>
+            {postTitle ? <CardDescription>{postTitle}</CardDescription> : null}Select new dates that match your original package duration. Your booking will be updated once confirmed.
           </div>
           {postUrl ? (
             <Button asChild variant="outline" size="sm">
@@ -321,48 +321,44 @@ export const BookingInfoCard: React.FC<BookingInfoCardProps> = ({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="grid gap-4 text-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Users className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="font-medium">Guests</div>
-              <div className="text-muted-foreground">{guestCount} {guestCount === 1 ? 'guest' : 'guests'} invited</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Clock className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="font-medium">Created</div>
-              <div className="text-muted-foreground">{createdDisplay}</div>
-            </div>
-          </div>
-          {baseRate ? (
+        {!isReschedule && (
+          <div className="grid gap-4 text-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <MapPin className="h-4 w-4" />
+                <Users className="h-4 w-4" />
               </div>
               <div>
-                <div className="font-medium">Base rate</div>
-                <div className="text-muted-foreground">R{baseRate.toFixed(2)}</div>
+                <div className="font-medium">Guests</div>
+                <div className="text-muted-foreground">{guestCount} {guestCount === 1 ? 'guest' : 'guests'} invited</div>
               </div>
             </div>
-          ) : null}
-        </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Clock className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="font-medium">Created</div>
+                <div className="text-muted-foreground">{createdDisplay}</div>
+              </div>
+            </div>
+            {baseRate ? (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <MapPin className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-medium">Base rate</div>
+                  <div className="text-muted-foreground">R{baseRate.toFixed(2)}</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
 
         <div className="space-y-3">
           {isReschedule ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-foreground">Reschedule Booking</div>
-                <Badge variant="outline" className="text-xs">Important</Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Select new dates that match your original package duration. Your booking will be updated once confirmed.
-              </p>
+              
               {originalBookingDates && (
                 <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
                   <span className="font-medium">Current dates:</span> {format(originalBookingDates.from, 'MMM dd, yyyy')} → {format(originalBookingDates.to, 'MMM dd, yyyy')}

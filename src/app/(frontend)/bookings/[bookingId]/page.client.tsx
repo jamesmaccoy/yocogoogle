@@ -1102,21 +1102,16 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Free cancellation until 48 hours before check-in. After that, cancel
-              before check-in and get a 50% refund.
+              Use your tokens to reschedule your booking
             </p>
             
             {/* Rescheduling Card */}
             <div className="mt-4 pt-4 border-t">
               <BookingInfoCard
-                postImage={typeof data?.post === 'object' && data.post ? (data.post.meta?.image || null) : null}
-                guests={data?.guests || []}
-                createdAt={data?.createdAt}
                 variant="booking"
                 postUrl={typeof data?.post === 'object' && data.post ? `/posts/${data.post.slug || ''}` : undefined}
                 postId={typeof data?.post === 'string' ? data.post : (typeof data?.post === 'object' && data.post ? data.post.id : undefined)}
                 postTitle={typeof data?.post === 'object' && data.post ? data.post.title : undefined}
-                baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post && data.post.baseRate != null && Number(data.post.baseRate) > 0 ? Number(data.post.baseRate) : 150)}
                 packageMinNights={packageSnapshot?.minNights ?? null}
                 packageMaxNights={packageSnapshot?.maxNights ?? null}
                 isReschedule={true}
