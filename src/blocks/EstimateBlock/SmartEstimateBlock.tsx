@@ -1332,9 +1332,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       const total = packageTotal + addonTotal
       
       // Create estimate first
+      // ALWAYS use package ID (not yocoId/revenueCatId) to avoid ambiguity when multiple packages share the same yocoId
       console.log('Creating estimate with package:', {
         selectedPackage,
-        packageType: selectedPackage.yocoId || selectedPackage.id,
+        packageType: selectedPackage.id, // Use package ID, not yocoId
         postId,
         total
       })
@@ -1347,7 +1348,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         baseRate: total,
         duration,
         customer: currentUser?.id,
-        packageType: selectedPackage.yocoId || selectedPackage.id,
+        packageType: selectedPackage.id, // Use package ID, not yocoId/revenueCatId
         selectedPackage: {
           package: selectedPackage.id,
           customName: selectedPackage.name,

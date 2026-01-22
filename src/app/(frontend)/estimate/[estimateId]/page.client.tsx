@@ -625,8 +625,9 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
         }
 
         // Include package information
+        // ALWAYS use package ID (not yocoId/revenueCatId) to avoid ambiguity
         if (selectedPackage) {
-          bookingData.packageType = selectedPackage.yocoId || selectedPackage.id
+          bookingData.packageType = selectedPackage.id // Use package ID, not yocoId
           bookingData.selectedPackage = {
             package: selectedPackage.id,
             customName: selectedPackage.name,

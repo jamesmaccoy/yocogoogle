@@ -264,6 +264,18 @@ export default async function BookingConfirmationPage({
       if (!estimate) {
         console.error('Estimate not found:', estimateId)
       } else {
+        // Debug: Log estimate package information
+        console.log('📋 Estimate package information:', {
+          estimateId: estimate.id,
+          packageType: estimate.packageType,
+          hasSelectedPackage: !!estimate.selectedPackage,
+          selectedPackagePackage: estimate.selectedPackage?.package,
+          selectedPackagePackageType: typeof estimate.selectedPackage?.package,
+          selectedPackagePackageId: typeof estimate.selectedPackage?.package === 'object' 
+            ? estimate.selectedPackage.package?.id 
+            : estimate.selectedPackage?.package,
+          selectedPackageCustomName: estimate.selectedPackage?.customName,
+        })
         // Check if customer matches (handle both string ID and relationship object)
         const estimateCustomerId = typeof estimate.customer === 'string' ? estimate.customer : estimate.customer?.id
         const isCustomerMatch = estimateCustomerId === user.id
@@ -469,17 +481,91 @@ export default async function BookingConfirmationPage({
                     depth: 1,
                   })
 
-                  // Find the package that matches the packageType (by id, revenueCatId, or yocoId)
+                  // Find the package that matches the packageType
+                  // PRIORITY: Match by package ID first (most reliable), then fallback to revenueCatId/yocoId for backward compatibility
                   const code = estimatePackageType.toLowerCase()
-                  const matchedDbPackage = dbPackages.docs.find((pkg: any) => {
-                    const pkgId = pkg.id?.toString().toLowerCase()
-                    const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
-                    const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
-                    return pkgId === code || revenueCatId === code || yocoId === code
+                  let matchedDbPackage = dbPackages.docs.find((pkg: any) => {
+                    // First try exact match by package ID (most reliable)
+                    return pkg.id?.toString().toLowerCase() === code
                   })
+                  
+                  // Fallback: If no ID match, try revenueCatId/yocoId (for backward compatibility with old estimates)
+                  if (!matchedDbPackage) {
+                    console.warn('⚠️ No package match by ID, trying revenueCatId/yocoId matching:', {
+                      packageType: estimatePackageType,
+                      code,
+                      availablePackages: dbPackages.docs.map((pkg: any) => ({
+                        id: pkg.id,
+                        name: pkg.name,
+                        revenueCatId: pkg.revenueCatId,
+                        yocoId: pkg.yocoId,
+                      }))
+                    })
+                    
+                    // Find ALL packages that match (there might be multiple)
+                    const matchingPackages = dbPackages.docs.filter((pkg: any) => {
+                      const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
+                      const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
+                      return revenueCatId === code || yocoId === code
+                    })
+                    
+                    if (matchingPackages.length === 0) {
+                      console.error('❌ No package found matching packageType:', {
+                        packageType: estimatePackageType,
+                        code,
+                        searchedIn: dbPackages.docs.length + ' packages',
+                      })
+                    } else if (matchingPackages.length > 1) {
+                      console.error('❌ MULTIPLE packages match packageType (ambiguous):', {
+                        packageType: estimatePackageType,
+                        code,
+                        matchingPackages: matchingPackages.map((pkg: any) => ({
+                          id: pkg.id,
+                          name: pkg.name,
+                          revenueCatId: pkg.revenueCatId,
+                          yocoId: pkg.yocoId,
+                        })),
+                        warning: 'This will select the first match, which may be incorrect!',
+                      })
+                      
+                      // Try to use estimate's selectedPackage.package to disambiguate
+                      if (estimateSelectedPackage?.package) {
+                        const estimatePackageId = typeof estimateSelectedPackage.package === 'object' 
+                          ? estimateSelectedPackage.package.id 
+                          : estimateSelectedPackage.package
+                        
+                        const correctPackage = matchingPackages.find((pkg: any) => 
+                          pkg.id?.toString() === estimatePackageId?.toString()
+                        )
+                        
+                        if (correctPackage) {
+                          console.log('✅ Found correct package using selectedPackage.package:', {
+                            packageId: correctPackage.id,
+                            packageName: correctPackage.name,
+                          })
+                          matchedDbPackage = correctPackage
+                        } else {
+                          console.warn('⚠️ selectedPackage.package does not match any of the ambiguous packages, using first match')
+                          matchedDbPackage = matchingPackages[0]
+                        }
+                      } else {
+                        console.warn('⚠️ No selectedPackage.package to disambiguate, using first match')
+                        matchedDbPackage = matchingPackages[0]
+                      }
+                    } else {
+                      // Single match - use it
+                      matchedDbPackage = matchingPackages[0]
+                      if (matchedDbPackage) {
+                        console.log('✅ Single package match found:', {
+                          packageId: matchedDbPackage.id,
+                          packageName: matchedDbPackage.name,
+                        })
+                      }
+                    }
+                  }
 
                   if (matchedDbPackage) {
-                    // Use the matched database package's ID
+                    // Use the matched database package's ID (always use package ID, not yocoId/revenueCatId)
                     resolvedPackageType = matchedDbPackage.id
                     
                     // Get custom name from packageSettings
@@ -571,16 +657,26 @@ export default async function BookingConfirmationPage({
                   customer: user.id,
                 }
 
-                // Include packageType if available (use resolved packageType which is the canonical ID)
+                // Include packageType - ALWAYS use resolved packageType (package ID) if available
+                // This ensures we store the actual package ID, not the ambiguous yocoId/revenueCatId
                 if (resolvedPackageType) {
                   bookingData.packageType = resolvedPackageType
+                  console.log('✅ Booking will use package ID as packageType:', resolvedPackageType)
                 } else if (estimatePackageType) {
+                  // Fallback: use estimate's packageType (might be yocoId/revenueCatId for old estimates)
                   bookingData.packageType = estimatePackageType
+                  console.warn('⚠️ Using estimate packageType (may be ambiguous):', estimatePackageType)
                 }
 
-                // Include selectedPackage if available
+                // Include selectedPackage - this is the most reliable way to store package info
                 if (resolvedSelectedPackage) {
                   bookingData.selectedPackage = resolvedSelectedPackage
+                  console.log('✅ Booking will include selectedPackage:', {
+                    package: resolvedSelectedPackage.package,
+                    customName: resolvedSelectedPackage.customName,
+                  })
+                } else {
+                  console.warn('⚠️ No selectedPackage available for booking')
                 }
 
                 const booking = await payload.create({
@@ -715,23 +811,87 @@ export default async function BookingConfirmationPage({
 
   const booking = bookings.docs[0]
 
-  // Resolve package information
+  // Resolve package information - PRIORITY: Use selectedPackage.package (actual package ID)
   let packageName: string | null = null
   let packageDescription: string | null = null
   
   if (booking) {
-    // Try to get package name from selectedPackage
+    console.log('📦 Booking package resolution:', {
+      bookingId: booking.id,
+      hasSelectedPackage: !!booking.selectedPackage,
+      selectedPackagePackage: booking.selectedPackage?.package,
+      selectedPackagePackageType: typeof booking.selectedPackage?.package,
+      selectedPackagePackageId: typeof booking.selectedPackage?.package === 'object' 
+        ? booking.selectedPackage.package?.id 
+        : booking.selectedPackage?.package,
+      packageType: booking.packageType,
+    })
+    
+    // PRIORITY 1: Use selectedPackage.package (most reliable - actual package ID)
     if (booking.selectedPackage) {
-      if (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package) {
+      // Check if package is populated as an object (has full package data)
+      if (typeof booking.selectedPackage.package === 'object' && booking.selectedPackage.package?.id) {
         packageName = booking.selectedPackage.customName || booking.selectedPackage.package.name || null
         packageDescription = booking.selectedPackage.package.description || null
-      } else if (booking.selectedPackage.customName) {
+        console.log('✅ Using package from selectedPackage.package (object):', {
+          packageId: booking.selectedPackage.package.id,
+          packageName,
+        })
+      } 
+      // Check if package is stored as string ID
+      else if (typeof booking.selectedPackage.package === 'string' && booking.selectedPackage.package) {
+        // Fetch the package by ID to get its name
+        try {
+          const packageId = booking.selectedPackage.package
+          const pkg = await payload.findByID({
+            collection: 'packages',
+            id: packageId,
+            depth: 1,
+          })
+          
+          // Get custom name from packageSettings if available
+          if (booking.post) {
+            const postId = typeof booking.post === 'string' ? booking.post : booking.post.id
+            const postData = await payload.findByID({
+              collection: 'posts',
+              id: postId,
+              depth: 1,
+            })
+            
+            if (postData?.packageSettings && Array.isArray(postData.packageSettings)) {
+              const packageSetting = postData.packageSettings.find((setting: any) => {
+                const settingPackageId = typeof setting.package === 'object' ? setting.package.id : setting.package
+                return settingPackageId === packageId
+              })
+              packageName = packageSetting?.customName || pkg.name
+            } else {
+              packageName = pkg.name
+            }
+            packageDescription = pkg.description || null
+          } else {
+            packageName = pkg.name
+            packageDescription = pkg.description || null
+          }
+          
+          console.log('✅ Using package from selectedPackage.package (string ID):', {
+            packageId,
+            packageName,
+          })
+        } catch (error) {
+          console.warn('Could not fetch package by ID:', error)
+        }
+      }
+      // Fallback to customName if package isn't available
+      else if (booking.selectedPackage.customName) {
         packageName = booking.selectedPackage.customName
+        console.log('✅ Using customName from selectedPackage:', packageName)
       }
     }
 
-    // If no package name found, try to resolve from packageType
+    // PRIORITY 2: If still no package name, try to resolve from packageType (less reliable)
+    // This should only happen if selectedPackage.package is not set
     if (!packageName && booking.packageType && booking.post) {
+      console.warn('⚠️ Falling back to packageType resolution (less reliable):', booking.packageType)
       try {
         const postId = typeof booking.post === 'string' ? booking.post : booking.post.id
         const postData = await payload.findByID({
@@ -751,12 +911,21 @@ export default async function BookingConfirmationPage({
         })
 
         const code = booking.packageType.toLowerCase()
-        const matchedPackage = dbPackages.docs.find((pkg: any) => {
-          const pkgId = pkg.id?.toString().toLowerCase()
-          const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
-          const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
-          return pkgId === code || revenueCatId === code || yocoId === code
+        // PRIORITY: Match by package ID first (most reliable, unambiguous)
+        let matchedPackage = dbPackages.docs.find((pkg: any) => {
+          return pkg.id?.toString().toLowerCase() === code
         })
+        
+        // Fallback: If no ID match, try revenueCatId/yocoId (for backward compatibility with old bookings)
+        // Note: This can match multiple packages, so it's less reliable
+        if (!matchedPackage) {
+          console.warn('⚠️ No package match by ID, falling back to revenueCatId/yocoId matching (less reliable):', code)
+          matchedPackage = dbPackages.docs.find((pkg: any) => {
+            const revenueCatId = pkg.revenueCatId?.toString().toLowerCase()
+            const yocoId = (pkg.yocoId || pkg.revenueCatId)?.toString().toLowerCase()
+            return revenueCatId === code || yocoId === code
+          })
+        }
 
         if (matchedPackage) {
           // Check for custom name in packageSettings
@@ -770,6 +939,14 @@ export default async function BookingConfirmationPage({
             packageName = matchedPackage.name
           }
           packageDescription = matchedPackage.description || null
+          
+          console.log('⚠️ Resolved package from packageType (fallback):', {
+            packageType: booking.packageType,
+            matchedPackageId: matchedPackage.id,
+            matchedPackageName: packageName,
+          })
+        } else {
+          console.warn('❌ Could not find package matching packageType:', booking.packageType)
         }
       } catch (error) {
         console.warn('Could not resolve package information:', error)

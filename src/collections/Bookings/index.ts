@@ -467,14 +467,13 @@ export const Booking: CollectionConfig = {
     //   }
     //   return false
     // },
-    // delete: ({ req: { user } }) => {
-    //   if (!user) return false
-    //   if (user.role?.includes('admin')) return true
-    //   if (user.role?.includes('customer')) {
-    //     return { customer: { equals: user.id } }
-    //   }
-    //   return false
-    // },
+    delete: ({ req: { user } }) => {
+      if (!user) return false
+      const role = user.role
+      const roleArray = Array.isArray(role) ? role : role ? [role] : []
+      // Only admins and hosts can delete bookings
+      return roleArray.includes('admin') || roleArray.includes('host')
+    },
   },
   hooks: {
     beforeChange: [checkAvailabilityHook],

@@ -927,11 +927,12 @@ export async function POST(request: NextRequest) {
     const calculatedTotal = total !== undefined ? Number(total) : baseRate * duration * multiplier
 
     // Use custom name if available, otherwise fall back to package name
-    // For packageType, use yocoId if available, otherwise fall back to revenueCatId or id
-    const packageTypeId = (pkg as any).yocoId || pkg.revenueCatId || pkg.id
+    // For packageType, ALWAYS use package ID (most reliable, unambiguous identifier)
+    // Package ID is unique and avoids conflicts when multiple packages share the same yocoId/revenueCatId
+    const packageTypeId = pkg.id // Always use package ID
     const displayName = customName || pkg.name || pkg.id
-    // Use yocoId as canonical identifier, fallback to revenueCatId for backward compatibility, then id
-    const canonicalPackageType = (pkg as any).yocoId || pkg.revenueCatId || pkg.id
+    // Use package ID as canonical identifier (not yocoId/revenueCatId which can be duplicated)
+    const canonicalPackageType = pkg.id
 
     // Check for existing estimate - prioritize estimateId if provided, otherwise match by customer/post
     let estimateToUpdate: any = null
