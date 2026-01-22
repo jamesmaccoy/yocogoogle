@@ -11,6 +11,22 @@ import {
   Package,
   Calendar as CalendarIcon,
   Sparkles,
+  Share2,
+  MapPin,
+  Clock,
+  Users,
+  Phone,
+  Mail,
+  Navigation,
+  Download,
+  Check,
+  Star,
+  ExternalLink,
+  QrCode,
+  Home,
+  CreditCard,
+  Shield,
+  MessageCircle,
 } from 'lucide-react'
 import React, { useCallback, useEffect, useState } from 'react'
 import InviteUrlDialog from './_components/invite-url-dialog'
@@ -30,6 +46,15 @@ import { Badge } from '@/components/ui/badge'
 import BookingSidebar from './_components/BookingSidebar'
 import { getGravatarUrl } from '@/utils/gravatar'
 import { Gravatar } from '@/components/Gravatar'
+import { Media } from '@/components/Media'
+import { QRCodeSVG } from 'qrcode.react'
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from '@/components/ui/carousel'
 
 type Props = {
   data: Booking
@@ -63,6 +88,28 @@ function formatPriceWithUSD(product: any) {
   if (currency === 'USD') return `$${price.toFixed(2)}`
   const usd = price / 18
   return `${priceString || `R${price.toFixed(2)}`} / $${usd.toFixed(2)}`
+}
+
+// Helper to generate calendar ICS file and download/resend
+const handleAddToCalendar = async (booking: Booking) => {
+  try {
+    const bookingId = booking.id
+    // Use the customer-based calendar endpoint
+    const customerId = typeof booking.customer === 'object' && booking.customer ? booking.customer.id : (typeof booking.customer === 'string' ? booking.customer : null)
+    if (customerId) {
+      const calendarUrl = `/api/bookings/calendar.ics?customerId=${customerId}`
+      // Open calendar link (browsers will handle .ics files)
+      window.open(calendarUrl, '_blank')
+    }
+  } catch (error) {
+    console.error('Error adding to calendar:', error)
+  }
+}
+
+// Helper to get QR code URL (house manual page)
+const getQRCodeUrl = (booking: Booking) => {
+  // Link to house manual page
+  return 'https://www.simpleplek.co.za/house-manual'
 }
 
 export default function BookingDetailsClientPage({ data, user }: Props) {
@@ -528,554 +575,744 @@ export default function BookingDetailsClientPage({ data, user }: Props) {
   }, [data?.post])
 
 
+  const post = typeof data?.post === 'object' && data.post ? data.post : null
+  const postImage = post?.meta?.image || post?.heroImage
+  const postTitle = post?.title || 'Booking Details'
+  const bookingId = data?.id || ''
+  const paymentStatus = data?.paymentStatus || 'unpaid'
+  const isConfirmed = paymentStatus === 'paid'
+  const bookingIdDisplay = bookingId ? `BK-${bookingId.slice(-6).toUpperCase()}` : ''
+
+  // Get post location (if available)
+  const postLocation = 'Llandudno, Cape Town, South Africa' // Default, can be enhanced with actual post data
+
+  // Get host information
+  const host = typeof data?.customer === 'object' ? data.customer : null
+  const hostName = host?.name || 'Host'
+  const hostEmail = host?.email || ''
+
+  // Calculate total paid
+  const totalPaid = currentPackageTotal || data?.total || 0
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-muted/30 to-background">
-      <div className="container max-w-6xl mx-auto px-4 py-8 md:py-12">
-        <div className="flex flex-col gap-8 lg:flex-row">
-          <aside className="order-2 lg:order-1 lg:w-[280px] lg:flex-shrink-0">
-            <BookingSidebar
-              history={assistantHistory}
-              onClearHistory={assistantHistory.length > 0 ? clearAssistantHistory : undefined}
-              activity={(data as any)?.activity || []}
-            />
-          </aside>
-          <div className="order-1 flex-1 space-y-8 lg:order-2">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-1 bg-primary rounded-full" />
-                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                  {data && 'post' in data && typeof data?.post !== 'string' ? data?.post.title : 'Booking Details'}
-                </h1>
-              </div>
-              <p className="text-muted-foreground text-lg">
-                {data?.fromDate && data?.toDate
-                  ? `${format(new Date(data.fromDate), 'MMM dd, yyyy')} - ${format(new Date(data.toDate), 'MMM dd, yyyy')}`
-                  : 'View and manage your booking'}
-              </p>
+    <div className="min-h-screen bg-background">
+      {/* Floating Header */}
+      <div className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container max-w-2xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className={isConfirmed ? 'h-2 w-2 rounded-full bg-teal-500 animate-pulse' : 'h-2 w-2 rounded-full bg-yellow-500'}></div>
+              <span className="text-sm font-medium">{isConfirmed ? 'Confirmed' : 'Pending'}</span>
             </div>
+            {bookingIdDisplay && (
+              <>
+                <span className="text-sm text-muted-foreground">•</span>
+                <span className="text-sm text-muted-foreground">{bookingIdDisplay}</span>
+              </>
+            )}
+          </div>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+        </div>
+      </div>
 
-            <Tabs defaultValue="details" className="space-y-8">
-              <TabsList className="inline-flex h-12 items-center justify-center rounded-xl bg-muted p-1.5 text-muted-foreground shadow-sm">
-                <TabsTrigger
-                  value="details"
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Details</span>
-                </TabsTrigger>
-                {relatedPages.length > 0 && (
-                  <TabsTrigger
-                    value="sensitive"
-                    className="inline-flex items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow gap-2"
-                  >
-                    <Lock className="h-4 w-4" />
-                    <span>Check-in Info</span>
-                  </TabsTrigger>
-                )}
-              </TabsList>
-
-              <TabsContent value="details" className="space-y-8">
-                {data && 'post' in data && typeof data?.post !== 'string' ? (
-                  <>
-                    <div className="grid md:grid-cols-3 gap-6">
-                      <div className="md:col-span-2 space-y-6">
-                        <Card className="overflow-hidden border-2">
-                          <CardHeader className="bg-muted/50">
-                            <div className="flex items-center gap-2">
-                              <Package className="h-5 w-5 text-primary" />
-                              <CardTitle>
-
-                                {countdownText && (
-                                  <span className="ml-2">
-                                    {countdownText}
-                                  </span>
-                                )}
-                              </CardTitle>
-                            </div>
-                            <CardDescription>
-                              {data?.selectedPackage &&
-                                data.selectedPackage.package &&
-                                typeof data.selectedPackage.package === 'object'
-                                ? data.selectedPackage.customName || data.selectedPackage.package.name || 'Package'
-                                : data?.selectedPackage && data.selectedPackage.customName
-                                  ? data.selectedPackage.customName
-                                  : packageSnapshot?.hasResolvedPackage
-                                    ? packageSnapshot?.name || 'Package'
-                                    : 'No package assigned'}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="pt-6">
-                            {data?.selectedPackage &&
-                              data.selectedPackage.package &&
-                              typeof data.selectedPackage.package === 'object' ? (
-                              <PackageDisplay
-                                packageData={{
-                                  name: data.selectedPackage.package.name || 'Package',
-                                  description: data.selectedPackage.package.description || null,
-                                  features:
-                                    data.selectedPackage.package.features?.map((f: any) => f.feature || f) || null,
-                                  category: data.selectedPackage.package.category || null,
-                                  minNights: data.selectedPackage.package.minNights || null,
-                                  maxNights: data.selectedPackage.package.maxNights || null,
-                                  baseRate: data.selectedPackage.package.baseRate || null,
-                                  multiplier: data.selectedPackage.package.multiplier || null,
-                                }}
-                                customName={data.selectedPackage.customName || null}
-                                total={data.total}
-                                variant="booking"
-                              />
-                            ) : data?.selectedPackage && data.selectedPackage.customName ? (
-                              <div className="p-4 bg-muted/50 rounded-lg border">
-                                <div className="flex items-center gap-2">
-                                  <Package className="h-5 w-5 text-primary" />
-                                  <div>
-                                    <div className="font-medium">{data.selectedPackage.customName}</div>
-                                    <div className="text-sm text-muted-foreground">Custom package</div>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : packageSnapshot?.hasResolvedPackage ? (
-                              <PackageDisplay
-                                packageData={{
-                                  name: packageSnapshot?.name || 'Package',
-                                  description: packageSnapshot?.description,
-                                  features:
-                                    packageSnapshot?.features && packageSnapshot.features.length > 0
-                                      ? packageSnapshot.features
-                                      : null,
-                                  category: packageSnapshot?.category,
-                                  minNights: packageSnapshot?.minNights,
-                                  maxNights: packageSnapshot?.maxNights,
-                                  baseRate: packageSnapshot?.baseRate,
-                                  multiplier: packageSnapshot?.multiplier,
-                                }}
-                                customName={packageSnapshot?.customName}
-                                total={currentPackageTotal ?? undefined}
-                                variant="booking"
-                              />
-                            ) : (
-                              <div className="p-6 bg-muted/30 rounded-lg border border-dashed text-center">
-                                <Package className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-                                <p className="text-sm text-muted-foreground">No package assigned to this booking</p>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-
-                        <Card>
-                          <CardHeader>
-                            <div className="flex items-center gap-2">
-                              <CalendarIcon className="h-5 w-5 text-primary" />
-                              <CardTitle>Booking Dates</CardTitle>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="w-fit">
-                            <Calendar
-                              mode="range"
-                              defaultMonth={data?.fromDate ? new Date(data.fromDate) : undefined}
-                              selected={{
-                                from: data?.fromDate ? new Date(data.fromDate) : undefined,
-                                to: data?.toDate ? new Date(data.toDate) : undefined,
-                              }}
-                              numberOfMonths={2}
-                              className="rounded-lg border shadow-sm [--cell-size:1.5rem] p-2"
-                              disabled={() => true}
-                            />
-                          </CardContent>
-                        </Card>
-
-                        <Card>
-                          <CardHeader>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <UserIcon className="h-5 w-5 text-primary" />
-                                <CardTitle>Guests</CardTitle>
-                              </div>
-                              {data &&
-                                'customer' in data &&
-                                typeof data?.customer !== 'string' &&
-                                data.customer?.id === user.id && (
-                                  <InviteUrlDialog
-                                    bookingId={data.id}
-                                    trigger={
-                                      <Button size="sm" variant="outline">
-                                        <PlusCircleIcon className="size-4 mr-2" />
-                                        <span>Invite</span>
-                                      </Button>
-                                    }
-                                  />
-                                )}
-                            </div>
-                          </CardHeader>
-                          <CardContent className="space-y-3">
-                            <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border-2 border-primary/20">
-                              <Gravatar
-                                email={typeof data.customer === 'object' ? data.customer?.email : null}
-                                size={40}
-                                alt={typeof data.customer === 'string' ? 'Customer' : data.customer?.name || 'Customer'}
-                                className="h-10 w-10 rounded-full object-cover border-2 border-primary"
-                                fallback={
-                                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                                    <UserIcon className="h-5 w-5" />
-                                  </div>
-                                }
-                              />
-                              <div className="flex-1">
-                                <div className="font-medium">
-                                  {typeof data.customer === 'string' ? 'Customer' : data.customer?.name}
-                                </div>
-                                <Badge variant="secondary" className="text-xs">
-                                  Host
-                                </Badge>
-                              </div>
-                            </div>
-
-                            {data.guests
-                              ?.filter((guest) =>
-                                typeof guest === 'string'
-                                  ? !removedGuests.includes(guest)
-                                  : !removedGuests.includes(guest.id),
-                              )
-                              ?.map((guest) => {
-                                if (typeof guest === 'string') {
-                                  return <div key={guest}>{guest}</div>
-                                }
-                                return (
-                                  <div
-                                    key={guest.id}
-                                    className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border hover:border-primary/50 transition-colors"
-                                  >
-                                    <Gravatar
-                                      email={guest.email}
-                                      size={40}
-                                      alt={guest.name || 'Guest'}
-                                      className="h-10 w-10 rounded-full object-cover border border-muted"
-                                      fallback={
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted border">
-                                          <UserIcon className="h-5 w-5 text-muted-foreground" />
-                                        </div>
-                                      }
-                                    />
-                                    <div className="flex-1">
-                                      <div className="font-medium">{guest.name}</div>
-                                      <Badge variant="outline" className="text-xs">
-                                        Guest
-                                      </Badge>
-                                    </div>
-                                    {data &&
-                                      'customer' in data &&
-                                      typeof data?.customer !== 'string' &&
-                                      data.customer?.id === user.id && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() => removeGuestHandler(guest.id)}
-                                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                        >
-                                          <TrashIcon className="size-4" />
-                                          <span className="sr-only">Remove Guest</span>
-                                        </Button>
-                                      )}
-                                  </div>
-                                )
-                              })}
-                          </CardContent>
-                        </Card>
-                      </div>
-
-                      <div className="md:col-span-1">
-                        <div className="sticky top-6">
-                          <BookingInfoCard
-                            postImage={data?.post.meta?.image}
-                            guests={data?.guests || []}
-                            createdAt={data?.createdAt}
-                            variant="booking"
-                            postUrl={typeof data?.post === 'object' ? `/posts/${data.post.slug}` : undefined}
-                            postId={typeof data?.post === 'string' ? data.post : data?.post?.id}
-                            postTitle={typeof data?.post === 'object' ? data.post.title : undefined}
-                            baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0 ? Number(data.post.baseRate) : 150)}
-                            packageMinNights={packageSnapshot?.minNights ?? null}
-                            packageMaxNights={packageSnapshot?.maxNights ?? null}
-                            isReschedule={true}
-                            originalBookingDates={data?.fromDate && data?.toDate ? {
-                              from: new Date(data.fromDate),
-                              to: new Date(data.toDate)
-                            } : null}
-                            onEstimateRequest={async (dates) => {
-                              setIsSubmittingEstimate(true)
-                              setEstimateError(null)
-
-                              try {
-                                const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
-                                if (!postId) {
-                                  throw new Error('No post ID found')
-                                }
-
-                                // Use original booking's package for reschedule
-                                if (!packageSnapshot?.id) {
-                                  throw new Error('Original booking package not found. Cannot reschedule.')
-                                }
-
-                                const fromDateObj = new Date(dates.from)
-                                const toDateObj = new Date(dates.to)
-                                const duration = Math.max(
-                                  1,
-                                  Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
-                                )
-
-                                // Validate duration matches original package constraints
-                                const minNights = packageSnapshot?.minNights ?? null
-                                const maxNights = packageSnapshot?.maxNights ?? null
-
-                                // Calculate original booking duration for comparison
-                                const originalDuration = bookingDuration ?? null
-
-                                if (minNights !== null && duration < minNights) {
-                                  const durationText = minNights === 1 ? 'night' : 'nights'
-                                  throw new Error(
-                                    `⚠️ Duration mismatch: This package requires a minimum of ${minNights} ${durationText}. ` +
-                                    `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
-                                    `Please select dates that match the package duration requirements.`
-                                  )
-                                }
-
-                                if (maxNights !== null && duration > maxNights) {
-                                  const durationText = maxNights === 1 ? 'night' : 'nights'
-                                  throw new Error(
-                                    `⚠️ Duration mismatch: This package allows a maximum of ${maxNights} ${durationText}. ` +
-                                    `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
-                                    `Please select dates that match the package duration requirements.`
-                                  )
-                                }
-
-                                // Warn if duration changed significantly (optional check)
-                                if (originalDuration && Math.abs(duration - originalDuration) > 0) {
-                                  console.log(`Duration changed from ${originalDuration} to ${duration} nights`)
-                                  // This is allowed, just log it
-                                }
-
-                                // Check availability with the original package
-                                const packageId = packageSnapshot.id
-                                const availabilityResponse = await fetch(
-                                  `/api/bookings/check-availability?postId=${postId}&startDate=${dates.from.toISOString()}&endDate=${dates.to.toISOString()}&packageId=${packageId}`,
-                                )
-
-                                if (!availabilityResponse.ok) {
-                                  throw new Error('Failed to check availability')
-                                }
-
-                                const availabilityData = await availabilityResponse.json()
-
-                                if (!availabilityData.isAvailable) {
-                                  const suggestedDates = availabilityData.suggestedDates || []
-                                  if (suggestedDates.length > 0) {
-                                    throw new Error('The selected dates are not available for this package. Please see suggested dates below.')
-                                  }
-                                  throw new Error('The selected dates are not available for this package. Please choose different dates.')
-                                }
-
-                                // Get package cost or post base rate
-                                const baseRate = packageSnapshot?.baseRate ??
-                                  (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0
-                                    ? Number(data.post.baseRate)
-                                    : 150)
-
-                                // Check if booking has a selected package with baseRate for total calculation
-                                const selectedPackage = data?.selectedPackage
-                                const packageBaseRate =
-                                  selectedPackage && typeof selectedPackage.package === 'object' && selectedPackage.package?.baseRate != null && Number(selectedPackage.package.baseRate) > 0
-                                    ? Number(selectedPackage.package.baseRate)
-                                    : null
-
-                                // Calculate total using original package
-                                const multiplier = packageSnapshot?.multiplier ?? 1
-                                const total = packageBaseRate
-                                  ? packageBaseRate
-                                  : calculateTotal(baseRate, duration, multiplier)
-
-                                // Use original booking's package for the estimate
-                                const originalPackageType = packageSnapshot.id || data?.packageType
-
-                                if (!originalPackageType) {
-                                  throw new Error('Original package type not found. Cannot reschedule.')
-                                }
-
-                                const resp = await fetch('/api/estimates', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    postId,
-                                    fromDate: dates.from.toISOString(),
-                                    toDate: dates.to.toISOString(),
-                                    guests: [],
-                                    title: `Reschedule estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
-                                    packageType: originalPackageType,
-                                    total,
-                                    originalBooking: data.id, // Link to original booking for reschedule context
-                                    selectedPackage: { // Pass selectedPackage details
-                                      package: packageSnapshot.id,
-                                      customName: packageSnapshot.customName || packageSnapshot.name,
-                                      enabled: true,
-                                    },
-                                  }),
-                                })
-
-                                if (!resp.ok) {
-                                  const err = await resp.json().catch(() => ({}))
-                                  throw new Error(err?.error || 'Failed to create estimate')
-                                }
-
-                                const created = await resp.json()
-                                router.push(`/estimate/${created.id}`)
-                              } catch (error) {
-                                console.error('Error creating estimate:', error)
-                                setEstimateError(
-                                  error instanceof Error ? error.message : 'Failed to create estimate. Please try again.',
-                                )
-                              } finally {
-                                setIsSubmittingEstimate(false)
-                              }
-                            }}
-                            isSubmittingEstimate={isSubmittingEstimate}
-                            estimateError={estimateError}
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <Card>
-                      <CardHeader>
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="h-5 w-5 text-primary" />
-                          <CardTitle className="text-base">Quick Actions</CardTitle>
-                        </div>
-                        <CardDescription>Shortcut tools for this booking</CardDescription>
-                      </CardHeader>
-                      <CardContent className="flex flex-col gap-2">
-                        <Button onClick={handleAskAssistant} variant="secondary" className="justify-start gap-2">
-                          <Sparkles className="h-4 w-4" />
-                          Ask AI about this booking
-                        </Button>
-                        <Button onClick={handleScrollToAddons} variant="outline" className="justify-start gap-2">
-                          <Package className="h-4 w-4" />
-                          Browse add-ons
-                        </Button>
-                      </CardContent>
-                    </Card>
-
-                    {!loadingAddons && addonPackages.length > 0 && (
-                      <Card className="mt-8" id="booking-addons">
-                        <CardHeader>
-                          <div className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-primary" />
-                            <CardTitle>Enhance Your Stay</CardTitle>
-                          </div>
-                          <CardDescription>
-                            Add special experiences and amenities to make your stay unforgettable
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {addonPackages.map((addon) => {
-                              const baseRate = addon.baseRate || 0
-                              const price = baseRate * addon.multiplier
-                              const priceString = `R${price.toFixed(2)}`
-
-                              return (
-                                <Card key={addon.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="text-lg">{addon.name}</CardTitle>
-                                    <CardDescription className="text-sm">
-                                      {addon.description || addon.originalName}
-                                    </CardDescription>
-                                  </CardHeader>
-                                  <CardContent className="space-y-4">
-                                    <div className="text-2xl font-bold text-primary">{priceString}</div>
-                                    {addon.features && addon.features.length > 0 && (
-                                      <ul className="space-y-1.5 text-sm text-muted-foreground">
-                                        {addon.features.slice(0, 3).map((feature: any, index: number) => (
-                                          <li key={index} className="flex items-start gap-2">
-                                            <span className="text-primary mt-1">•</span>
-                                            <span>{feature.label || feature}</span>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                    <Button
-                                      className="w-full"
-                                      onClick={() => handleAddonPurchase(addon)}
-                                      disabled={(paymentLoading && currentAddonId === addon.id) || !isInitialized}
-                                    >
-                                      {paymentLoading && currentAddonId === addon.id
-                                        ? 'Preparing checkout...'
-                                        : 'Add to Booking'}
-                                    </Button>
-                                  </CardContent>
-                                </Card>
-                              )
-                            })}
-                          </div>
-                          {paymentError && (
-                            <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
-                              {paymentError}
-                            </div>
-                          )}
-                          {paymentSuccess && (
-                            <div className="mt-4 p-3 bg-green-500/10 text-green-600 rounded-lg text-sm">
-                              Add-on purchased successfully!
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )}
-                  </>
-                ) : (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <p className="text-muted-foreground">Error loading booking details</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
-
-              {relatedPages.length > 0 && (
-                <TabsContent value="sensitive">
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center gap-2">
-                        <Lock className="h-5 w-5 text-primary" />
-                        <CardTitle>Check-in Information</CardTitle>
-                      </div>
-                      <CardDescription>Confidential information for you and your guests only</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      {loadingPages ? (
-                        <p className="text-muted-foreground">Loading check-in information...</p>
-                      ) : (
-                        relatedPages.map((page, index) => (
-                          <Card key={page.id || index} className="border-2">
-                            <CardHeader className="bg-muted/30">
-                              <div className="flex items-center gap-2">
-                                <div className="p-2 bg-primary/10 rounded-lg">
-                                  <Lock className="h-4 w-4 text-primary" />
-                                </div>
-                                <div>
-                                  <CardTitle className="text-base">{page.title}</CardTitle>
-                                  <CardDescription className="text-xs">{page.packageName}</CardDescription>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="pt-6">{page.layout && <SimplePageRenderer page={page} />}</CardContent>
-                          </Card>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              )}
-            </Tabs>
+      {/* Hero Section */}
+      {postImage && (
+        <div className="relative h-[400px] overflow-hidden">
+          <Media
+            resource={postImage}
+            fill
+            imgClassName="object-cover"
+            disableThrottling={true}
+            postId={post?.id}
+            postTitle={postTitle}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <div className="container max-w-2xl mx-auto">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h1 className="text-4xl font-bold text-white mb-2">
+                    🎟️ {postTitle}
+                  </h1>
+                  {packageSnapshot?.name && (
+                    <p className="text-white/90 text-lg">
+                      {packageSnapshot.name}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1.5">
+                  <Star className="h-4 w-4 text-yellow-400 fill-yellow-400" />
+                  <span className="text-sm font-semibold text-white">4.9</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Main Content */}
+      <div className="container max-w-2xl mx-auto px-4 py-6 space-y-4">
+        {/* Status Timeline */}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold">Your Trip</h2>
+              {daysUntilBooking !== null && (
+                <span className="text-2xl font-bold text-teal-500">{Math.abs(daysUntilBooking)} {daysUntilBooking === 1 ? 'day' : 'days'}</span>
+              )}
+            </div>
+
+            <div className="relative">
+              <div className="absolute left-[15px] top-8 bottom-8 w-0.5 bg-border"></div>
+
+              <div className="space-y-6">
+                {/* Booking Confirmed */}
+                <div className="relative flex gap-4">
+                  <div className={isConfirmed ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-500 text-white' : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background'}>
+                    {isConfirmed ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4 text-muted-foreground" />}
+                  </div>
+                  <div className="flex-1 pt-1">
+                    <p className="font-medium">{isConfirmed ? 'Booking Confirmed' : 'Booking Pending'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {data?.createdAt ? format(new Date(data.createdAt), 'MMMM dd, yyyy') : 'Unknown'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Check-in */}
+                {data?.fromDate && (
+                  <div className="relative flex gap-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-teal-500 bg-background">
+                      <CalendarIcon className="h-4 w-4 text-teal-500" />
+                    </div>
+                    <div className="flex-1 pt-1">
+                      <p className="font-medium">Check-in</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(data.fromDate), 'MMMM dd, yyyy')} • 3:00 PM
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Check-out */}
+                {data?.toDate && (
+                  <div className="relative flex gap-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 pt-1">
+                      <p className="font-medium text-muted-foreground">Check-out</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(data.toDate), 'MMMM dd, yyyy')} • 11:00 AM
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            variant="outline"
+            className="h-14 gap-2"
+            onClick={() => handleAddToCalendar(data)}
+          >
+            <CalendarIcon className="h-5 w-5 text-teal-500" />
+            <span className="font-medium">Add to Calendar</span>
+          </Button>
+          <Button variant="outline" className="h-14 gap-2" asChild>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(postLocation)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Navigation className="h-5 w-5 text-teal-500" />
+              <span className="font-medium">Get Directions</span>
+            </a>
+          </Button>
+        </div>
+
+        {/* Check-in QR Code */}
+        <Card className="bg-gradient-to-br from-teal-50 to-transparent">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <QrCode className="h-5 w-5 text-teal-500" />
+                  <h3 className="font-semibold">Digital Check-in</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Show this QR code at arrival for contactless check-in
+                </p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    const qrUrl = getQRCodeUrl(data)
+                    window.open(qrUrl, '_blank')
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                  Open House Manual
+                </Button>
+              </div>
+              <div className="h-24 w-24 rounded-lg bg-white border-2 border-teal-500/20 flex items-center justify-center p-2">
+                <QRCodeSVG
+                  value={getQRCodeUrl(data)}
+                  size={80}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Location */}
+        <Card className="overflow-hidden">
+          <CardContent className="p-6 pb-4">
+            <div className="flex items-center gap-2 mb-4">
+              <MapPin className="h-5 w-5 text-teal-500" />
+              <h3 className="font-semibold">Location</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              {postLocation}
+            </p>
+          </CardContent>
+          <div className="h-48 bg-muted flex items-center justify-center border-t">
+            <div className="text-center">
+              <MapPin className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Map view</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Package Details */}
+        {data && 'post' in data && typeof data?.post !== 'string' && (
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Package className="h-5 w-5 text-teal-500" />
+                <h3 className="font-semibold">Your Package</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium mb-1">
+                      {packageSnapshot?.name || (data?.selectedPackage && typeof data.selectedPackage === 'object' ? data.selectedPackage.customName : null) || 'Package'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {packageSnapshot?.description || 'Your selected package'}
+                    </p>
+                  </div>
+                  <span className="text-lg font-semibold">R{totalPaid.toFixed(2)}</span>
+                </div>
+
+                {packageSnapshot?.features && packageSnapshot.features.length > 0 && (
+                  <div className="border-t pt-4">
+                    <p className="text-sm font-medium mb-3">Included:</p>
+                    <div className="space-y-2">
+                      {packageSnapshot.features.slice(0, 5).map((feature: any, index: number) => (
+                        <div key={index} className="flex items-center gap-2 text-sm">
+                          <div className="h-1.5 w-1.5 rounded-full bg-teal-500"></div>
+                          <span>{typeof feature === 'string' ? feature : feature.label || feature.feature || feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {packageSnapshot && (
+                  <div className="flex items-center gap-4 pt-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {packageSnapshot.category || 'Standard Package'}
+                    </Badge>
+                    {packageSnapshot.minNights && packageSnapshot.maxNights && (
+                      <span className="text-xs text-muted-foreground">
+                        {packageSnapshot.minNights}-{packageSnapshot.maxNights} nights
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Host Information */}
+        {host && (
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Home className="h-5 w-5 text-teal-500" />
+                <h3 className="font-semibold">Your Host</h3>
+              </div>
+
+              <div className="flex items-center gap-4 mb-4">
+                <Gravatar
+                  email={hostEmail}
+                  size={64}
+                  alt={hostName}
+                  className="h-16 w-16 rounded-full border-2 border-teal-500"
+                  fallback={
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-500 text-white">
+                      <UserIcon className="h-8 w-8" />
+                    </div>
+                  }
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-semibold">{hostName}</p>
+                    <Badge variant="default" className="text-xs">
+                      Host
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
+                    <span>4.9 • 127 reviews</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="gap-2">
+                  <MessageCircle className="h-4 w-4" />
+                  Message
+                </Button>
+                <Button variant="outline" className="gap-2" asChild>
+                  <a href={`mailto:${hostEmail}`}>
+                    <Phone className="h-4 w-4" />
+                    Contact
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Guests */}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-teal-500" />
+                <h3 className="font-semibold">Guests</h3>
+              </div>
+              {data &&
+                'customer' in data &&
+                typeof data?.customer !== 'string' &&
+                data.customer &&
+                'id' in data.customer &&
+                data.customer.id === user.id && (
+                  <InviteUrlDialog
+                    bookingId={data.id}
+                    trigger={
+                      <Button size="sm" variant="default" className="gap-2">
+                        <Users className="h-4 w-4" />
+                        Invite Guests
+                      </Button>
+                    }
+                  />
+                )}
+            </div>
+
+            <div className="flex items-center gap-3 rounded-lg border-2 border-teal-500/20 bg-teal-500/5 p-4 mb-3">
+              <Gravatar
+                email={hostEmail}
+                size={40}
+                alt={hostName}
+                className="h-10 w-10 rounded-full"
+                fallback={
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500 text-white">
+                    <UserIcon className="h-5 w-5" />
+                  </div>
+                }
+              />
+              <div className="flex-1">
+                <p className="font-medium text-sm">{hostName}</p>
+                <p className="text-xs text-muted-foreground">Primary guest</p>
+              </div>
+            </div>
+
+            {data.guests
+              ?.filter((guest) =>
+                typeof guest === 'string'
+                  ? !removedGuests.includes(guest)
+                  : !removedGuests.includes(guest.id),
+              )
+              ?.map((guest) => {
+                if (typeof guest === 'string') return null
+                return (
+                  <div
+                    key={guest.id}
+                    className="flex items-center gap-3 rounded-lg border bg-card p-3 mb-2"
+                  >
+                    <Gravatar
+                      email={guest.email}
+                      size={40}
+                      alt={guest.name || 'Guest'}
+                      className="h-10 w-10 rounded-full"
+                      fallback={
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                          <UserIcon className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                      }
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{guest.name}</p>
+                      <Badge variant="outline" className="text-xs">
+                        Guest
+                      </Badge>
+                    </div>
+                    {data &&
+                      'customer' in data &&
+                      typeof data?.customer !== 'string' &&
+                      data.customer &&
+                      'id' in data.customer &&
+                      data.customer.id === user.id && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeGuestHandler(guest.id)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <TrashIcon className="size-4" />
+                        </Button>
+                      )}
+                  </div>
+                )
+              })}
+          </CardContent>
+        </Card>
+
+        {/* Enhance Your Stay - Carousel */}
+        {!loadingAddons && addonPackages.length > 0 && (
+          <Card id="booking-addons">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-5 w-5 text-teal-500" />
+                <h3 className="font-semibold">Enhance Your Stay</h3>
+              </div>
+              <p className="text-sm text-muted-foreground mb-6">
+                Add special experiences to make your trip unforgettable
+              </p>
+
+              <Carousel
+                opts={{
+                  align: 'start',
+                  loop: true,
+                }}
+                className="w-full relative"
+              >
+                <CarouselContent className="-ml-4">
+                  {addonPackages.map((addon) => {
+                    const baseRate = addon.baseRate || 0
+                    const price = baseRate * addon.multiplier
+                    const priceString = `R${price.toFixed(2)}`
+
+                    return (
+                      <CarouselItem key={addon.id} className="pl-4 basis-[280px]">
+                        <Card className="hover:shadow-md transition-shadow">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-medium text-sm">{addon.name}</h4>
+                              <span className="text-sm font-semibold text-teal-500">
+                                {priceString}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mb-3">
+                              {addon.description || addon.originalName}
+                            </p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => handleAddonPurchase(addon)}
+                              disabled={(paymentLoading && currentAddonId === addon.id) || !isInitialized}
+                            >
+                              {paymentLoading && currentAddonId === addon.id
+                                ? 'Processing...'
+                                : 'Add'}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      </CarouselItem>
+                    )
+                  })}
+                </CarouselContent>
+                <CarouselPrevious />
+                <CarouselNext />
+              </Carousel>
+
+              {paymentError && (
+                <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+                  {paymentError}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Payment Summary */}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <CreditCard className="h-5 w-5 text-teal-500" />
+              <h3 className="font-semibold">Payment Summary</h3>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Package price</span>
+                <span>R{totalPaid.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Service fee</span>
+                <span>R0.00</span>
+              </div>
+              <div className="border-t pt-3 flex items-center justify-between">
+                <span className="font-semibold">Total paid</span>
+                <span className="text-xl font-bold text-teal-500">R{totalPaid.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <Shield className="h-4 w-4" />
+              <span>Payment secured and protected</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Cancellation Policy with Rescheduling */}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Cancellation Policy</h3>
+              <Button variant="link" size="sm" className="gap-1 h-auto p-0">
+                View details
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Free cancellation until 48 hours before check-in. After that, cancel
+              before check-in and get a 50% refund.
+            </p>
+            
+            {/* Rescheduling Card */}
+            <div className="mt-4 pt-4 border-t">
+              <BookingInfoCard
+                postImage={typeof data?.post === 'object' && data.post ? (data.post.meta?.image || null) : null}
+                guests={data?.guests || []}
+                createdAt={data?.createdAt}
+                variant="booking"
+                postUrl={typeof data?.post === 'object' && data.post ? `/posts/${data.post.slug || ''}` : undefined}
+                postId={typeof data?.post === 'string' ? data.post : (typeof data?.post === 'object' && data.post ? data.post.id : undefined)}
+                postTitle={typeof data?.post === 'object' && data.post ? data.post.title : undefined}
+                baseRate={packageSnapshot?.baseRate ?? (typeof data?.post === 'object' && data.post && data.post.baseRate != null && Number(data.post.baseRate) > 0 ? Number(data.post.baseRate) : 150)}
+                packageMinNights={packageSnapshot?.minNights ?? null}
+                packageMaxNights={packageSnapshot?.maxNights ?? null}
+                isReschedule={true}
+                originalBookingDates={data?.fromDate && data?.toDate ? {
+                  from: new Date(data.fromDate as string),
+                  to: new Date(data.toDate as string)
+                } : null}
+                onEstimateRequest={async (dates) => {
+                  setIsSubmittingEstimate(true)
+                  setEstimateError(null)
+
+                  try {
+                    const postId = typeof data?.post === 'string' ? data.post : data?.post?.id
+                    if (!postId) {
+                      throw new Error('No post ID found')
+                    }
+
+                    if (!packageSnapshot?.id) {
+                      throw new Error('Original booking package not found. Cannot reschedule.')
+                    }
+
+                    const fromDateObj = new Date(dates.from)
+                    const toDateObj = new Date(dates.to)
+                    const duration = Math.max(
+                      1,
+                      Math.round((toDateObj.getTime() - fromDateObj.getTime()) / (1000 * 60 * 60 * 24)),
+                    )
+
+                    const minNights = packageSnapshot?.minNights ?? null
+                    const maxNights = packageSnapshot?.maxNights ?? null
+                    const originalDuration = bookingDuration ?? null
+
+                    if (minNights !== null && duration < minNights) {
+                      const durationText = minNights === 1 ? 'night' : 'nights'
+                      throw new Error(
+                        `⚠️ Duration mismatch: This package requires a minimum of ${minNights} ${durationText}. ` +
+                        `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
+                        `Please select dates that match the package duration requirements.`
+                      )
+                    }
+
+                    if (maxNights !== null && duration > maxNights) {
+                      const durationText = maxNights === 1 ? 'night' : 'nights'
+                      throw new Error(
+                        `⚠️ Duration mismatch: This package allows a maximum of ${maxNights} ${durationText}. ` +
+                        `Your original booking was ${originalDuration ? `${originalDuration} ${originalDuration === 1 ? 'night' : 'nights'}` : 'for this package'}. ` +
+                        `Please select dates that match the package duration requirements.`
+                      )
+                    }
+
+                    const packageId = packageSnapshot.id
+                    const availabilityResponse = await fetch(
+                      `/api/bookings/check-availability?postId=${postId}&startDate=${dates.from.toISOString()}&endDate=${dates.to.toISOString()}&packageId=${packageId}`,
+                    )
+
+                    if (!availabilityResponse.ok) {
+                      throw new Error('Failed to check availability')
+                    }
+
+                    const availabilityData = await availabilityResponse.json()
+
+                    if (!availabilityData.isAvailable) {
+                      const suggestedDates = availabilityData.suggestedDates || []
+                      if (suggestedDates.length > 0) {
+                        throw new Error('The selected dates are not available for this package. Please see suggested dates below.')
+                      }
+                      throw new Error('The selected dates are not available for this package. Please choose different dates.')
+                    }
+
+                    const baseRate = packageSnapshot?.baseRate ??
+                      (typeof data?.post === 'object' && data.post?.baseRate != null && Number(data.post.baseRate) > 0
+                        ? Number(data.post.baseRate)
+                        : 150)
+
+                    const selectedPackage = data?.selectedPackage
+                    const packageBaseRate =
+                      selectedPackage && typeof selectedPackage.package === 'object' && selectedPackage.package?.baseRate != null && Number(selectedPackage.package.baseRate) > 0
+                        ? Number(selectedPackage.package.baseRate)
+                        : null
+
+                    const multiplier = packageSnapshot?.multiplier ?? 1
+                    const total = packageBaseRate
+                      ? packageBaseRate
+                      : calculateTotal(baseRate, duration, multiplier)
+
+                    const originalPackageType = packageSnapshot.id || data?.packageType
+
+                    if (!originalPackageType) {
+                      throw new Error('Original package type not found. Cannot reschedule.')
+                    }
+
+                    const resp = await fetch('/api/estimates', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        postId,
+                        fromDate: dates.from.toISOString(),
+                        toDate: dates.to.toISOString(),
+                        guests: [],
+                        title: `Reschedule estimate for ${typeof data?.post === 'object' ? data.post.title : 'Property'} - ${packageSnapshot?.minNights !== null && packageSnapshot?.minNights !== undefined && packageSnapshot.minNights <= 1 && duration === 1 ? 'hourly' : `${duration} ${duration === 1 ? 'night' : 'nights'}`}`,
+                        packageType: originalPackageType,
+                        total,
+                        originalBooking: data.id,
+                        selectedPackage: {
+                          package: packageSnapshot.id,
+                          customName: packageSnapshot.customName || packageSnapshot.name,
+                          enabled: true,
+                        },
+                      }),
+                    })
+
+                    if (!resp.ok) {
+                      const err = await resp.json().catch(() => ({}))
+                      throw new Error(err?.error || 'Failed to create estimate')
+                    }
+
+                    const created = await resp.json()
+                    router.push(`/estimate/${created.id}`)
+                  } catch (error) {
+                    console.error('Error creating estimate:', error)
+                    setEstimateError(
+                      error instanceof Error ? error.message : 'Failed to create estimate. Please try again.',
+                    )
+                  } finally {
+                    setIsSubmittingEstimate(false)
+                  }
+                }}
+                isSubmittingEstimate={isSubmittingEstimate}
+                estimateError={estimateError}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Help Section */}
+        <Card className="bg-muted/50">
+          <CardContent className="p-6 text-center">
+            <h3 className="font-semibold mb-2">Need help?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Our support team is available 24/7
+            </p>
+            <Button variant="outline" className="gap-2">
+              <MessageCircle className="h-4 w-4" />
+              Contact Support
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Footer */}
+        <div className="pt-8 pb-12 text-center space-y-2">
+          {bookingIdDisplay && (
+            <p className="text-xs text-muted-foreground">
+              Booking ID: {bookingIdDisplay}
+            </p>
+          )}
+          {data?.createdAt && (
+            <p className="text-xs text-muted-foreground">
+              Confirmed on {format(new Date(data.createdAt), 'MMMM dd, yyyy')}
+            </p>
+          )}
+        </div>
+
+        {/* Check-in Info Tab (if available) */}
+        {relatedPages.length > 0 && (
+          <Card className="mt-4">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-primary" />
+                <CardTitle>Check-in Information</CardTitle>
+              </div>
+              <CardDescription>Confidential information for you and your guests only</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {loadingPages ? (
+                <p className="text-muted-foreground">Loading check-in information...</p>
+              ) : (
+                relatedPages.map((page, index) => (
+                  <Card key={page.id || index} className="border-2">
+                    <CardHeader className="bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-primary/10 rounded-lg">
+                          <Lock className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{page.title}</CardTitle>
+                          <CardDescription className="text-xs">{page.packageName}</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-6">{page.layout && <SimplePageRenderer page={page} />}</CardContent>
+                  </Card>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <AIAssistant />
