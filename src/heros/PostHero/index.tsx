@@ -123,8 +123,8 @@ export const PostHero: React.FC<{
             {displayImage && (
               <div className="absolute inset-0 flex items-center justify-center z-20">
                 <div className="text-white/90 text-center px-6 py-4 bg-black/50 rounded-lg backdrop-blur-sm border border-white/10 max-w-md">
-                  <p className="text-lg font-semibold mb-2">Image Withheld</p>
-                  <p className="text-sm text-white/80">This image is for members only</p>
+                  <p className="text-lg font-semibold mb-2">Image for members only</p>
+                  <p className="text-sm text-white/80">Subscribe to view full image</p>
                 </div>
               </div>
             )}
