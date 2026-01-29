@@ -123,8 +123,8 @@ export const ImageMedia: React.FC<ImageMediaProps> = (props) => {
       {shouldThrottle && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-10 pointer-events-none">
           <div className="text-white/90 text-center px-4 py-2 bg-black/50 rounded backdrop-blur-sm border border-white/10">
-            <p className="text-sm font-semibold">Image Withheld</p>
-            <p className="text-xs text-white/80 mt-1">For members only</p>
+            <p className="text-sm font-semibold">For members only</p>
+            <p className="text-xs text-white/80 mt-1">Subscribe to view full image</p>
           </div>
         </div>
       )}
