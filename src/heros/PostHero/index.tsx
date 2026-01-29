@@ -119,7 +119,16 @@ export const PostHero: React.FC<{
           </motion.div>
         ) : (
           // Show gradient background for non-subscribers (no image)
-          <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900" />
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
+            {displayImage && (
+              <div className="absolute inset-0 flex items-center justify-center z-20">
+                <div className="text-white/90 text-center px-6 py-4 bg-black/50 rounded-lg backdrop-blur-sm border border-white/10 max-w-md">
+                  <p className="text-lg font-semibold mb-2">Image Withheld</p>
+                  <p className="text-sm text-white/80">This image is for members only</p>
+                </div>
+              </div>
+            )}
+          </div>
         )}
         <div className="absolute pointer-events-none left-0 bottom-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent z-10" />
       </motion.div>

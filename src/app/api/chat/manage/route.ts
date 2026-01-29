@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Create a tool for previewing package creation
     // @ts-ignore - AI SDK tool type inference issue
     const previewPackageTool = tool({
-      description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. Use this when the user wants to create a new package.',
+      description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. MANDATORY: Use this IMMEDIATELY when user says "create", "make", "new package", mentions a price like "R300", or wants to create a package. DO NOT respond with text - call this tool first.',
       parameters: z.object({
         name: z.string().optional().describe('Package display name (include emoji if appropriate). If not provided, generate based on category and description.'),
         description: z.string().optional().describe('Detailed description of what the package offers. If not provided, generate based on category.'),
@@ -536,6 +536,13 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 
+CRITICAL: When a user asks to create a package (e.g., "create a package", "make a package", "package for R300", "new package called X", "make a package for R300 called vudu"), you MUST immediately call previewPackageTool. DO NOT respond with text explaining that you can't create it - always use the tool first.
+
+EXAMPLES:
+- User: "make a package for R300 called vudu" → IMMEDIATELY call previewPackageTool with name="vudu", baseRate=30000 (R300 in cents)
+- User: "create a weekend getaway package" → IMMEDIATELY call previewPackageTool with reasonable defaults
+- User: "new package for R500" → IMMEDIATELY call previewPackageTool with baseRate=50000 (R500 in cents)
+
 HOST'S PROPERTIES:
 ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
 
@@ -555,15 +562,18 @@ PROPERTY CREATION:
    - If they have NO properties, use createPostTool first to create a property, then create the package
 
 PACKAGE MANAGEMENT:
-1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents
+1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents, R300 = 30000 cents
 2. Categories: standard (regular accommodation), hosted (with concierge/services), addon (one-time extras like cleaning/wine), special (promotional/unique)
 3. Entitlements: standard (all customers), pro (premium customers only)
-4. When user wants to create a package:
-   - FIRST use previewPackageTool to show them a preview card with ALL guessed values filled in
+4. When user wants to create a package (e.g., "create a package", "make a package", "new package", "package for R300"):
+   - IMMEDIATELY call previewPackageTool - DO NOT respond with text first
+   - Extract package name, price (convert R to cents), and any other details from the request
+   - Fill in ALL missing values with reasonable guesses based on category defaults
    - The preview should show complete package details including guessed baseRate, features, nights, etc.
    - Wait for user confirmation
    - THEN use createPackageTool to actually create it
    - IMPORTANT: When user explicitly says "create", "confirm", "yes", or "create this package", you MUST call createPackageTool immediately with the exact values from the preview
+   - CRITICAL: Never say "I can't create" - always use previewPackageTool first, then createPackageTool after confirmation
 5. Guess reasonable defaults if user doesn't specify:
    - For addon packages: baseRate 20000-50000 cents (R200-R500), minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
    - For standard packages: baseRate 15000-30000 cents (R150-R300), minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]

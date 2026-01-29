@@ -23,8 +23,117 @@ const serializeUsageMetadata = (usage: any) => {
 
 export async function POST(req: Request) {
   try {
-    const { message, bookingContext, context, packageId, postId, pageData } = await req.json()
+    const requestBody = await req.json()
+    
+    // Debug: Log request body structure in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📥 /api/chat request body:', {
+        keys: Object.keys(requestBody),
+        hasMessage: 'message' in requestBody,
+        hasMessages: 'messages' in requestBody,
+        messageType: typeof requestBody.message,
+        messageValue: requestBody.message,
+        messagesLength: Array.isArray(requestBody.messages) ? requestBody.messages.length : 0,
+        messagesSample: Array.isArray(requestBody.messages) && requestBody.messages.length > 0
+          ? JSON.stringify(requestBody.messages[0]).substring(0, 200)
+          : 'N/A',
+        fullBody: JSON.stringify(requestBody).substring(0, 300)
+      })
+    }
+    
+    // Handle multiple request formats:
+    // 1. Old format: { message: "text" }
+    // 2. New AI SDK v2.0+ format: { messages: [{ parts: [{ type: "text", text: "..." }] }] }
+    // 3. Alternative formats: { text: "..." }, { content: "..." }
+    // Google Generative AI SDK expects a string, so normalize it here
+    let message: string = ''
+    
+    try {
+      // First, try to extract from messages array (new AI SDK v2.0+ format)
+      // Format: { messages: [{ parts: [{ type: "text", text: "..." }] }] }
+      if (Array.isArray(requestBody.messages) && requestBody.messages.length > 0) {
+        // Get the last user message
+        const userMessages = requestBody.messages.filter((msg: any) => msg.role === 'user')
+        const lastUserMessage = userMessages.length > 0 
+          ? userMessages[userMessages.length - 1] 
+          : requestBody.messages[requestBody.messages.length - 1]
+        
+        // Extract text from parts array
+        if (lastUserMessage.parts && Array.isArray(lastUserMessage.parts)) {
+          const textParts = lastUserMessage.parts
+            .filter((part: any) => part.type === 'text' && part.text)
+            .map((part: any) => part.text)
+          if (textParts.length > 0) {
+            message = textParts.join(' ').trim()
+          }
+        }
+        
+        // Fallback: check if message has content directly
+        if (!message && lastUserMessage.content) {
+          message = String(lastUserMessage.content).trim()
+        }
+        
+        // Fallback: check if message itself is a string
+        if (!message && typeof lastUserMessage === 'string') {
+          message = lastUserMessage.trim()
+        }
+      }
+      
+      // If no message from messages array, try direct message field (old format)
+      if (!message) {
+        const messageValue = requestBody.message || requestBody.text || requestBody.content || requestBody.prompt
+        
+        if (typeof messageValue === 'string') {
+          message = messageValue.trim()
+        } else if (messageValue && typeof messageValue === 'object') {
+          // Handle object format: { text: "message" } or { content: "message" }
+          message = (messageValue.text || messageValue.content || '').trim()
+          // Fallback: try to stringify if it's an object
+          if (!message && messageValue) {
+            message = String(messageValue).trim()
+          }
+        } else if (messageValue !== undefined && messageValue !== null) {
+          message = String(messageValue).trim()
+        }
+      }
+      
+      // If still no message, check if requestBody itself is a string (edge case)
+      if (!message && typeof requestBody === 'string') {
+        message = requestBody.trim()
+      }
+    } catch (normalizeError) {
+      console.error('Error normalizing message:', normalizeError)
+      return NextResponse.json({ 
+        error: 'Invalid message format',
+        details: 'Could not parse message from request body'
+      }, { status: 400 })
+    }
+    
+    const { bookingContext, context, packageId, postId, pageData } = requestBody
     const { user } = await getMeUser()
+    
+    // Validate message is not empty and is actually a string
+    if (!message || typeof message !== 'string' || message.length === 0) {
+      console.error('Invalid or empty message:', { 
+        type: typeof requestBody.message, 
+        value: requestBody.message,
+        normalized: message,
+        requestBodyKeys: Object.keys(requestBody),
+        hasMessages: Array.isArray(requestBody.messages),
+        messagesLength: Array.isArray(requestBody.messages) ? requestBody.messages.length : 0,
+        messagesSample: Array.isArray(requestBody.messages) && requestBody.messages.length > 0
+          ? JSON.stringify(requestBody.messages).substring(0, 500)
+          : 'N/A',
+        requestBodySample: JSON.stringify(requestBody).substring(0, 500)
+      })
+      return NextResponse.json({ 
+        error: 'Message is required and must be a non-empty string',
+        details: `Received type: ${typeof requestBody.message}, normalized: "${message}". Available keys: ${Object.keys(requestBody).join(', ')}. Has messages array: ${Array.isArray(requestBody.messages)}`
+      }, { status: 400 })
+    }
+    
+    // Final safety check: ensure message is a primitive string
+    message = String(message)
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -228,7 +337,12 @@ Respond with clear, specific suggestions for updating the package.`
           ],
         })
 
-        const result = await chat.sendMessage(message)
+        // Ensure message is a string (Google Generative AI SDK requirement)
+        const messageText = String(message || '').trim()
+        if (!messageText) {
+          return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+        }
+        const result = await chat.sendMessage(messageText)
         const response = await result.response
         const text = response.text()
         const usage = serializeUsageMetadata(response.usageMetadata)
@@ -535,7 +649,12 @@ Respond concisely with just the essential information using relative date refere
           ],
         })
 
-        const result = await chat.sendMessage(message)
+        // Ensure message is a string (Google Generative AI SDK requirement)
+        const messageText = String(message || '').trim()
+        if (!messageText) {
+          return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+        }
+        const result = await chat.sendMessage(messageText)
         const response = await result.response
         const text = response.text()
         const usage = serializeUsageMetadata(response.usageMetadata)
@@ -799,7 +918,12 @@ Respond naturally and helpfully to package management requests.`
         ],
       })
 
-      const result = await chat.sendMessage(message)
+      // Ensure message is a string (Google Generative AI SDK requirement)
+      const messageText = String(message || '').trim()
+      if (!messageText) {
+        return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+      }
+      const result = await chat.sendMessage(messageText)
       const response = await result.response
       const text = response.text()
       const usage = serializeUsageMetadata(response.usageMetadata)
@@ -886,7 +1010,13 @@ Be helpful, concise, and guide users to make great booking decisions.`
     })
 
     // Generate response
-    const result = await chat.sendMessage(message)
+    // Ensure message is a string (Google Generative AI SDK requirement)
+    // message is already normalized at the top, but add final safety check
+    const messageText = String(message || '').trim()
+    if (!messageText) {
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 })
+    }
+    const result = await chat.sendMessage(messageText)
     const response = await result.response
     const text = response.text()
     const usage = serializeUsageMetadata(response.usageMetadata)
@@ -895,10 +1025,21 @@ Be helpful, concise, and guide users to make great booking decisions.`
   } catch (error) {
     console.error('Error in chat API:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    // Log more details for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Full error details:', {
+        message: errorMessage,
+        stack: errorStack,
+        error: error
+      })
+    }
+    
     return NextResponse.json({
       error: 'Failed to process your request',
       message: `Error: ${errorMessage}`,
-      details: error instanceof Error ? error.stack : undefined
+      details: process.env.NODE_ENV === 'development' ? errorStack : undefined
     }, { status: 500 })
   }
 }

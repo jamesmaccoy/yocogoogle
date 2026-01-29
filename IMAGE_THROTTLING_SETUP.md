@@ -52,7 +52,7 @@ Image throttling has been implemented to restrict post cover/meta images for non
 2. **Access Decision**: 
    - **Subscribers**: See full-quality image
    - **Non-subscribers**: Image is completely hidden (not rendered)
-   - Shows gradient background instead of image
+   - Shows gradient background with "Image Withheld - For members only" message
 3. **Tracking**: Tracks when non-subscribers visit post page (restricted content view)
 
 #### Other Images (Thumbnails, Cards)
@@ -66,7 +66,7 @@ Image throttling has been implemented to restrict post cover/meta images for non
    - Reduced brightness (`brightness-75`)
    - Low quality setting (`quality: 10`)
    - Vercel's free plan throttling (automatic)
-   - Overlay message: "Subscribe to view full image"
+   - Overlay message: "Image Withheld - For members only"
 
 ### Analytics Tracking
 
@@ -148,8 +148,8 @@ Restricted image views are integrated with the estimate tracking system:
 ### Test Image Access
 1. Log in as a non-subscriber
 2. Visit a post page (`/posts/[slug]`)
-3. Verify post cover image is **completely hidden** (not rendered, shows gradient background)
-4. Verify thumbnails in cards are blurred with overlay message
+3. Verify post cover image is **completely hidden** (not rendered, shows gradient background with "Image Withheld - For members only" message)
+4. Verify thumbnails in cards are blurred with "Image Withheld - For members only" overlay message
 5. Subscribe and verify post cover image appears clearly
 
 ### Test Analytics Tracking

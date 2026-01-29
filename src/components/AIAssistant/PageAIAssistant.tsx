@@ -36,6 +36,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const pathname = usePathname()
 
   const [input, setInput] = useState('')
+  const [manageInput, setManageInput] = useState('') // Manual input state for manage context
   const [isListening, setIsListening] = useState(false)
   const [lastResponse, setLastResponse] = useState<string | null>(null)
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
@@ -52,27 +53,34 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
   // Use AI SDK's useChat hook for manage context (generative UI)
   // Always call useChat hook (React hooks must be called unconditionally)
-  const isManageContext = context?.type === 'manage' && isHostOrAdmin
-  
+  // Note: For manage context, we allow it even if user isn't host/admin yet (they might be creating packages)
+  // The API endpoint will handle authorization
+  // Fallback: if pathname includes /manage, treat as manage context
+  const isManageContext = context?.type === 'manage' || (typeof pathname === 'string' && pathname.includes('/manage'))
+
   // Debug logging
   if (process.env.NODE_ENV === 'development') {
     console.log('🔍 PageAIAssistant context:', {
       contextType: context?.type,
       isHostOrAdmin,
+      userRole,
+      currentUserRole: currentUser?.role,
       isManageContext,
       hasData: !!context?.data,
+      pathname,
+      contextData: context?.data,
     })
   }
-  
+
   const chatHook = useChat({
-    api: '/api/chat/manage',
+    api: '/api/chat/manage', // Always set - hook only used when isManageContext is true
     body: {
       pageData: context?.data || {},
     },
     onFinish: (result: any) => {
       // onFinish receives an object with a 'message' property, not the message directly
       const message = result?.message || result
-      
+
       if (process.env.NODE_ENV === 'development') {
         console.log('✅ Chat message finished:', {
           role: message?.role,
@@ -85,7 +93,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
           }))
         })
       }
-      
+
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
         const previewPart = message.parts.find((part: any) =>
@@ -114,16 +122,18 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     },
   } as any)
 
-  // Extract values from chat hook with fallbacks
+  // Extract values from chat hook with new API (v2.0+)
+  // The new API provides: messages, sendMessage, status, error
+  // It does NOT provide: input, handleInputChange, handleSubmit, setInput, append
   const {
     messages = [],
-    input: chatInput = '',
-    handleInputChange: handleChatInputChange,
-    handleSubmit,
-    isLoading: chatIsLoading = false,
-    setInput: setChatInput,
-    append
+    sendMessage,
+    status,
+    error: chatError
   } = (chatHook || {}) as any
+
+  // Derive loading state from status
+  const chatIsLoading = status === 'in_progress' || status === 'streaming'
 
   // Debug: Log chat hook structure in development
   useEffect(() => {
@@ -132,12 +142,9 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         hasChatHook: !!chatHook,
         chatHookType: typeof chatHook,
         chatHookKeys: Object.keys(chatHook || {}),
-        hasAppend: 'append' in (chatHook || {}),
-        hasSetInput: 'setInput' in (chatHook || {}),
-        hasHandleSubmit: 'handleSubmit' in (chatHook || {}),
-        appendType: typeof (chatHook as any)?.append,
-        setInputType: typeof (chatHook as any)?.setInput,
-        handleSubmitType: typeof (chatHook as any)?.handleSubmit,
+        hasSendMessage: 'sendMessage' in (chatHook || {}),
+        sendMessageType: typeof (chatHook as any)?.sendMessage,
+        status: (chatHook as any)?.status,
       })
     }
   }, [chatHook, isManageContext])
@@ -161,17 +168,15 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     }
   }, [messages, isManageContext, pendingPackagePreview])
 
-  // Ensure handleChatInputChange is always a function
-  const safeHandleChatInputChange = useMemo(() => {
-    if (handleChatInputChange && typeof handleChatInputChange === 'function') {
-      return handleChatInputChange
-    }
-    return (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      if (setChatInput && typeof setChatInput === 'function') {
-        setChatInput(e.target.value)
-      }
-    }
-  }, [handleChatInputChange, setChatInput])
+  // Input change handler for manage context (manual state management)
+  const handleManageInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setManageInput(e.target.value)
+  }, [])
+
+  // Input change handler for non-manage context
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+  }, [])
 
   // Use simple fetch for non-manage contexts
   const [isLoadingSimple, setIsLoadingSimple] = useState(false)
@@ -196,12 +201,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         }
         // Use the appropriate input handler
         if (isManageContext) {
-          if (setChatInput && typeof setChatInput === 'function') {
-            setChatInput(transcript)
-          } else if (handleChatInputChange) {
-            // Fallback to handleInputChange if setInput not available
-            handleChatInputChange({ target: { value: transcript } } as React.ChangeEvent<HTMLTextAreaElement>)
-          }
+          setManageInput(transcript)
         } else {
           setInput(transcript)
         }
@@ -230,7 +230,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     }
   }, [])
 
-  const sendMessage = async (messageToSend: string) => {
+  const sendSimpleMessage = async (messageToSend: string) => {
     if (isLoadingSimple) return
 
     setIsLoadingSimple(true)
@@ -284,37 +284,75 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
-    if (isManageContext) {
-      // Use AI SDK's handleSubmit for manage context
-      if (!handleSubmit) {
-        console.error('handleSubmit is not available')
+    // Double-check context - if we're in manage context, we MUST use the manage endpoint
+    // Fallback: if pathname includes /manage, treat as manage context
+    const currentIsManageContext = context?.type === 'manage' || (typeof pathname === 'string' && pathname.includes('/manage'))
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📤 handleSendMessage called:', {
+        isManageContext,
+        currentIsManageContext,
+        contextType: context?.type,
+        contextData: context?.data,
+        hasSendMessage: !!sendMessage,
+        willUse: currentIsManageContext ? 'sendMessage (/api/chat/manage)' : 'sendSimpleMessage (/api/chat)',
+      })
+    }
+
+    if (currentIsManageContext) {
+      // Use AI SDK's sendMessage for manage context (new API v2.0+)
+      if (!sendMessage) {
+        console.error('❌ sendMessage is not available but isManageContext is true!')
         return
       }
+      
+      const messageToSend = manageInput.trim()
+      if (!messageToSend) return
+
       if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 Submitting message via useChat:', {
-          currentInput: currentInput.substring(0, 50),
-          hasHandleSubmit: !!handleSubmit,
-          isManageContext,
+        console.log('🚀 Sending message via sendMessage to /api/chat/manage:', {
+          message: messageToSend.substring(0, 50),
+          hasSendMessage: !!sendMessage,
+          isManageContext: currentIsManageContext,
+          status,
+          apiEndpoint: '/api/chat/manage',
+          contextType: context?.type,
         })
       }
-      handleSubmit(e)
+
+      // Clear input immediately before sending
+      setManageInput('')
+
+      try {
+        // New API: sendMessage accepts { text: string } or string
+        // This will call /api/chat/manage because useChat is configured with that endpoint
+        await sendMessage({ text: messageToSend })
+      } catch (error) {
+        console.error('Error sending message:', error)
+        // Restore input on error
+        setManageInput(messageToSend)
+      }
     } else {
       // Use simple fetch for other contexts
-      if (!input.trim() || isLoadingSimple) return
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ Using sendSimpleMessage (/api/chat) - not in manage context')
+      }
       const messageToSend = input.trim()
+      if (!messageToSend || isLoadingSimple) return
       setInput('')
-      await sendMessage(messageToSend)
+      await sendSimpleMessage(messageToSend)
     }
   }
 
   const handleConfirmPackage = async () => {
-    if (!pendingPackagePreview || !isManageContext) return
+    if (!pendingPackagePreview || !isManageContext || !sendMessage) return
 
     setIsSavingPackage(true)
     const previewData = { ...pendingPackagePreview }
     setPendingPackagePreview(null)
 
     // Create a message that explicitly asks the AI to use createPackageTool
+    // Format: Structured message that the AI will parse and use to call createPackageTool
     const createMessage = `Please create the package using createPackageTool with these details:
 - name: "${previewData.name}"
 - description: "${previewData.description}"
@@ -322,22 +360,30 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 - minNights: ${previewData.minNights}
 - maxNights: ${previewData.maxNights}
 - baseRate: ${previewData.baseRate || 0}
-- multiplier: ${previewData.multiplier}
-- entitlement: "${previewData.entitlement}"
+- multiplier: ${previewData.multiplier || 1}
+- entitlement: "${previewData.entitlement || 'standard'}"
 - postId: "${previewData.postId}"
 - features: ${JSON.stringify(previewData.features || [])}
-${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}`
+${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}
+${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
-    setChatInput(createMessage)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📦 Confirming package creation:', {
+        packageName: previewData.name,
+        hasSendMessage: !!sendMessage,
+      })
+    }
 
-    // Wait a tick for input to update, then submit
-    setTimeout(() => {
-      const syntheticEvent = {
-        preventDefault: () => { },
-      } as React.FormEvent<HTMLFormElement>
-      handleSubmit(syntheticEvent)
+    try {
+      // Use sendMessage API directly (new API v2.0+)
+      await sendMessage({ text: createMessage })
+    } catch (error) {
+      console.error('Error confirming package:', error)
+      // Restore preview on error
+      setPendingPackagePreview(previewData)
+    } finally {
       setIsSavingPackage(false)
-    }, 100)
+    }
   }
 
   const handleCancelPackage = () => {
@@ -490,112 +536,30 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
       console.log('🔘 Action button clicked:', {
         action,
         isManageContext,
-        hasChatHook: !!chatHook,
-        chatHookType: typeof chatHook,
-        chatHookKeys: chatHook ? Object.keys(chatHook) : [],
+        hasSendMessage: !!sendMessage,
+        status,
       })
     }
-    
+
     if (isManageContext) {
-      // Access methods directly from chatHook (they might not be destructured yet)
-      const hookAppend = (chatHook as any)?.append
-      const hookSetInput = (chatHook as any)?.setInput
-      const hookHandleSubmit = (chatHook as any)?.handleSubmit
-      
+      if (!sendMessage) {
+        console.error('sendMessage is not available')
+        return
+      }
+
       if (process.env.NODE_ENV === 'development') {
-        console.log('🔍 Chat hook methods:', {
-          hasAppend: !!hookAppend,
-          hasSetInput: !!hookSetInput,
-          hasHandleSubmit: !!hookHandleSubmit,
-        })
+        console.log('🚀 Sending action via sendMessage:', action)
       }
-      
-      // Try append method first (preferred)
-      if (hookAppend && typeof hookAppend === 'function') {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Sending action via append:', action)
-        }
-        try {
-          await hookAppend({ role: 'user', content: action })
-          return
-        } catch (error) {
-          console.error('Error using append:', error)
-        }
-      }
-      
-      // Fallback: use setInput + handleSubmit
-      if (hookSetInput && typeof hookSetInput === 'function' && hookHandleSubmit) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Using setInput + handleSubmit fallback')
-        }
-        hookSetInput(action)
-        setTimeout(() => {
-          const syntheticEvent = {
-            preventDefault: () => {},
-          } as React.FormEvent<HTMLFormElement>
-          hookHandleSubmit(syntheticEvent)
-        }, 100)
-        return
-      }
-      
-      // Last resort: try using the destructured values (they might be available now)
-      if (append && typeof append === 'function') {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('🚀 Using destructured append')
-        }
-        await append({ role: 'user', content: action })
-        return
-      }
-      
-      // Last resort: manually set input and trigger form submission
-      // This works around the hook initialization issue by using the form directly
-      console.warn('⚠️ Chat hook methods not available. Using form fallback.')
-      
-      if (textareaRef.current) {
-        // Set the input value directly
-        const textarea = textareaRef.current
-        textarea.value = action
-        
-        // Update React state by triggering onChange
-        if (handleCurrentInputChange) {
-          const syntheticEvent = {
-            target: { value: action },
-            currentTarget: { value: action },
-          } as React.ChangeEvent<HTMLTextAreaElement>
-          handleCurrentInputChange(syntheticEvent)
-        }
-        
-        // Wait for state to update, then submit via handleSendMessage
-        setTimeout(() => {
-          // Try to call handleSendMessage directly if available
-          if (handleSendMessage) {
-            const syntheticEvent = {
-              preventDefault: () => {},
-            } as React.FormEvent<HTMLFormElement>
-            handleSendMessage(syntheticEvent)
-            if (process.env.NODE_ENV === 'development') {
-              console.log('✅ Form submitted via handleSendMessage')
-            }
-          } else {
-            // Fallback: dispatch submit event on form
-            const form = textarea.closest('form')
-            if (form) {
-              const submitEvent = new Event('submit', { bubbles: true, cancelable: true })
-              form.dispatchEvent(submitEvent)
-              if (process.env.NODE_ENV === 'development') {
-                console.log('✅ Form submitted via event dispatch')
-              }
-            } else {
-              console.error('❌ Form not found and handleSendMessage not available')
-            }
-          }
-        }, 150)
-      } else {
-        console.error('❌ Textarea ref not available')
+
+      try {
+        // Use sendMessage API directly (new API v2.0+)
+        await sendMessage({ text: action })
+      } catch (error) {
+        console.error('Error sending action:', error)
       }
     } else {
-      // For other contexts, use simple sendMessage
-      sendMessage(action)
+      // For other contexts, use simple sendSimpleMessage
+      await sendSimpleMessage(action)
     }
   }
 
@@ -606,16 +570,15 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
     }
   }
 
-  // Sync input state for manage context
-  const currentInput = isManageContext ? (chatInput || '') : (input || '')
+  // Sync input state for manage context (manual state management)
+  // The new useChat API doesn't provide input/handleInputChange, so we manage it manually
+  const currentInput = isManageContext ? manageInput : input
   const handleCurrentInputChange = isManageContext
-    ? safeHandleChatInputChange
-    : (e: React.ChangeEvent<HTMLTextAreaElement>) => setInput(e.target.value)
+    ? handleManageInputChange
+    : handleInputChange
+  
   // Only disable input when actually loading
-  // Don't disable if handlers are missing - allow typing even if submit might not work yet
-  const currentIsLoading = isManageContext 
-    ? (!!chatHook && chatIsLoading === true)
-    : isLoadingSimple
+  const currentIsLoading = isManageContext ? chatIsLoading : isLoadingSimple
 
   // Debug: Log loading state and messages in development (after variables are declared)
   if (process.env.NODE_ENV === 'development' && isManageContext) {
@@ -623,13 +586,12 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
       chatIsLoading,
       isManageContext,
       hasChatHook: !!chatHook,
-      hasHandleSubmit: !!handleSubmit,
-      hasHandleInputChange: !!handleChatInputChange,
+      hasSendMessage: !!sendMessage,
       messagesCount: messages.length,
       currentInput: currentInput.substring(0, 50),
-      chatInput: chatInput.substring(0, 50),
+      manageInput: manageInput.substring(0, 50),
     })
-    
+
     if (messages.length > 0) {
       console.log('📨 Current messages:', messages.map((m: any) => ({
         id: m.id,
@@ -755,9 +717,9 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 
     // Debug: log messages to help troubleshoot
     if (process.env.NODE_ENV === 'development' && messages.length > 0) {
-      console.log('📨 Rendering manage messages:', { 
-        messageCount: messages.length, 
-        messages: messages.map((m: any) => ({ id: m.id, role: m.role, parts: m.parts?.length || 0 }))
+      console.log('📨 Rendering manage messages:', {
+        messageCount: messages.length,
+        messages: messages.map((m: any) => ({ id: m.id, role: m.role, parts: m.parts?.length || 0, content: m.content }))
       })
     }
 
@@ -769,16 +731,16 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
           </div>
         )}
         {messages.map((message: any) => (
-          <div key={message.id} className="flex gap-3">
+          <div key={message.id} className={cn("flex gap-4", message.role === 'user' ? 'flex-row-reverse' : '')}>
             <div className="flex-shrink-0">
               <div className={cn(
                 "h-8 w-8 rounded-full flex items-center justify-center shadow-sm",
-                message.role === 'user' ? "bg-slate-200" : "bg-primary"
+                message.role === 'user' ? "bg-slate-100 text-slate-600" : "bg-teal-50 text-teal-600"
               )}>
                 {message.role === 'user' ? (
-                  <span className="text-xs font-semibold text-slate-600">You</span>
+                  <span className="text-xs font-semibold">You</span>
                 ) : (
-                  <Sparkles className="h-4 w-4 text-primary-foreground" />
+                  <Sparkles className="h-5 w-5" />
                 )}
               </div>
             </div>
@@ -787,217 +749,233 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
               {message.parts && message.parts.length > 0 ? (
                 message.parts.map((part: any, index: number) => {
                   if (part.type === 'text') {
+                    const textContent = part.text || part.content || ''
                     return (
-                      <p key={index} className="text-sm text-foreground leading-relaxed">
-                        {part.text}
-                      </p>
+                      <div
+                        key={index}
+                        className={cn(
+                          "rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap",
+                          message.role === 'user'
+                            ? "bg-slate-900 text-white rounded-tr-sm"
+                            : "bg-zinc-100 text-slate-900 rounded-tl-sm"
+                        )}
+                      >
+                        {textContent || 'No content'}
+                      </div>
                     )
                   }
 
-                if (part.type === 'tool-previewPackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Preparing package preview...
-                        </div>
-                      )
-                    case 'output-available':
-                      // PackagePreview component shows immediately when previewPackage tool completes
-                      // Collection: 'packages' (from src/collections/Packages/index.ts)
-                      return (
-                        <div key={index} className="my-6 border-t border-slate-200 pt-6">
-                          <div className="max-w-2xl mx-auto">
-                            <PackagePreview
-                              {...part.output}
-                              onConfirm={handleConfirmPackage}
-                              onCancel={handleCancelPackage}
-                              isSaving={isSavingPackage}
-                            />
+                  if (part.type === 'tool-previewPackage') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Preparing package preview...
                           </div>
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to preview package'}
-                        </div>
-                      )
-                    default:
-                      return null
-                  }
-                }
-
-                if (part.type === 'tool-createPost') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Creating property...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className={cn(
-                          "text-sm p-3 rounded-lg",
-                          part.output.success
-                            ? "bg-green-50 text-green-800 border border-green-200"
-                            : "bg-red-50 text-red-800 border border-red-200"
-                        )}>
-                          <div className="font-medium mb-1">{part.output.message}</div>
-                          {part.output.post && (
-                            <div className="text-xs mt-2 text-slate-600">
-                              Property: {part.output.post.title} (ID: {part.output.post.id})
+                        )
+                      case 'output-available':
+                        // PackagePreview component shows immediately when previewPackage tool completes
+                        // Collection: 'packages' (from src/collections/Packages/index.ts)
+                        return (
+                          <div key={index} className="my-6 border-t border-slate-200 pt-6">
+                            <div className="max-w-2xl mx-auto">
+                              <PackagePreview
+                                {...part.output}
+                                onConfirm={handleConfirmPackage}
+                                onCancel={handleCancelPackage}
+                                isSaving={isSavingPackage}
+                              />
                             </div>
-                          )}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to create property'}
-                        </div>
-                      )
-                    default:
-                      return null
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to preview package'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
                   }
-                }
 
-                if (part.type === 'tool-createPackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Creating package...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className={cn(
-                          "text-sm p-3 rounded-lg",
-                          part.output.success
-                            ? "bg-green-50 text-green-800 border border-green-200"
-                            : "bg-red-50 text-red-800 border border-red-200"
-                        )}>
-                          {part.output.message}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to create package'}
-                        </div>
-                      )
-                    default:
-                      return null
+                  if (part.type === 'tool-createPost') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Creating property...
+                          </div>
+                        )
+                      case 'output-available':
+                        return (
+                          <div key={index} className={cn(
+                            "text-sm p-3 rounded-lg",
+                            part.output.success
+                              ? "bg-green-50 text-green-800 border border-green-200"
+                              : "bg-red-50 text-red-800 border border-red-200"
+                          )}>
+                            <div className="font-medium mb-1">{part.output.message}</div>
+                            {part.output.post && (
+                              <div className="text-xs mt-2 text-slate-600">
+                                Property: {part.output.post.title} (ID: {part.output.post.id})
+                              </div>
+                            )}
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to create property'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
                   }
-                }
 
-                if (part.type === 'tool-findPackages') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Finding packages...
-                        </div>
-                      )
-                    case 'output-available':
-                      const packages = part.output.packages || []
-                      return (
-                        <div key={index} className="text-sm">
-                          <div className="mb-2 font-medium">{part.output.message}</div>
-                          {packages.length > 0 && (
-                            <div className="mt-2 space-y-2">
-                              {packages.map((pkg: any, idx: number) => (
-                                <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                                  <div className="font-medium">{pkg.name}</div>
-                                  <div className="text-xs text-slate-500 mt-1">
-                                    {pkg.category} • {pkg.minNights}-{pkg.maxNights} nights • {pkg.isEnabled ? 'Enabled' : 'Disabled'}
+                  if (part.type === 'tool-createPackage') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Creating package...
+                          </div>
+                        )
+                      case 'output-available':
+                        return (
+                          <div key={index} className={cn(
+                            "text-sm p-3 rounded-lg",
+                            part.output.success
+                              ? "bg-green-50 text-green-800 border border-green-200"
+                              : "bg-red-50 text-red-800 border border-red-200"
+                          )}>
+                            {part.output.message}
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to create package'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
+                  }
+
+                  if (part.type === 'tool-findPackages') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Finding packages...
+                          </div>
+                        )
+                      case 'output-available':
+                        const packages = part.output.packages || []
+                        return (
+                          <div key={index} className="text-sm">
+                            <div className="mb-2 font-medium">{part.output.message}</div>
+                            {packages.length > 0 && (
+                              <div className="mt-2 space-y-2">
+                                {packages.map((pkg: any, idx: number) => (
+                                  <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                    <div className="font-medium">{pkg.name}</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                      {pkg.category} • {pkg.minNights}-{pkg.maxNights} nights • {pkg.isEnabled ? 'Enabled' : 'Disabled'}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to find packages'}
-                        </div>
-                      )
-                    default:
-                      return null
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to find packages'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
                   }
-                }
 
-                if (part.type === 'tool-updatePackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Updating package...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className={cn(
-                          "text-sm p-3 rounded-lg",
-                          part.output.success
-                            ? "bg-green-50 text-green-800 border border-green-200"
-                            : "bg-red-50 text-red-800 border border-red-200"
-                        )}>
-                          {part.output.message}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to update package'}
-                        </div>
-                      )
-                    default:
-                      return null
+                  if (part.type === 'tool-updatePackage') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Updating package...
+                          </div>
+                        )
+                      case 'output-available':
+                        return (
+                          <div key={index} className={cn(
+                            "text-sm p-3 rounded-lg",
+                            part.output.success
+                              ? "bg-green-50 text-green-800 border border-green-200"
+                              : "bg-red-50 text-red-800 border border-red-200"
+                          )}>
+                            {part.output.message}
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to update package'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
                   }
-                }
 
-                if (part.type === 'tool-deletePackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Deleting package...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className={cn(
-                          "text-sm p-3 rounded-lg",
-                          part.output.success
-                            ? "bg-green-50 text-green-800 border border-green-200"
-                            : "bg-red-50 text-red-800 border border-red-200"
-                        )}>
-                          {part.output.message}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to delete package'}
-                        </div>
-                      )
-                    default:
-                      return null
+                  if (part.type === 'tool-deletePackage') {
+                    switch (part.state) {
+                      case 'input-available':
+                        return (
+                          <div key={index} className="text-sm text-slate-500 italic">
+                            Deleting package...
+                          </div>
+                        )
+                      case 'output-available':
+                        return (
+                          <div key={index} className={cn(
+                            "text-sm p-3 rounded-lg",
+                            part.output.success
+                              ? "bg-green-50 text-green-800 border border-green-200"
+                              : "bg-red-50 text-red-800 border border-red-200"
+                          )}>
+                            {part.output.message}
+                          </div>
+                        )
+                      case 'output-error':
+                        return (
+                          <div key={index} className="text-sm text-red-600">
+                            Error: {part.errorText || 'Failed to delete package'}
+                          </div>
+                        )
+                      default:
+                        return null
+                    }
                   }
-                }
 
                   return null
                 })
               ) : (
                 // Fallback: render message content if no parts (backward compatibility)
-                <p className="text-sm text-foreground leading-relaxed">
-                  {message.content || 'No content'}
-                </p>
+                <div
+                  className={cn(
+                    "rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap",
+                    message.role === 'user'
+                      ? "bg-slate-900 text-white rounded-tr-sm"
+                      : "bg-zinc-100 text-slate-900 rounded-tl-sm"
+                  )}
+                >
+                  {message.content || message.text || 'No content'}
+                </div>
               )}
             </div>
           </div>
