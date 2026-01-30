@@ -87,7 +87,7 @@ export default function LoginPage() {
         <div className="absolute right-8 top-8">
           <Link
             href="/register"
-            className="text-sm font-medium hover:text-zinc-900 transition-colors text-primary"
+            className="text-sm font-medium hover:text-zinc-900 transition-colors text-zinc-900"
           >
             Register
           </Link>
@@ -145,7 +145,7 @@ export default function LoginPage() {
               Don&apos;t have an account?{' '}
               <Link
                 href="/register"
-                className="font-medium text-primary hover:underline"
+                className="font-medium text-zinc-900 hover:text-zinc-700 hover:underline"
               >
                 Register now
               </Link>

@@ -125,7 +125,7 @@ export default function RegisterPage() {
         <div className="absolute right-8 top-8">
           <Link
             href="/login"
-            className="text-sm font-medium hover:text-zinc-900 transition-colors text-primary"
+            className="text-sm font-medium hover:text-zinc-900 transition-colors text-zinc-900"
           >
             Login
           </Link>
@@ -236,7 +236,7 @@ export default function RegisterPage() {
               Already have an account?{' '}
               <Link
                 href="/login"
-                className="font-medium text-primary hover:text-primary/80 hover:underline"
+                className="font-medium text-zinc-900 hover:text-zinc-700 hover:underline"
               >
                 Log in
               </Link>
