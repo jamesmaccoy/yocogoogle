@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Sparkles } from 'lucide-react'
 import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 
 interface BookingsAIAssistantProps {
@@ -63,27 +62,19 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
   }, [userId])
 
   return (
-    <div className="w-full mb-8">
-      <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="w-5 h-5 text-purple-500" />
-        <h2 className="text-xl font-bold text-foreground">
-          AI Assistant
-        </h2>
-      </div>
-
-      <PageAIAssistant
-        context={{
-          type: 'bookings',
-          data: {
-            bookings: {
-              upcoming: upcomingBookings,
-              past: pastBookings,
-            },
-            insights: insights,
+    <PageAIAssistant
+      context={{
+        type: 'bookings',
+        data: {
+          bookings: {
+            upcoming: upcomingBookings,
+            past: pastBookings,
           },
-        }}
-      />
-    </div>
+          insights: insights,
+        },
+      }}
+      variant="primary"
+    />
   )
 }
 

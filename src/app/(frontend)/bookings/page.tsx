@@ -165,26 +165,34 @@ export default async function Bookings() {
     <>
       <PageClient />
       <EstimateAds estimate={estimateForAds} />
-      <div className="my-10 container space-y-10">
-        <BookingsAIAssistant
-          userId={user.id}
-          upcomingBookings={formattedUpcomingBookings}
-          pastBookings={formattedPastBookings}
-        />
+      <div className="flex min-h-screen bg-white font-sans text-slate-900">
+        <main className="flex-1 overflow-y-auto h-screen">
+          <div className="max-w-5xl mx-auto px-8 py-12">
+            {/* AI Assistant - Primary Tool */}
+            <BookingsAIAssistant
+              userId={user.id}
+              upcomingBookings={formattedUpcomingBookings}
+              pastBookings={formattedPastBookings}
+            />
 
-        {upcomingBookings.docs.length === 0 && pastBookings.docs.length === 0 ? (
-          <div className="text-center py-10">
-            <h2 className="text-4xl font-medium tracking-tighter mb-4">No bookings</h2>
-            <p className="text-muted-foreground">
-              You don&apos;t have any upcoming or past bookings.
-            </p>
+            {/* Bookings Content */}
+            <div className="border-t border-slate-100 pt-12">
+              {upcomingBookings.docs.length === 0 && pastBookings.docs.length === 0 ? (
+                <div className="text-center py-10">
+                  <h2 className="text-4xl font-medium tracking-tighter mb-4">No bookings</h2>
+                  <p className="text-muted-foreground">
+                    You don&apos;t have any upcoming or past bookings.
+                  </p>
+                </div>
+              ) : (
+                <BookingsClient
+                  upcomingBookings={formattedUpcomingBookings}
+                  pastBookings={formattedPastBookings}
+                />
+              )}
+            </div>
           </div>
-        ) : (
-          <BookingsClient
-            upcomingBookings={formattedUpcomingBookings}
-            pastBookings={formattedPastBookings}
-          />
-        )}
+        </main>
       </div>
     </>
   )

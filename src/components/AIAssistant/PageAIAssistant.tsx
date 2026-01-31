@@ -985,27 +985,60 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
   }
 
   // Primary variant for Magic Patterns design
-  if (variant === 'primary' && isManageContext) {
+  const isBookingsContext = context?.type === 'bookings'
+  if (variant === 'primary' && (isManageContext || isBookingsContext)) {
     return (
-      <div className={cn("w-full max-w-3xl mx-auto mb-12", className)}>
+      <div className={cn("w-full", className)}>
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-2 bg-teal-50 rounded-full mb-4 ring-1 ring-teal-100">
-            <Sparkles className="h-5 w-5 text-teal-600 mr-2" />
-            <span className="text-sm font-medium text-teal-900">
+          <div className="inline-flex items-center justify-center mb-4 bg-[#f0fdfa] shadow-[0_0_0_0_#fff,0_0_0_1px_#ccfbf1,0_0_0_0_transparent] rounded-full px-2 py-2">
+            <Sparkles className="mr-2 h-5 w-5 text-[#0d9488]" />
+            <span className="text-sm leading-5 font-medium text-[#134e4a]">
               AI Assistant
             </span>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-3 tracking-tight">
-            How can I help manage your properties today?
+          <h1 className="text-2xl sm:text-[30px] font-bold leading-tight sm:leading-9 tracking-[-0.75px] text-[#0f172a] mb-3">
+            {isBookingsContext 
+              ? "How can I help with your bookings today?"
+              : "How can I help manage your properties today?"}
           </h1>
-          <p className="text-slate-500 text-lg">
-            Generate packages, analyze pricing, or draft statements instantly.
+          <p className="text-base sm:text-lg leading-6 sm:leading-7 text-[#64748b] m-0">
+            {isBookingsContext
+              ? "Ask about your upcoming trips, view booking details, or get recommendations."
+              : "Generate packages, analyze pricing, or draft statements instantly."}
           </p>
         </div>
 
-        {/* Render manage context messages with generative UI */}
-        {renderManageMessages()}
+        {/* Messages Area */}
+        <div>
+          {/* Render manage context messages with generative UI */}
+          {isManageContext && renderManageMessages()}
+          
+          {/* Render simple response for bookings context */}
+          {isBookingsContext && lastResponse && (
+            <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6 shadow-sm">
+              <div className="flex gap-3">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-teal-50 flex items-center justify-center">
+                    <Sparkles className="h-4 w-4 text-teal-600" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-line">
+                    {lastResponse}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Empty state placeholder */}
+          {isManageContext && (!messages || messages.length === 0) && !pendingPackagePreview && (
+            <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
+              Start a conversation to see messages here...
+            </div>
+          )}
+        </div>
 
         {/* Pending package preview - shown prominently when available */}
         {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
@@ -1048,15 +1081,17 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         )}
 
         {/* Input Area */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-2 mb-6 transition-shadow hover:shadow-md duration-300">
+        <div className="mb-6 bg-white shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-shadow duration-300 border border-[#e2e8f0] rounded-2xl p-2">
           <form onSubmit={handleSendMessage}>
             <textarea
               ref={textareaRef}
               value={currentInput}
               onChange={handleCurrentInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={placeholder || "Describe a new package for your property or ask about recent bookings..."}
-              className="w-full min-h-[120px] p-4 text-base text-slate-900 placeholder:text-slate-400 bg-transparent border-none focus:ring-0 resize-none outline-none"
+              placeholder={placeholder || (isBookingsContext 
+                ? "Ask about your bookings, upcoming trips, or get recommendations..."
+                : "Describe a new package for your property or ask about recent bookings...")}
+              className="w-full min-h-[120px] resize-none bg-transparent outline-none border-0 p-4 text-base font-normal leading-6 text-[#0f172a] placeholder:text-[#94a3b8]"
               disabled={currentIsLoading}
             />
             <div className="flex items-center justify-between px-2 pb-2">
@@ -1067,7 +1102,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                       type="button"
                       onClick={handleTestMCP}
                       disabled={testingMCP}
-                      className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-full transition-colors"
+                      className="text-[#94a3b8] bg-transparent cursor-pointer transition-colors duration-150 border-0 rounded-full p-2 hover:text-[#64748b]"
                       title="Test MCP endpoint"
                     >
                       {testingMCP ? (
@@ -1082,10 +1117,8 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                   type="button"
                   onClick={isListening ? stopListening : startListening}
                   className={cn(
-                    "p-2 rounded-full transition-colors",
-                    isListening
-                      ? "text-red-500 hover:text-red-600 hover:bg-red-50"
-                      : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                    "text-[#94a3b8] bg-transparent cursor-pointer transition-colors duration-150 border-0 rounded-full p-2 hover:text-[#64748b]",
+                    isListening && "text-red-500 hover:text-red-600"
                   )}
                 >
                   <Mic className="h-5 w-5" />
@@ -1094,7 +1127,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               <button
                 type="submit"
                 disabled={!currentInput.trim() || currentIsLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-full text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-sm font-medium leading-5 text-white bg-[#0f172a] cursor-pointer flex items-center gap-2 transition-colors duration-150 border-0 rounded-full px-4 py-2 hover:bg-[#1e293b] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {currentIsLoading ? (
                   <>
@@ -1113,29 +1146,55 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         </div>
 
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <button
-            onClick={() => handleActionClick('Create a new package for my property')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
-          >
-            <Package className="h-4 w-4" />
-            Generate Packages
-          </button>
-          <button
-            onClick={() => handleActionClick('Show booking statement')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
-          >
-            <FileText className="h-4 w-4" />
-            Draft Statement
-          </button>
-          <button
-            onClick={() => handleActionClick('Show my packages')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm font-medium text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 transition-all duration-200 shadow-sm"
-          >
-            <BarChart2 className="h-4 w-4" />
-            View Analytics
-          </button>
-        </div>
+        {isManageContext ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => handleActionClick('Create a new package for my property')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <Package className="h-4 w-4" />
+              Generate Packages
+            </button>
+            <button
+              onClick={() => handleActionClick('Show booking statement')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <FileText className="h-4 w-4" />
+              Draft Statement
+            </button>
+            <button
+              onClick={() => handleActionClick('Show my packages')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <BarChart2 className="h-4 w-4" />
+              View Analytics
+            </button>
+          </div>
+        ) : isBookingsContext ? (
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => handleActionClick('Show my upcoming bookings')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <Calendar className="h-4 w-4" />
+              Upcoming Trips
+            </button>
+            <button
+              onClick={() => handleActionClick('Show my past bookings')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <Home className="h-4 w-4" />
+              Past Bookings
+            </button>
+            <button
+              onClick={() => handleActionClick('What are my booking insights?')}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+            >
+              <TrendingUp className="h-4 w-4" />
+              View Insights
+            </button>
+          </div>
+        ) : null}
       </div>
     )
   }
