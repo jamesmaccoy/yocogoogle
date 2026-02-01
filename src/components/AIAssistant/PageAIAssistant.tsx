@@ -41,6 +41,8 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const [lastResponse, setLastResponse] = useState<string | null>(null)
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
   const [isSavingPackage, setIsSavingPackage] = useState(false)
+  const [restoredEstimate, setRestoredEstimate] = useState<any>(null)
+  const estimateRestoredRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
 
@@ -262,6 +264,8 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         contextPayload.pageData = {
           bookings: context.data.bookings || [],
           insights: context.data.insights || null,
+          latestEstimate: context.data.latestEstimate || null,
+          restoredEstimate: restoredEstimate || null,
         }
       }
 
@@ -642,7 +646,48 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/posts/${insights.estimateLink.postSlug}?restoreEstimate=${insights.estimateLink.estimateId}`)}
+              onClick={async () => {
+                // Restore estimate directly in bookings page
+                try {
+                  const response = await fetch(`/api/estimates/${insights.estimateLink.estimateId}`)
+                  if (response.ok) {
+                    const estimate = await response.json()
+                    setRestoredEstimate(estimate)
+                    estimateRestoredRef.current = true
+                    
+                    // Create restoration message
+                    const post = typeof estimate.post === 'object' ? estimate.post : null
+                    const postTitle = post?.title || 'your property'
+                    const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
+                    const toDate = estimate.toDate ? new Date(estimate.toDate) : null
+                    
+                    let restorationMessage = `I've restored your estimate for ${postTitle}.`
+                    
+                    if (fromDate && toDate) {
+                      const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
+                      const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
+                    }
+                    
+                    if (estimate.total) {
+                      restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
+                    }
+                    
+                    restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
+                    
+                    setLastResponse(restorationMessage)
+                    
+                    // Update URL to include restoreEstimate parameter
+                    const url = new URL(window.location.href)
+                    url.searchParams.set('restoreEstimate', insights.estimateLink.estimateId)
+                    window.history.replaceState({}, '', url.toString())
+                  }
+                } catch (error) {
+                  console.error('Error restoring estimate:', error)
+                  // Fallback to navigation
+                  router.push(`/posts/${insights.estimateLink.postSlug}?restoreEstimate=${insights.estimateLink.estimateId}`)
+                }
+              }}
               className="text-xs"
             >
               <Sparkles className="h-3 w-3 mr-1.5" />
@@ -986,6 +1031,37 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
   // Primary variant for Magic Patterns design
   const isBookingsContext = context?.type === 'bookings'
+  
+  // Handle estimate restoration for bookings context
+  useEffect(() => {
+    if (isBookingsContext && context?.data?.latestEstimate && context?.data?.restoreEstimate && !estimateRestoredRef.current) {
+      const estimate = context.data.latestEstimate
+      estimateRestoredRef.current = true
+      setRestoredEstimate(estimate)
+      
+      // Create restoration message
+      const post = typeof estimate.post === 'object' ? estimate.post : null
+      const postTitle = post?.title || 'your property'
+      const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
+      const toDate = estimate.toDate ? new Date(estimate.toDate) : null
+      
+      let restorationMessage = `Welcome back! I've restored your estimate for ${postTitle}.`
+      
+      if (fromDate && toDate) {
+        const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
+        const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
+      }
+      
+      if (estimate.total) {
+        restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
+      }
+      
+      restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
+      
+      setLastResponse(restorationMessage)
+    }
+  }, [isBookingsContext, context?.data?.latestEstimate, context?.data?.restoreEstimate])
   if (variant === 'primary' && (isManageContext || isBookingsContext)) {
     return (
       <div className={cn("w-full", className)}>
@@ -1036,6 +1112,47 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           {isManageContext && (!messages || messages.length === 0) && !pendingPackagePreview && (
             <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
               Start a conversation to see messages here...
+            </div>
+          )}
+          
+          {/* Empty state for bookings context */}
+          {isBookingsContext && !lastResponse && !restoredEstimate && (
+            <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
+              Start a conversation to see messages here...
+            </div>
+          )}
+          
+          {/* Show restored estimate details */}
+          {isBookingsContext && restoredEstimate && (
+            <div className="mb-6 rounded-lg border border-teal-200 bg-teal-50/30 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <div className="h-8 w-8 rounded-full bg-teal-100 flex items-center justify-center">
+                    <Calendar className="h-4 w-4 text-teal-600" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-1">Restored Estimate</h4>
+                  {restoredEstimate.fromDate && restoredEstimate.toDate && (
+                    <p className="text-xs text-slate-600 mb-2">
+                      {new Date(restoredEstimate.fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(restoredEstimate.toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  )}
+                  {restoredEstimate.total && (
+                    <p className="text-sm font-bold text-teal-700">
+                      R{Number(restoredEstimate.total).toFixed(0)}
+                    </p>
+                  )}
+                  {typeof restoredEstimate.post === 'object' && restoredEstimate.post?.slug && (
+                    <a
+                      href={`/posts/${restoredEstimate.post.slug}?restoreEstimate=${restoredEstimate.id}`}
+                      className="text-xs text-teal-600 hover:text-teal-700 underline mt-2 inline-block"
+                    >
+                      View on property page →
+                    </a>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>

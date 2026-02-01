@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
+import { useSearchParams } from 'next/navigation'
 
 interface BookingsAIAssistantProps {
   userId: string
@@ -11,7 +12,10 @@ interface BookingsAIAssistantProps {
 
 export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: BookingsAIAssistantProps) {
   const [insights, setInsights] = useState<any>(null)
+  const [latestEstimate, setLatestEstimate] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const estimateRestoredRef = useRef(false)
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     const fetchInsights = async () => {
@@ -23,17 +27,43 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
         ])
         
         const insightsData = await insightsResponse.json()
-        const latestEstimate = estimateResponse.ok ? await estimateResponse.json() : null
+        const estimate = estimateResponse.ok ? await estimateResponse.json() : null
+        
+        // Check for restoreEstimate URL parameter
+        const restoreEstimateId = searchParams?.get('restoreEstimate')
+        let estimateToRestore = estimate
+        
+        if (restoreEstimateId && !estimateRestoredRef.current) {
+          // Fetch the specific estimate to restore
+          try {
+            const restoreResponse = await fetch(`/api/estimates/${restoreEstimateId}`)
+            if (restoreResponse.ok) {
+              const restoreEstimate = await restoreResponse.json()
+              // Verify it belongs to the user
+              const estimateCustomerId = typeof restoreEstimate.customer === 'string' 
+                ? restoreEstimate.customer 
+                : restoreEstimate.customer?.id
+              if (estimateCustomerId === userId) {
+                estimateToRestore = restoreEstimate
+                estimateRestoredRef.current = true
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching estimate to restore:', error)
+          }
+        }
+        
+        setLatestEstimate(estimateToRestore)
         
         // Get estimate link if available
         let estimateLink: { postSlug: string; estimateId: string } | null = null
-        if (latestEstimate) {
-          const post = typeof latestEstimate.post === 'object' ? latestEstimate.post : null
+        if (estimateToRestore) {
+          const post = typeof estimateToRestore.post === 'object' ? estimateToRestore.post : null
           const postSlug = post?.slug
-          if (postSlug && latestEstimate.id) {
+          if (postSlug && estimateToRestore.id) {
             estimateLink = {
               postSlug,
-              estimateId: latestEstimate.id
+              estimateId: estimateToRestore.id
             }
           }
         }
@@ -59,7 +89,7 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
     if (userId) {
       fetchInsights()
     }
-  }, [userId])
+  }, [userId, searchParams])
 
   return (
     <PageAIAssistant
@@ -71,6 +101,8 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
             past: pastBookings,
           },
           insights: insights,
+          latestEstimate: latestEstimate, // Pass latest estimate for restoration
+          restoreEstimate: estimateRestoredRef.current, // Flag to indicate restoration
         },
       }}
       variant="primary"
