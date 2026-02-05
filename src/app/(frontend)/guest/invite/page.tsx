@@ -207,8 +207,8 @@ export default async function GuestInvite({ searchParams }: { searchParams: Sear
   return (
     <div className="mx-4">
       <InviteClientPage
-        booking={tokenData.type === 'booking' && details ? (details as Pick<import('@/payload-types').Booking, 'post' | 'fromDate' | 'createdAt' | 'customer'>) : undefined}
-        estimate={tokenData.type === 'estimate' && details ? (details as Pick<import('@/payload-types').Estimate, 'post' | 'fromDate' | 'createdAt' | 'customer'>) : undefined}
+        booking={tokenData.type === 'booking' && details ? (details as Pick<import('@/payload-types').Booking, 'post' | 'fromDate' | 'toDate' | 'createdAt' | 'customer'>) : undefined}
+        estimate={tokenData.type === 'estimate' && details ? (details as Pick<import('@/payload-types').Estimate, 'post' | 'fromDate' | 'toDate' | 'createdAt' | 'customer'>) : undefined}
         tokenPayload={tokenData}
         token={token}
       />
