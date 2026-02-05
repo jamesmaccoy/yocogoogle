@@ -16,6 +16,7 @@ import React from 'react'
 import configPromise from '@/payload.config'
 
 import InviteClientPage from './page.client'
+import { NotLoggedInSheet } from './NotLoggedInSheet'
 import { AlertCircleIcon, ArrowLeftIcon } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Metadata } from 'next'
@@ -128,29 +129,7 @@ export default async function GuestInvite({ searchParams }: { searchParams: Sear
   const { user } = await getMeUser()
 
   if (!user) {
-    return (
-      <div className="max-w-screen-md mx-auto mt-20">
-        <Card>
-          <CardHeader>
-            <CardTitle>You are not logged in</CardTitle>
-            <CardDescription>
-              Please log in or create an account to accept the invite as a guest.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div>
-              <Button asChild variant="default">
-                <Link href={`/login?next=/i/${token}`}>Login</Link>
-              </Button>
-
-              <Button asChild variant="secondary">
-                <Link href={`/register?next=/i/${token}`}>Register</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <NotLoggedInSheet token={token} />
   }
 
   const tokenData = await fetchTokenData(token)
