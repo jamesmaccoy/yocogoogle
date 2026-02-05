@@ -138,13 +138,13 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
 
   if (error) {
     return (
-      <div className="border-2 flex items-center gap-6 mt-10 flex-col border-red-500 bg-red-100 max-w-[450px] w-full mx-auto p-6 rounded-xl ">
+      <div className="border-2 flex items-center gap-6 mt-10 flex-col border-red-500 bg-red-100 dark:bg-red-900/20 dark:border-red-600 max-w-[450px] w-full mx-auto p-6 rounded-xl">
         <div>
-          <CircleAlert className="size-8" />
+          <CircleAlert className="size-8 text-red-600 dark:text-red-400" />
         </div>
         <div className="text-center">
-          <h2 className="text-lg font-medium tracking-tight">Something went wrong</h2>
-          <p className="tracking-wide ">{error}</p>
+          <h2 className="text-lg font-medium tracking-tight text-red-900 dark:text-red-100">Something went wrong</h2>
+          <p className="tracking-wide text-red-800 dark:text-red-200">{error}</p>
         </div>
         <Button asChild variant="default" className="w-full">
           <Link href={'/'}>Return Home</Link>
@@ -180,36 +180,36 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
   }
 
   return (
-    <div className="mx-4 w-full bg-white text-slate-950 text-base font-sans flex items-center justify-center min-h-screen">
+    <div className="mx-4 w-full bg-white dark:bg-background text-slate-950 dark:text-foreground text-base font-sans flex items-center justify-center min-h-screen">
       <div className="w-full max-w-2xl my-10">
-        <div className="bg-white shadow-xl border border-zinc-200 rounded-lg overflow-hidden">
+        <div className="bg-white dark:bg-card shadow-xl border border-zinc-200 dark:border-border rounded-lg overflow-hidden">
           {/* Header */}
-          <div className="bg-zinc-50 p-6 border-b border-zinc-100">
-            <h3 className="text-2xl font-semibold leading-tight text-zinc-900 m-0">
+          <div className="bg-zinc-50 dark:bg-zinc-900/50 p-6 border-b border-zinc-100 dark:border-border">
+            <h3 className="text-2xl font-semibold leading-tight text-zinc-900 dark:text-foreground m-0">
               Join{' '}
-              <strong className="font-black text-teal-600">
+              <strong className="font-black text-teal-600 dark:text-teal-400">
                 {data.post.title}
               </strong>{' '}
               as a guest
             </h3>
-            <p className="text-sm text-zinc-500 mt-2 m-0 flex items-center gap-2">
+            <p className="text-sm text-zinc-500 dark:text-muted-foreground mt-2 m-0 flex items-center gap-2">
               Invited by{' '}
-              <strong className="font-bold text-zinc-700">{data.customer?.name}</strong>
+              <strong className="font-bold text-zinc-700 dark:text-foreground">{data.customer?.name}</strong>
             </p>
           </div>
 
           <div className="p-6 md:p-8 grid md:grid-cols-2 gap-8">
             {/* Calendar Section */}
             {calendarData && (
-              <div className="bg-white rounded-xl border border-zinc-100 shadow-sm p-4">
+              <div className="bg-white dark:bg-card rounded-xl border border-zinc-100 dark:border-border shadow-sm p-4">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="font-bold text-zinc-800">{calendarData.monthName}</span>
-                  <CalendarIcon className="w-4 h-4 text-zinc-400" />
+                  <span className="font-bold text-zinc-800 dark:text-foreground">{calendarData.monthName}</span>
+                  <CalendarIcon className="w-4 h-4 text-zinc-400 dark:text-muted-foreground" />
                 </div>
 
                 <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2">
                   {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d) => (
-                    <div key={d} className="text-zinc-400 font-medium py-1">
+                    <div key={d} className="text-zinc-400 dark:text-muted-foreground font-medium py-1">
                       {d}
                     </div>
                   ))}
@@ -231,9 +231,9 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
                         key={day}
                         className={`
                           aspect-square flex items-center justify-center rounded-full relative
-                          ${isArrival ? 'bg-teal-600 text-white font-bold shadow-md z-10' : ''}
-                          ${isInTrip && !isArrival ? 'bg-teal-50 text-teal-700 font-medium' : ''}
-                          ${!isInTrip ? 'text-zinc-600 hover:bg-zinc-50' : ''}
+                          ${isArrival ? 'bg-teal-600 dark:bg-teal-500 text-white font-bold shadow-md z-10' : ''}
+                          ${isInTrip && !isArrival ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 font-medium' : ''}
+                          ${!isInTrip ? 'text-zinc-600 dark:text-muted-foreground hover:bg-zinc-50 dark:hover:bg-zinc-800/50' : ''}
                         `}
                       >
                         {day}
@@ -245,7 +245,7 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
                   })}
                 </div>
                 {calendarData.spansMonths && toDate && (
-                  <div className="mt-3 text-xs text-center text-zinc-400 font-medium">
+                  <div className="mt-3 text-xs text-center text-zinc-400 dark:text-muted-foreground font-medium">
                     Trip continues to {format(toDate, 'MMM d')}
                   </div>
                 )}
@@ -256,36 +256,36 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
             <div className="flex flex-col justify-center space-y-6">
               <div className="space-y-4">
                 <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 group-hover:bg-teal-100 transition-colors">
-                    <div className="w-2.5 h-2.5 rounded-full bg-teal-500"></div>
+                  <div className="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/50 transition-colors">
+                    <div className="w-2.5 h-2.5 rounded-full bg-teal-500 dark:bg-teal-400"></div>
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                    <p className="text-xs font-bold text-zinc-400 dark:text-muted-foreground uppercase tracking-wider mb-0.5">
                       Check-in
                     </p>
-                    <p className="text-lg font-semibold text-zinc-900">
+                    <p className="text-lg font-semibold text-zinc-900 dark:text-foreground">
                       {fromDate ? formatCheckInDate() : 'TBD'}
                     </p>
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-zinc-500 dark:text-muted-foreground">
                       {fromDate ? `${formatCheckInYear()} • After 3:00 PM` : 'Date not set'}
                     </p>
                   </div>
                 </div>
 
-                <div className="w-0.5 h-8 bg-zinc-100 ml-5"></div>
+                <div className="w-0.5 h-8 bg-zinc-100 dark:bg-zinc-800 ml-5"></div>
 
                 <div className="flex items-start gap-4 group">
-                  <div className="w-10 h-10 rounded-full bg-zinc-50 flex items-center justify-center flex-shrink-0 group-hover:bg-zinc-100 transition-colors">
-                    <div className="w-2.5 h-2.5 rounded-full border-2 border-zinc-300"></div>
+                  <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0 group-hover:bg-zinc-100 dark:group-hover:bg-zinc-700 transition-colors">
+                    <div className="w-2.5 h-2.5 rounded-full border-2 border-zinc-300 dark:border-zinc-500"></div>
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                    <p className="text-xs font-bold text-zinc-400 dark:text-muted-foreground uppercase tracking-wider mb-0.5">
                       Check-out
                     </p>
-                    <p className="text-lg font-semibold text-zinc-900">
+                    <p className="text-lg font-semibold text-zinc-900 dark:text-foreground">
                       {toDate ? formatCheckOutDate() : 'TBD'}
                     </p>
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-zinc-500 dark:text-muted-foreground">
                       {toDate ? `${formatCheckOutYear()} • Before 11:00 AM` : 'Date not set'}
                     </p>
                   </div>
@@ -295,8 +295,8 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
           </div>
 
           {/* Footer Actions */}
-          <div className="bg-zinc-50 px-6 py-4 border-t border-zinc-100 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <div className="bg-zinc-50 dark:bg-zinc-900/50 px-6 py-4 border-t border-zinc-100 dark:border-border flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-muted-foreground">
               <Clock className="w-3.5 h-3.5" />
               <span>{isBooking ? 'Booking' : 'Estimate'} created on {createdAt ? formatCreatedDate() : 'Unknown date'}</span>
             </div>
@@ -304,7 +304,7 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
             <button 
               onClick={handleInviteAccept} 
               disabled={isLoading}
-              className="w-full md:w-auto text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 h-10 flex items-center justify-center gap-2 px-6 rounded-md shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full md:w-auto text-sm font-semibold text-white bg-teal-600 dark:bg-teal-500 hover:bg-teal-700 dark:hover:bg-teal-600 h-10 flex items-center justify-center gap-2 px-6 rounded-md shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {!isLoading ? (
                 <>
