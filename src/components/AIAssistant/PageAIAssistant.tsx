@@ -642,52 +642,11 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             <Calendar className="h-3 w-3 mr-1.5" />
             My Bookings
           </Button>
-          {insights?.estimateLink && (
+          {insights?.estimateLink && !restoredEstimate && (
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                // Restore estimate directly in bookings page
-                try {
-                  const response = await fetch(`/api/estimates/${insights.estimateLink.estimateId}`)
-                  if (response.ok) {
-                    const estimate = await response.json()
-                    setRestoredEstimate(estimate)
-                    estimateRestoredRef.current = true
-                    
-                    // Create restoration message
-                    const post = typeof estimate.post === 'object' ? estimate.post : null
-                    const postTitle = post?.title || 'your property'
-                    const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
-                    const toDate = estimate.toDate ? new Date(estimate.toDate) : null
-                    
-                    let restorationMessage = `I've restored your estimate for ${postTitle}.`
-                    
-                    if (fromDate && toDate) {
-                      const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
-                      const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                      restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
-                    }
-                    
-                    if (estimate.total) {
-                      restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
-                    }
-                    
-                    restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
-                    
-                    setLastResponse(restorationMessage)
-                    
-                    // Update URL to include restoreEstimate parameter
-                    const url = new URL(window.location.href)
-                    url.searchParams.set('restoreEstimate', insights.estimateLink.estimateId)
-                    window.history.replaceState({}, '', url.toString())
-                  }
-                } catch (error) {
-                  console.error('Error restoring estimate:', error)
-                  // Fallback to navigation
-                  router.push(`/posts/${insights.estimateLink.postSlug}?restoreEstimate=${insights.estimateLink.estimateId}`)
-                }
-              }}
+              onClick={() => handleRestoreEstimate(insights.estimateLink.estimateId)}
               className="text-xs"
             >
               <Sparkles className="h-3 w-3 mr-1.5" />
@@ -1033,35 +992,83 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
   const isBookingsContext = context?.type === 'bookings'
   
   // Handle estimate restoration for bookings context
+  // Auto-restore if there's a latest estimate (either from URL param or latest estimate)
   useEffect(() => {
-    if (isBookingsContext && context?.data?.latestEstimate && context?.data?.restoreEstimate && !estimateRestoredRef.current) {
-      const estimate = context.data.latestEstimate
-      estimateRestoredRef.current = true
-      setRestoredEstimate(estimate)
+    if (isBookingsContext && context?.data?.latestEstimate && !estimateRestoredRef.current) {
+      // Check if we should restore (either explicit flag or just having a latest estimate)
+      const shouldRestore = context?.data?.restoreEstimate || 
+                           (context?.data?.latestEstimate && !lastResponse) // Auto-restore if no response yet
       
-      // Create restoration message
-      const post = typeof estimate.post === 'object' ? estimate.post : null
-      const postTitle = post?.title || 'your property'
-      const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
-      const toDate = estimate.toDate ? new Date(estimate.toDate) : null
-      
-      let restorationMessage = `Welcome back! I've restored your estimate for ${postTitle}.`
-      
-      if (fromDate && toDate) {
-        const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
-        const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
+      if (shouldRestore) {
+        const estimate = context.data.latestEstimate
+        estimateRestoredRef.current = true
+        setRestoredEstimate(estimate)
+        
+        // Create restoration message
+        const post = typeof estimate.post === 'object' ? estimate.post : null
+        const postTitle = post?.title || 'your property'
+        const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
+        const toDate = estimate.toDate ? new Date(estimate.toDate) : null
+        
+        let restorationMessage = `Welcome back! I've restored your estimate for ${postTitle}.`
+        
+        if (fromDate && toDate) {
+          const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
+          const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
+        }
+        
+        if (estimate.total) {
+          restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
+        }
+        
+        restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
+        
+        setLastResponse(restorationMessage)
       }
-      
-      if (estimate.total) {
-        restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
-      }
-      
-      restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
-      
-      setLastResponse(restorationMessage)
     }
-  }, [isBookingsContext, context?.data?.latestEstimate, context?.data?.restoreEstimate])
+  }, [isBookingsContext, context?.data?.latestEstimate, context?.data?.restoreEstimate, lastResponse])
+  
+  // Function to restore estimate manually
+  const handleRestoreEstimate = useCallback(async (estimateId: string) => {
+    try {
+      const response = await fetch(`/api/estimates/${estimateId}`)
+      if (response.ok) {
+        const estimate = await response.json()
+        setRestoredEstimate(estimate)
+        estimateRestoredRef.current = true
+        
+        // Create restoration message
+        const post = typeof estimate.post === 'object' ? estimate.post : null
+        const postTitle = post?.title || 'your property'
+        const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
+        const toDate = estimate.toDate ? new Date(estimate.toDate) : null
+        
+        let restorationMessage = `I've restored your estimate for ${postTitle}.`
+        
+        if (fromDate && toDate) {
+          const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
+          const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
+        }
+        
+        if (estimate.total) {
+          restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
+        }
+        
+        restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
+        
+        setLastResponse(restorationMessage)
+        
+        // Update URL to include restoreEstimate parameter
+        const url = new URL(window.location.href)
+        url.searchParams.set('restoreEstimate', estimateId)
+        window.history.replaceState({}, '', url.toString())
+      }
+    } catch (error) {
+      console.error('Error restoring estimate:', error)
+    }
+  }, [])
   if (variant === 'primary' && (isManageContext || isBookingsContext)) {
     return (
       <div className={cn("w-full", className)}>
@@ -1289,6 +1296,15 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           </div>
         ) : isBookingsContext ? (
           <div className="flex flex-wrap items-center justify-center gap-3">
+            {context?.data?.insights?.estimateLink && !restoredEstimate && (
+              <button
+                onClick={() => handleRestoreEstimate(context.data.insights.estimateLink.estimateId)}
+                className="text-sm font-medium leading-5 text-[#0f172a] bg-[#f0fdfa] cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#ccfbf1] rounded-full px-4 py-2 hover:bg-[#ccfbf1] hover:border-[#99f6e4]"
+              >
+                <Sparkles className="h-4 w-4 text-[#0d9488]" />
+                Restore Estimate
+              </button>
+            )}
             <button
               onClick={() => handleActionClick('Show my upcoming bookings')}
               className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"

@@ -13,6 +13,7 @@ interface BookingsAIAssistantProps {
 export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: BookingsAIAssistantProps) {
   const [insights, setInsights] = useState<any>(null)
   const [latestEstimate, setLatestEstimate] = useState<any>(null)
+  const [shouldRestoreEstimate, setShouldRestoreEstimate] = useState(false)
   const [loading, setLoading] = useState(true)
   const estimateRestoredRef = useRef(false)
   const searchParams = useSearchParams()
@@ -79,6 +80,15 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
         }
         
         setInsights(transformedInsights)
+        
+        // Auto-restore if there's a latest estimate
+        // Set restoreEstimate flag if we have an estimate (either from URL param or latest)
+        if (estimateToRestore) {
+          setShouldRestoreEstimate(true)
+          if (restoreEstimateId) {
+            estimateRestoredRef.current = true
+          }
+        }
       } catch (error) {
         console.error('Error fetching insights:', error)
       } finally {
@@ -102,7 +112,7 @@ export function BookingsAIAssistant({ userId, upcomingBookings, pastBookings }: 
           },
           insights: insights,
           latestEstimate: latestEstimate, // Pass latest estimate for restoration
-          restoreEstimate: estimateRestoredRef.current, // Flag to indicate restoration
+          restoreEstimate: shouldRestoreEstimate, // Flag to indicate restoration
         },
       }}
       variant="primary"
