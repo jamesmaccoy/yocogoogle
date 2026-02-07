@@ -498,28 +498,34 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const loadUnavailableDates = async () => {
     // Only load if user is logged in (endpoint requires authentication)
     if (!isLoggedIn) {
+      console.log('📅 Skipping unavailable dates load: user not logged in')
       return
     }
     
     try {
+      console.log('📅 Loading unavailable dates for postId:', postId)
       const response = await fetch(`/api/bookings/unavailable-dates?postId=${postId}`)
       if (response.ok) {
         const data = await response.json()
         const dates = data.unavailableDates || []
         setUnavailableDates(dates)
         // Debug logging
-        if (dates.length > 0) {
-          console.log('📅 Loaded unavailable dates:', {
-            postId,
-            count: dates.length,
-            sampleDates: dates.slice(0, 5).map((d: string) => normalizeDateToString(d)),
-          })
-        }
+        console.log('📅 Loaded unavailable dates:', {
+          postId,
+          count: dates.length,
+          rawDates: dates.slice(0, 10),
+          normalizedDates: dates.slice(0, 10).map((d: string) => normalizeDateToString(d)),
+        })
       } else if (response.status === 401) {
         // User not authenticated - this is expected for logged-out users
         console.log('📅 Unavailable dates require authentication')
       } else {
-        console.error('Failed to load unavailable dates:', response.status, response.statusText)
+        const errorText = await response.text().catch(() => 'Unknown error')
+        console.error('Failed to load unavailable dates:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+        })
       }
     } catch (error) {
       console.error('Error loading unavailable dates:', error)
@@ -1763,6 +1769,11 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     
     switch (action) {
       case 'select_dates':
+        // Reload unavailable dates when opening the date picker to ensure they're up-to-date
+        if (isLoggedIn) {
+          loadUnavailableDates()
+        }
+        
         // If dates are already populated, acknowledge them
         if (startDate && endDate) {
           const acknowledgmentMessage: Message = {
@@ -2616,7 +2627,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
       const { packages: suggestedPackages } = message.data || { packages: [] }
       return (
         <>
-          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-6 bg-zinc-100 text-slate-900 mb-4">
+          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-6 bg-zinc-800 text-slate-100 mb-4">
             {message.content || 'Here are the available packages:'}
           </div>
           <motion.div
@@ -2629,7 +2640,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               <motion.div
                 key={`${pkg.id}-${pkgIndex}`}
                 whileHover={{ scale: 1.02 }}
-                className="cursor-pointer bg-white text-slate-950 shadow-sm border border-zinc-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow group mb-4"
+                className="cursor-pointer bg-zinc-800 text-slate-100 shadow-sm border border-zinc-700 rounded-xl overflow-hidden hover:shadow-md transition-shadow group mb-4"
                 onClick={() => {
                   setSelectedPackage(pkg)
                   const confirmMessage: Message = {
@@ -2640,30 +2651,30 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                   appendMessageToThread(activeThreadRef.current, confirmMessage)
                 }}
               >
-                <div className="p-5 border-b border-zinc-100 bg-gradient-to-br from-teal-50/50 to-transparent">
+                <div className="p-5 border-b border-zinc-700 bg-gradient-to-br from-teal-900/20 to-transparent">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h3 className="text-base font-semibold text-slate-900">
+                      <h3 className="text-base font-semibold text-slate-100">
                         {pkg.name}
                       </h3>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-slate-400 mt-1">
                         {pkg.description}
                       </p>
                     </div>
                     <div className="text-right">
-                      <div className="text-xl font-bold text-teal-600">
+                      <div className="text-xl font-bold text-teal-400">
                         R{pkg.baseRate || calculateTotal(baseRate, duration, pkg.multiplier).toFixed(0)}
                       </div>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-slate-500">
                         {pkg.baseRate ? 'Fixed price' : pkg.multiplier === 1 ? 'Base rate' : `${pkg.multiplier}x multiplier`}
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="p-4 bg-white">
+                <div className="p-4 bg-zinc-800">
                   <div className="space-y-2">
                     {pkg.features.slice(0, 3).map((feature, idx) => (
-                      <div key={idx} className="flex items-center text-xs text-slate-600">
+                      <div key={idx} className="flex items-center text-xs text-slate-300">
                         <span className="w-1.5 h-1.5 bg-teal-400 rounded-full mr-2"></span>
                         {typeof feature === 'string' ? feature : (feature as any).feature}
                       </div>
@@ -2690,8 +2701,8 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
         console.warn('⚠️ date_suggestion message has no suggestedDates')
         // Fall back to text message if no suggestions
         return (
-          <div key={index} className="bg-muted p-3 rounded-lg">
-            <p className="text-sm">{message.content}</p>
+          <div key={index} className="bg-zinc-800 p-3 rounded-lg">
+            <p className="text-sm text-slate-100">{message.content}</p>
           </div>
         )
       }
@@ -2748,19 +2759,26 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
     }
     
     if (message.type === 'date_selection') {
+      // Log when date selection UI is rendered to verify unavailableDates are loaded
+      console.log('📅 Date selection UI rendered:', {
+        unavailableDatesCount: unavailableDates.length,
+        unavailableDates: unavailableDates.slice(0, 5),
+        isLoggedIn,
+      })
+      
       return (
         <div key={index} className="space-y-4">
-          <div className="bg-muted p-3 rounded-lg">
-            <p className="text-sm">{message.content}</p>
+          <div className="bg-zinc-800 p-3 rounded-lg">
+            <p className="text-sm text-slate-100">{message.content}</p>
             {startDate && endDate && (
-              <p className="text-xs text-muted-foreground mt-2">
+              <p className="text-xs text-slate-400 mt-2">
                 Current selection: {format(startDate, 'MMM dd')} - {format(endDate, 'MMM dd, yyyy')} ({duration} {duration === 1 ? 'night' : 'nights'})
               </p>
             )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Start Date</label>
+              <label className="text-xs text-slate-400 mb-1 block">Start Date</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -2796,22 +2814,40 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       }
                     }}
                     disabled={(date) => {
+                      // Normalize to UTC midnight for consistent comparison with unavailable dates
                       const today = new Date()
-                      today.setHours(0, 0, 0, 0)
-                      const checkDate = new Date(date)
-                      checkDate.setHours(0, 0, 0, 0)
+                      const todayUTC = new Date(Date.UTC(
+                        today.getUTCFullYear(),
+                        today.getUTCMonth(),
+                        today.getUTCDate()
+                      ))
+                      
+                      const checkDateUTC = new Date(Date.UTC(
+                        date.getUTCFullYear(),
+                        date.getUTCMonth(),
+                        date.getUTCDate()
+                      ))
                       
                       // Disable past dates
-                      if (checkDate < today) return true
+                      if (checkDateUTC < todayUTC) return true
                       
-                      // Normalize date to YYYY-MM-DD format for comparison
-                      const dateStr = normalizeDateToString(checkDate)
+                      // Normalize date to YYYY-MM-DD format for comparison (UTC)
+                      const dateStr = normalizeDateToString(checkDateUTC)
                       
                       // Check if this date is unavailable by comparing date parts
                       const isUnavailable = unavailableDates.some((unavailableDateStr) => {
                         const unavailableDatePart = normalizeDateToString(unavailableDateStr)
                         return unavailableDatePart === dateStr
                       })
+                      
+                      // Debug logging for unavailable dates check
+                      if (isUnavailable && unavailableDates.length > 0) {
+                        console.log('📅 Calendar: Date disabled as unavailable', {
+                          checkDate: dateStr,
+                          unavailableDatesCount: unavailableDates.length,
+                          sampleUnavailableDates: unavailableDates.slice(0, 3).map(d => normalizeDateToString(d)),
+                        })
+                      }
                       
                       if (isUnavailable) return true
                       
@@ -2822,7 +2858,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               </Popover>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">End Date</label>
+              <label className="text-xs text-slate-400 mb-1 block">End Date</label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -2878,24 +2914,36 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       }
                     }}
                     disabled={(date) => {
+                      // Normalize to UTC midnight for consistent comparison with unavailable dates
                       const today = new Date()
-                      today.setHours(0, 0, 0, 0)
-                      const checkDate = new Date(date)
-                      checkDate.setHours(0, 0, 0, 0)
+                      const todayUTC = new Date(Date.UTC(
+                        today.getUTCFullYear(),
+                        today.getUTCMonth(),
+                        today.getUTCDate()
+                      ))
+                      
+                      const checkDateUTC = new Date(Date.UTC(
+                        date.getUTCFullYear(),
+                        date.getUTCMonth(),
+                        date.getUTCDate()
+                      ))
                       
                       // Disable if no start date selected
                       if (!startDate) return true
                       
                       // Disable past dates
-                      if (checkDate < today) return true
+                      if (checkDateUTC < todayUTC) return true
                       
-                      // Disable dates before or equal to start date
-                      const startDateOnly = new Date(startDate)
-                      startDateOnly.setHours(0, 0, 0, 0)
-                      if (checkDate <= startDateOnly) return true
+                      // Disable dates before or equal to start date (normalize startDate to UTC)
+                      const startDateUTC = new Date(Date.UTC(
+                        startDate.getUTCFullYear(),
+                        startDate.getUTCMonth(),
+                        startDate.getUTCDate()
+                      ))
+                      if (checkDateUTC <= startDateUTC) return true
                       
-                      // Normalize date to YYYY-MM-DD format for comparison
-                      const dateStr = normalizeDateToString(checkDate)
+                      // Normalize date to YYYY-MM-DD format for comparison (UTC)
+                      const dateStr = normalizeDateToString(checkDateUTC)
                       
                       // Check if this date is unavailable by comparing date parts
                       const isUnavailable = unavailableDates.some((unavailableDateStr) => {
@@ -2918,7 +2966,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
           {/* Show suggested dates when unavailable */}
           {suggestedDates.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Suggested available dates:</p>
+              <p className="text-xs text-slate-400">Suggested available dates:</p>
               <Suggestions>
                 {suggestedDates.map((suggestion, idx) => {
                   const suggestionStart = new Date(suggestion.startDate)
@@ -2949,7 +2997,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
             </div>
           )}
           <div className="flex gap-2 items-center">
-            <div className="flex items-center gap-2 px-3 py-1.5 border rounded-md">
+            <div className="flex items-center gap-2 px-3 py-1.5 border border-zinc-700 rounded-md bg-zinc-800">
               <Switch
                 id="per-hour-toggle"
                 checked={showPerHourPackages}
@@ -2974,7 +3022,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                   }
                 }}
               />
-              <Label htmlFor="per-hour-toggle" className="text-xs cursor-pointer">
+              <Label htmlFor="per-hour-toggle" className="text-xs cursor-pointer text-slate-300">
                 per hour
               </Label>
             </div>
@@ -3019,7 +3067,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
     // Default text message rendering with Magic Patterns styling
     return (
       <div
-        className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'bg-slate-900 text-white rounded-tr-sm' : 'bg-zinc-100 text-slate-900 rounded-tl-sm'}`}
+        className={`rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === 'user' ? 'bg-slate-100 text-slate-900 rounded-tr-sm' : 'bg-zinc-800 text-slate-100 rounded-tl-sm'}`}
       >
         {message.content || 'No content'}
       </div>
@@ -3209,15 +3257,15 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
   }, [postId, currentUser?.id])
   
   return (
-    <div className={cn("w-full max-w-[672px] mx-auto bg-zinc-50 text-slate-950 shadow-sm border border-zinc-200 rounded-lg overflow-hidden flex flex-col h-[800px]", className)}>
+    <div className={cn("w-full max-w-[672px] mx-auto bg-zinc-900 text-slate-100 shadow-sm border border-zinc-700 rounded-lg overflow-hidden flex flex-col h-[800px]", className)}>
       {/* Header */}
-      <div className="flex flex-col border-b border-zinc-200 p-6 bg-white z-10">
+      <div className="flex flex-col border-b border-zinc-700 p-6 bg-zinc-800 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-teal-50 rounded-md">
-              <Bot className="h-5 w-5 text-teal-500" />
+            <div className="p-1.5 bg-teal-900/20 rounded-md">
+              <Bot className="h-5 w-5 text-teal-400" />
             </div>
-            <h3 className="text-xl font-semibold tracking-tight text-slate-900">
+            <h3 className="text-xl font-semibold tracking-tight text-slate-100">
               AI Booking Assistant
             </h3>
           </div>
@@ -3242,38 +3290,38 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 estimateLoadedRef.current = false
                 journeyLoadedRef.current = false
               }}
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 bg-transparent cursor-pointer px-3 py-1.5 rounded-md transition-colors hover:bg-zinc-100"
+              className="text-xs font-medium text-slate-400 hover:text-slate-100 bg-transparent cursor-pointer px-3 py-1.5 rounded-md transition-colors hover:bg-zinc-700"
             >
               Start Over
             </button>
           )}
         </div>
-        <p className="text-sm text-slate-500 mt-2">
+        <p className="text-sm text-slate-400 mt-2">
           Get personalized recommendations and book your perfect stay
         </p>
       </div>
       
       {/* Chat Area */}
-      <div className="flex-1 overflow-hidden relative bg-white">
+      <div className="flex-1 overflow-hidden relative bg-zinc-900">
         <div className="h-full overflow-y-auto scroll-smooth p-6 space-y-6">
           {/* Quick Actions */}
           <div className="flex flex-wrap gap-2">
             <motion.button
-              whileHover={{ scale: 1.02, backgroundColor: '#f4f4f5' }}
+              whileHover={{ scale: 1.02, backgroundColor: '#3f3f46' }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleQuickAction('select_dates')}
-              className="text-xs font-medium text-slate-700 bg-white cursor-pointer flex items-center h-8 border border-zinc-200 px-3 rounded-full shadow-sm transition-colors"
+              className="text-xs font-medium text-slate-300 bg-zinc-800 cursor-pointer flex items-center h-8 border border-zinc-700 px-3 rounded-full shadow-sm transition-colors"
             >
-              <Calendar className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+              <Calendar className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
               Select Dates
             </motion.button>
             <motion.button
-              whileHover={{ scale: 1.02, backgroundColor: '#f4f4f5' }}
+              whileHover={{ scale: 1.02, backgroundColor: '#3f3f46' }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleQuickAction('smart_action')}
-              className="text-xs font-medium text-slate-700 bg-white cursor-pointer flex items-center h-8 border border-zinc-200 px-3 rounded-full shadow-sm transition-colors"
+              className="text-xs font-medium text-slate-300 bg-zinc-800 cursor-pointer flex items-center h-8 border border-zinc-700 px-3 rounded-full shadow-sm transition-colors"
             >
-              <Sparkles className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
+              <Sparkles className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
               {startDate && endDate ? 'Get Recommendations' : 'Help Me Choose'}
             </motion.button>
           </div>
@@ -3290,7 +3338,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                     className={`flex gap-4 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
                   >
                     <div
-                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.role === 'assistant' ? 'bg-teal-50 text-teal-600' : 'bg-slate-100 text-slate-600'}`}
+                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${message.role === 'assistant' ? 'bg-teal-900/20 text-teal-400' : 'bg-zinc-700 text-slate-300'}`}
                     >
                       {message.role === 'assistant' ? (
                         <Bot className="h-5 w-5" />
@@ -3306,11 +3354,11 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       
                       {checkpoint && (
                         <div className="mt-6 mb-2 flex items-center gap-3 w-full opacity-60">
-                          <Bookmark className="h-3.5 w-3.5 text-slate-400" />
-                          <span className="text-xs text-slate-500 font-medium">
+                          <Bookmark className="h-3.5 w-3.5 text-slate-500" />
+                          <span className="text-xs text-slate-400 font-medium">
                             Checkpoint restored
                           </span>
-                          <div className="h-px flex-1 bg-zinc-200"></div>
+                          <div className="h-px flex-1 bg-zinc-700"></div>
                         </div>
                       )}
                     </div>
@@ -3326,10 +3374,10 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               animate={{ opacity: 1 }}
               className="flex gap-4"
             >
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-900/20 text-teal-400 flex items-center justify-center">
                 <Bot className="h-5 w-5" />
               </div>
-              <div className="bg-zinc-100 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
+              <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
                 <motion.div
                   animate={{ scale: [1, 1.2, 1] }}
                   transition={{ repeat: Infinity, duration: 1, delay: 0 }}
@@ -3352,10 +3400,10 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
       </div>
         
       {/* Input Area */}
-      <div className="border-t border-zinc-200 bg-white p-4">
+      <div className="border-t border-zinc-700 bg-zinc-800 p-4">
         {!isLoggedIn && (
-          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-sm text-amber-800 mb-2">
+          <div className="mb-4 p-3 bg-amber-900/20 border border-amber-800 rounded-lg">
+            <p className="text-sm text-amber-300 mb-2">
               To use the AI assistant and complete bookings, please log in.
             </p>
             <Button size="sm" asChild>
@@ -3369,20 +3417,20 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4 bg-teal-50/50 border border-teal-100 rounded-lg p-3 flex items-center justify-between"
+            className="mb-4 bg-teal-900/20 border border-teal-800 rounded-lg p-3 flex items-center justify-between"
           >
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-900">
+                <span className="text-sm font-medium text-slate-100">
                   {selectedPackage.name}
                 </span>
                 {areDatesAvailable && (
-                  <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-medium">
+                  <span className="text-xs text-green-400 bg-green-900/20 px-1.5 py-0.5 rounded font-medium">
                     Available
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {startDate && endDate 
                   ? `${format(startDate, 'MMM dd')} - ${format(endDate, 'MMM dd, yyyy')} • ${duration} ${duration === 1 ? 'night' : 'nights'}`
                   : 'Select dates to see pricing'}
@@ -3391,7 +3439,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
             <div className="flex items-center gap-3">
               {totalWithAddons && (
                 <div className="text-right mr-2">
-                  <div className="text-sm font-bold text-teal-600">R{totalWithAddons.toFixed(0)}</div>
+                  <div className="text-sm font-bold text-teal-400">R{totalWithAddons.toFixed(0)}</div>
                   <div className="text-[10px] text-slate-400">
                     {selectedAddons.size > 0 ? `Total (+${selectedAddons.size} addon${selectedAddons.size > 1 ? 's' : ''})` : 'Total'}
                   </div>
@@ -3402,14 +3450,14 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                   <button 
                     onClick={handleBooking}
                     disabled={isBooking || !areDatesAvailable || isCheckingAvailability}
-                    className="text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-xs font-medium text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Book Now
                   </button>
                   <button 
                     onClick={handleGoToEstimate}
                     disabled={isCreatingEstimate}
-                    className="text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-zinc-200 hover:bg-zinc-50 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-xs font-medium text-slate-300 hover:text-slate-100 bg-zinc-700 border border-zinc-600 hover:bg-zinc-600 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Share
                   </button>
@@ -3423,13 +3471,13 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
         {selectedPackage && startDate && endDate && (
           <div className="mb-4 space-y-2">
             {isLoadingAddons ? (
-              <div className="flex items-center justify-center p-3 bg-white border border-zinc-200 rounded-lg">
-                <Loader2 className="h-4 w-4 animate-spin text-teal-500 mr-2" />
-                <span className="text-xs text-slate-500">Finding relevant addons...</span>
+              <div className="flex items-center justify-center p-3 bg-zinc-800 border border-zinc-700 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin text-teal-400 mr-2" />
+                <span className="text-xs text-slate-400">Finding relevant addons...</span>
               </div>
             ) : suggestedAddons.length > 0 ? (
               <>
-                <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
                   Suggested Add-ons
                 </div>
                 {suggestedAddons.map((addon) => {
@@ -3440,22 +3488,22 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 }}
-                      className="flex items-center justify-between p-3 bg-white border border-zinc-200 rounded-lg hover:border-zinc-300 transition-colors"
+                      className="flex items-center justify-between p-3 bg-zinc-800 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
                     >
                       <div className="flex items-center gap-3 flex-1">
-                        <div className="p-2 bg-teal-50 rounded-md">
-                          <Package className="h-4 w-4 text-teal-600" />
+                        <div className="p-2 bg-teal-900/20 rounded-md">
+                          <Package className="h-4 w-4 text-teal-400" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-slate-900">
+                          <div className="text-sm font-medium text-slate-100">
                             {addon.name}
                           </div>
                           {addon.description && (
-                            <div className="text-xs text-slate-500 line-clamp-1">
+                            <div className="text-xs text-slate-400 line-clamp-1">
                               {addon.description}
                             </div>
                           )}
-                          <div className="text-xs text-slate-500 mt-0.5">
+                          <div className="text-xs text-slate-400 mt-0.5">
                             +R{addon.baseRate.toFixed(0)}
                           </div>
                         </div>
@@ -3480,7 +3528,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                           }
                           appendMessageToThread(activeThreadRef.current, message)
                         }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ml-3 ${isSelected ? 'bg-teal-500' : 'bg-zinc-200'}`}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ml-3 ${isSelected ? 'bg-teal-500' : 'bg-zinc-600'}`}
                       >
                         <motion.span
                           layout
@@ -3509,7 +3557,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                 return (
                   <motion.button
                     key={i}
-                    whileHover={{ scale: 1.05, backgroundColor: '#f0fdfa', borderColor: '#99f6e4' }}
+                    whileHover={{ scale: 1.05, backgroundColor: '#134e4a', borderColor: '#2dd4bf' }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => {
                       const newStartDate = suggestion.startDate
@@ -3534,10 +3582,10 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                         appendMessageToThread(activeThreadRef.current, confirmMessage)
                       })
                     }}
-                    className="text-xs font-medium text-slate-600 bg-white border border-zinc-200 px-3 py-2 rounded-full transition-colors whitespace-nowrap hover:text-teal-700 flex flex-col items-center gap-0.5"
+                    className="text-xs font-medium text-slate-300 bg-zinc-800 border border-zinc-700 px-3 py-2 rounded-full transition-colors whitespace-nowrap hover:text-teal-400 flex flex-col items-center gap-0.5"
                   >
                     <span className="font-semibold">{dateRange}</span>
-                    <span className="text-[10px] text-slate-400">{dayRange}</span>
+                    <span className="text-[10px] text-slate-500">{dayRange}</span>
                   </motion.button>
                 )
               })}
@@ -3547,7 +3595,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
 
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="relative">
-          <div className="relative flex items-end gap-2 bg-white border border-zinc-300 rounded-xl px-3 py-3 shadow-sm focus-within:ring-2 focus-within:ring-teal-500/20 focus-within:border-teal-500 transition-all">
+          <div className="relative flex items-end gap-2 bg-zinc-800 border border-zinc-600 rounded-xl px-3 py-3 shadow-sm focus-within:ring-2 focus-within:ring-teal-500/20 focus-within:border-teal-500 transition-all">
             <textarea
               ref={textareaRef}
               value={input}
@@ -3564,7 +3612,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                   ? "Ask me anything about booking..."
                   : "Ask about packages (log in for full AI assistance)..."}
               disabled={isLoading || isListening || !isLoggedIn}
-              className="w-full max-h-[120px] min-h-[24px] bg-transparent border-0 p-0 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-0 resize-none leading-6"
+              className="w-full max-h-[120px] min-h-[24px] bg-transparent border-0 p-0 text-sm text-slate-100 placeholder:text-slate-500 focus:ring-0 resize-none leading-6"
               rows={1}
               style={{ height: 'auto', minHeight: '24px' }}
             />
@@ -3572,20 +3620,20 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
               <button
                 type="button"
                 onClick={isListening ? stopListening : startListening}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-zinc-100 transition-colors"
+                className="text-slate-400 hover:text-slate-300 p-1.5 rounded-md hover:bg-zinc-700 transition-colors"
               >
                 {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </button>
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading || isListening || !isLoggedIn}
-                className={`p-1.5 rounded-md transition-all ${input.trim() && !isLoading && !isListening && isLoggedIn ? 'bg-teal-500 text-white shadow-sm hover:bg-teal-600' : 'bg-zinc-100 text-zinc-300 cursor-not-allowed'}`}
+                className={`p-1.5 rounded-md transition-all ${input.trim() && !isLoading && !isListening && isLoggedIn ? 'bg-teal-500 text-white shadow-sm hover:bg-teal-600' : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'}`}
               >
                 <Send className="h-4 w-4" />
               </button>
             </div>
           </div>
-          <div className="text-[10px] text-center text-slate-400 mt-2">
+          <div className="text-[10px] text-center text-slate-500 mt-2">
             AI can make mistakes. Please double check important info.
           </div>
         </form>
