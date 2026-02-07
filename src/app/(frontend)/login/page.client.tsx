@@ -59,7 +59,7 @@ export default function LoginPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm">
             <Command className="h-5 w-5" />
           </div>
-          Retro pop up market down in the studio
+          Per hour bookings for your next project
         </div>
 
         {/* Testimonial */}

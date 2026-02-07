@@ -121,10 +121,17 @@ export const checkAvailability: Endpoint = {
       // Find all bookings for this post that overlap with the requested range
       // Use ISO date strings for proper comparison with database ISO timestamps
       // The overlap condition: booking.fromDate < request.endDate AND booking.toDate > request.startDate
+      // Exclude cancelled bookings - they free up dates for other customers
       const whereConditions: Record<string, any>[] = [
         { post: { equals: resolvedPostId } },
         { fromDate: { less_than: endISO } },
         { toDate: { greater_than: startISO } },
+        {
+          // Exclude cancelled bookings - they free up dates for other customers
+          paymentStatus: {
+            not_equals: 'cancelled',
+          },
+        },
       ]
 
       if (bookingId && typeof bookingId === 'string') {
@@ -148,6 +155,7 @@ export const checkAvailability: Endpoint = {
           fromDate: true,
           toDate: true,
           id: true,
+          paymentStatus: true,
         },
         depth: 0,
       })
@@ -160,6 +168,7 @@ export const checkAvailability: Endpoint = {
           id: b.id,
           fromDate: b.fromDate,
           toDate: b.toDate,
+          paymentStatus: b.paymentStatus,
           selectedPackage: b.selectedPackage,
           packageId: resolveRelationshipId(b?.selectedPackage?.package),
           hasPackage: !!resolveRelationshipId(b?.selectedPackage?.package),
