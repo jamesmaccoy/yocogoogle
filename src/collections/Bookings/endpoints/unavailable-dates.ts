@@ -245,6 +245,18 @@ export const unavailableDates: Endpoint = {
       })
 
       datePackageBookings.forEach((packageMap, dateISO) => {
+        // For calendar display purposes, mark ALL dates with ANY active bookings as unavailable
+        // This ensures the calendar accurately reflects when the property is booked
+        // regardless of package concurrency limits
+        
+        // Check if there are any bookings on this date (property-level or package-level)
+        const hasAnyBookings = packageMap.size > 0
+        
+        if (!hasAnyBookings) {
+          // No bookings - date is available
+          return
+        }
+        
         // Check if there are property-level bookings (these block everything)
         if (packageMap.has('property-level')) {
           console.log(`❌ Date ${dateISO} unavailable: property-level booking`)
@@ -252,62 +264,16 @@ export const unavailableDates: Endpoint = {
           return
         }
 
-        // If there are no packages configured, dates with bookings are unavailable
-        // (this shouldn't normally happen, but handle it gracefully)
-        if (packageConcurrencyMap.size === 0) {
-          // If there are any bookings and no packages, mark as unavailable
-          if (packageMap.size > 0) {
-            console.log(`❌ Date ${dateISO} unavailable: bookings exist but no packages configured`)
-            unavailableDates.push(dateISO)
-          }
-          return
-        }
-
-        // More conservative approach: A date is unavailable if:
-        // 1. ANY package without simultaneous bookings (maxConcurrentBookings: 1) is full, OR
-        // 2. ALL packages have reached their concurrency limits
-        // This ensures dates are marked unavailable when non-simultaneous bookings are present
-        let hasAnyNonSimultaneousPackageFull = false
-        let hasAvailablePackage = false
-        const packageStatus: Record<string, { bookings: number; limit: number; available: boolean; isNonSimultaneous: boolean }> = {}
+        // For calendar display: Mark any date with bookings as unavailable
+        // This provides a clear visual indication that the property is booked
+        // Package-specific availability is handled by check-availability endpoint
+        const totalBookingsOnDate = Array.from(packageMap.values()).reduce((sum, count) => sum + count, 0)
         
-        // Check all packages for this post
-        for (const [packageId, limit] of packageConcurrencyMap.entries()) {
-          const bookingCount = packageMap.get(packageId) || 0
-          const isAvailable = bookingCount < limit
-          const isNonSimultaneous = limit === 1
-          packageStatus[packageId] = { 
-            bookings: bookingCount, 
-            limit, 
-            available: isAvailable,
-            isNonSimultaneous 
-          }
-          
-          // Check if non-simultaneous packages (limit: 1) are full
-          if (isNonSimultaneous && !isAvailable) {
-            hasAnyNonSimultaneousPackageFull = true
-          }
-          
-          if (isAvailable) {
-            // This package still has availability
-            hasAvailablePackage = true
-          }
-        }
-
-        // Mark date as unavailable if:
-        // 1. Any non-simultaneous package (limit: 1) is full, OR
-        // 2. All packages are full
-        if (hasAnyNonSimultaneousPackageFull || !hasAvailablePackage) {
-          const reason = hasAnyNonSimultaneousPackageFull 
-            ? 'non-simultaneous package full' 
-            : 'all packages full'
-          console.log(`❌ Date ${dateISO} unavailable: ${reason}`, packageStatus)
+        if (totalBookingsOnDate > 0) {
+          console.log(`❌ Date ${dateISO} unavailable: has ${totalBookingsOnDate} booking(s)`, {
+            bookingsByPackage: Object.fromEntries(packageMap),
+          })
           unavailableDates.push(dateISO)
-        } else {
-          // Log available dates for debugging (only first few)
-          if (unavailableDates.length < 5) {
-            console.log(`✅ Date ${dateISO} available:`, packageStatus)
-          }
         }
       })
 
