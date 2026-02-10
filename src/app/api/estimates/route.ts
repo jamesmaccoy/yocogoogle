@@ -887,6 +887,50 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Final fallback: Try direct database lookup by ID without post/enabled filters
+    // This ensures packages can be found even if filtered out by packageSettings
+    // This is important for non-subscribers who can see special/hosted packages
+    if (!pkg) {
+      try {
+        const directPackageResult = await payload.findByID({
+          collection: 'packages',
+          id: effectivePackageType,
+        })
+        
+        if (directPackageResult) {
+          const packagePostId = typeof directPackageResult.post === 'string' 
+            ? directPackageResult.post 
+            : directPackageResult.post?.id
+          
+          // Allow if post matches OR if we're updating an existing estimate
+          // This allows packages to be found even if they're filtered elsewhere
+          if (!postId || packagePostId === postId || existingEstimate) {
+            pkg = {
+              ...directPackageResult,
+              source: 'database'
+            }
+            multiplier = typeof pkg.multiplier === 'number' ? pkg.multiplier : 1
+            baseRate = typeof pkg.baseRate === 'number' ? pkg.baseRate : (postData?.baseRate || 150)
+            
+            // Check for custom name in packageSettings
+            if (postData?.packageSettings && Array.isArray(postData.packageSettings)) {
+              const packageSetting = postData.packageSettings.find((setting: any) => {
+                const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package
+                return pkgId === pkg.id
+              })
+              if (packageSetting?.customName) {
+                customName = packageSetting.customName
+              }
+            }
+            
+            console.log('Found package by direct ID lookup (fallback):', pkg.name)
+          }
+        }
+      } catch (error) {
+        console.log('Direct package lookup failed:', error)
+      }
+    }
+
     // If package not found but we have existing estimate with package info, preserve it
     if (!pkg && existingEstimate) {
       console.log('Package not found, but preserving existing package info from estimate')

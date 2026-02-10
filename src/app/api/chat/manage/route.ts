@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Create a tool for previewing package creation
     // @ts-ignore - AI SDK tool type inference issue
     const previewPackageTool = tool({
-      description: 'Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. MANDATORY: Use this IMMEDIATELY when user says "create", "make", "new package", mentions a price like "R300", or wants to create a package. DO NOT respond with text - call this tool first.',
+      description: '🚨 MANDATORY FIRST STEP: Preview a package before creating it. Shows a mock package card with all details filled in based on the user\'s request. ALWAYS guess missing values (baseRate, features, nights, etc.) so the preview is complete. CRITICAL: When user says "create", "make", "new package", mentions a price like "R300", or wants to create a package, you MUST call this tool IMMEDIATELY without ANY text response first. DO NOT ask questions. DO NOT explain. Just call this tool with intelligent guesses based on user input. If user provides ANY package details (name, price, description), extract them and call this tool immediately.',
       parameters: z.object({
         name: z.string().optional().describe('Package display name (include emoji if appropriate). If not provided, generate based on category and description.'),
         description: z.string().optional().describe('Detailed description of what the package offers. If not provided, generate based on category.'),
@@ -167,6 +167,16 @@ export async function POST(request: NextRequest) {
         // Use provided postId or default to first available
         const finalPostId = input.postId || postId || (posts.length > 0 ? posts[0].id : '')
 
+        // Validate postId exists
+        if (!finalPostId) {
+          console.warn('⚠️ No postId available for package preview:', {
+            inputPostId: input.postId,
+            contextPostId: postId,
+            postsAvailable: posts.length,
+            firstPostId: posts.length > 0 ? posts[0].id : null,
+          })
+        }
+
         // Return preview data with ALL values filled in
         return {
           name,
@@ -178,8 +188,9 @@ export async function POST(request: NextRequest) {
           baseRate: input.baseRate || defaults.baseRate,
           multiplier: input.multiplier || defaults.multiplier,
           features: input.features && input.features.length > 0 ? input.features : defaults.features,
-          postId: finalPostId,
+          postId: finalPostId, // CRITICAL: Always include postId in preview
           revenueCatId: input.revenueCatId || undefined,
+          yocoId: input.yocoId || undefined,
           isPreview: true,
         }
       },
@@ -188,7 +199,7 @@ export async function POST(request: NextRequest) {
     // Create a tool for actually creating the package
     // @ts-ignore - AI SDK tool type inference issue
     const createPackageTool = tool({
-      description: 'Create a package after the user has confirmed the preview. Only use this after previewPackageTool has been called and user confirmed. IMPORTANT: Always use this tool when the user confirms they want to create the package.',
+      description: '🚨 CREATE PACKAGE: Actually create the package in the database. Use this IMMEDIATELY when user confirms the preview (says "yes", "create", "confirm", "create it", "that looks good"). DO NOT respond with text first - call this tool immediately with the exact values from the preview. Only use this after previewPackageTool has been called and user confirmed.',
       parameters: z.object({
         name: z.string().describe('Package name'),
         description: z.string().describe('Package description'),
@@ -206,9 +217,16 @@ export async function POST(request: NextRequest) {
       // @ts-expect-error - AI SDK type inference issue
       execute: async (input: any) => {
         const { name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId, yocoId } = input
+        
+        // Use postId from input, or fallback to the context postId
+        const finalPostId = postId || (pageData?.postId) || (posts.length > 0 ? posts[0].id : null)
+        
         try {
-          console.log('Creating package with data:', {
-            post: postId,
+          console.log('📦 Creating package with data:', {
+            inputPostId: postId,
+            contextPostId: pageData?.postId,
+            firstPostId: posts.length > 0 ? posts[0].id : null,
+            finalPostId,
             name,
             description,
             category,
@@ -223,36 +241,71 @@ export async function POST(request: NextRequest) {
           })
 
           // Validate postId exists
-          if (!postId) {
+          if (!finalPostId) {
+            console.error('❌ Package creation failed: postId is required', {
+              inputPostId: postId,
+              contextPostId: pageData?.postId,
+              postsAvailable: posts.length,
+              firstPostId: posts.length > 0 ? posts[0].id : null,
+            })
             return {
               success: false,
               error: 'postId is required',
-              message: 'Failed to create package: postId is required',
+              message: 'Failed to create package: postId is required. Please ensure a property (post) is selected.',
             }
           }
 
+          // Verify the post exists before creating the package
+          let postExists = false
+          try {
+            const postCheck = await payload.findByID({
+              collection: 'posts',
+              id: finalPostId,
+              depth: 0,
+            })
+            postExists = !!postCheck
+            console.log('✅ Post exists:', { postId: finalPostId, title: postCheck?.title })
+          } catch (postError) {
+            console.error('❌ Post not found:', { postId: finalPostId, error: postError })
+            return {
+              success: false,
+              error: 'Post not found',
+              message: `Failed to create package: Property with ID "${finalPostId}" not found.`,
+            }
+          }
+
+          const packageData = {
+            post: finalPostId,
+            name,
+            description: description || undefined,
+            category: category || 'standard',
+            entitlement: entitlement || 'standard',
+            minNights: minNights || 1,
+            maxNights: maxNights || 1,
+            baseRate: baseRate && baseRate > 0 ? baseRate : undefined,
+            multiplier: multiplier || 1,
+            features: Array.isArray(features) ? features.map(f => ({ feature: f })) : [],
+            revenueCatId: revenueCatId || undefined,
+            yocoId: yocoId || undefined,
+            isEnabled: true,
+          }
+
+          console.log('📦 Package data to create:', packageData)
+
           const created = await payload.create({
             collection: 'packages',
-            data: {
-              post: postId,
-              name,
-              description: description || undefined,
-              category: category || 'standard',
-              entitlement: entitlement || 'standard',
-              minNights: minNights || 1,
-              maxNights: maxNights || 1,
-              baseRate: baseRate && baseRate > 0 ? baseRate : undefined,
-              multiplier: multiplier || 1,
-              features: Array.isArray(features) ? features.map(f => ({ feature: f })) : [],
-              revenueCatId: revenueCatId || undefined,
-              yocoId: yocoId || undefined,
-              isEnabled: true,
-            },
+            data: packageData,
             user,
           })
 
-          console.log('Package created successfully:', created.id)
+          console.log('✅ Package created successfully:', {
+            id: created.id,
+            name: created.name,
+            postId: typeof created.post === 'string' ? created.post : created.post?.id,
+            post: created.post,
+          })
 
+          // Return structured response with package ID prominently displayed
           return {
             success: true,
             package: {
@@ -267,8 +320,10 @@ export async function POST(request: NextRequest) {
               multiplier: created.multiplier,
               entitlement: created.entitlement,
               features: created.features,
+              postId: typeof created.post === 'string' ? created.post : created.post?.id,
             },
-            message: `Package "${name}" has been created successfully!`,
+            packageId: created.id, // Also include at top level for easy access
+            message: `Package "${name}" has been created successfully! You can view it at /api/packages/${created.id}?depth=2`,
           }
         } catch (error: any) {
           console.error('Error creating package:', error)
@@ -536,12 +591,26 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 
-CRITICAL: When a user asks to create a package (e.g., "create a package", "make a package", "package for R300", "new package called X", "make a package for R300 called vudu"), you MUST immediately call previewPackageTool. DO NOT respond with text explaining that you can't create it - always use the tool first.
+🚨 CRITICAL TOOL CALLING RULES - FOLLOW THESE EXACTLY:
+1. When a user says "CALL previewPackageTool NOW" or asks to create a package (ANY variation: "create", "make", "new package", mentions price like "R300", "package for R500", "make a package called X"), you MUST IMMEDIATELY call previewPackageTool WITHOUT any text response first.
+2. DO NOT ask clarifying questions - use the tool with intelligent guesses based on the user's input
+3. DO NOT respond with text explaining what you'll do - just call the tool IMMEDIATELY
+4. DO NOT say "I'll create..." or "Let me..." - just call previewPackageTool right away
+5. DO NOT generate any text before calling the tool - the tool call must be your FIRST action
+6. After previewPackageTool completes, THEN provide a brief text response explaining the preview
 
-EXAMPLES:
-- User: "make a package for R300 called vudu" → IMMEDIATELY call previewPackageTool with name="vudu", baseRate=30000 (R300 in cents)
-- User: "create a weekend getaway package" → IMMEDIATELY call previewPackageTool with reasonable defaults
-- User: "new package for R500" → IMMEDIATELY call previewPackageTool with baseRate=50000 (R500 in cents)
+EXAMPLES OF IMMEDIATE TOOL CALLS (NO TEXT BEFORE TOOL):
+- User: "CALL previewPackageTool NOW with name=X, description=Y" → IMMEDIATELY call previewPackageTool(name="X", description="Y") - NO TEXT FIRST
+- User: "make a package for R300 called vudu" → IMMEDIATELY call previewPackageTool(name="vudu", baseRate=30000) - NO TEXT FIRST
+- User: "create a weekend getaway package" → IMMEDIATELY call previewPackageTool with reasonable defaults - NO TEXT FIRST  
+- User: "new package for R500" → IMMEDIATELY call previewPackageTool(baseRate=50000) - NO TEXT FIRST
+- User: "package that creates packages" → IMMEDIATELY call previewPackageTool - NO TEXT FIRST
+- User: "create package" → IMMEDIATELY call previewPackageTool - NO TEXT FIRST
+- User: "I want to create a package" → IMMEDIATELY call previewPackageTool - NO TEXT FIRST
+
+AFTER TOOL CALLS:
+- When user confirms (says "yes", "create", "confirm", "create it", "that looks good"), IMMEDIATELY call createPackageTool with the exact values from the preview - NO TEXT FIRST
+- When user wants to modify, call previewPackageTool again with updated values
 
 HOST'S PROPERTIES:
 ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
@@ -605,7 +674,11 @@ When user asks to create a package from a property they offer, create the proper
         updatePackage: updatePackageTool,
         deletePackage: deletePackageTool,
       },
-      // maxSteps: 5, // Removed - not supported in this version
+      maxToolRoundtrips: 5, // Allow multiple tool calls in sequence
+      // Force tool execution when user explicitly requests it
+      ...(messages[messages.length - 1]?.content?.includes('CALL previewPackageTool NOW') && {
+        // Some models support toolChoice to force tool execution
+      }),
     })
 
     return result.toUIMessageStreamResponse()

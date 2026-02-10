@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
-import { Loader2, Sparkles, ArrowRight, X, Package } from 'lucide-react'
+import { Loader2, Sparkles, ArrowRight, X, Package, ExternalLink, Edit, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
 import { PackagePreview } from '@/components/PackagePreview'
@@ -30,6 +30,7 @@ export function PackageOnboarding({
   const [isGenerating, setIsGenerating] = useState(false)
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
   const [isSavingPackage, setIsSavingPackage] = useState(false)
+  const [createdPackageId, setCreatedPackageId] = useState<string | null>(null)
 
   // Use AI SDK's useChat hook for generative UI
   const chatHook = useChat({
@@ -40,7 +41,10 @@ export function PackageOnboarding({
         postId,
       },
     },
-    onFinish: (message) => {
+    onFinish: (result: any) => {
+      // onFinish receives an object with a 'message' property, not the message directly
+      const message = result?.message || result
+      
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
         const previewPart = message.parts.find((part: any) => 
@@ -62,24 +66,57 @@ export function PackageOnboarding({
         )
         if (createPart?.output?.success) {
           setIsSavingPackage(false)
-          // Use the actual created package data from the API response
+          // Extract package ID from the tool output structure
+          // createPackageTool returns: { success: true, package: { id, ... }, packageId: "...", message: "..." }
           const createdPackage = createPart.output.package || createPart.output
+          // Try multiple paths to get the package ID
+          const packageId = createPart.output.packageId || 
+                           createPart.output.package?.id || 
+                           createdPackage.id ||
+                           createPart.output.id
+          
+          console.log('✅ Package created successfully:', { 
+            packageId, 
+            output: createPart.output,
+            createdPackage,
+            availablePaths: {
+              topLevelPackageId: createPart.output.packageId,
+              nestedPackageId: createPart.output.package?.id,
+              createdPackageId: createdPackage.id,
+              outputId: createPart.output.id,
+            }
+          })
+          
+          if (packageId) {
+            setCreatedPackageId(packageId)
+          } else {
+            console.error('❌ Package created but ID not found in response:', createPart.output)
+            // Still try to proceed - maybe the ID will be available later
+          }
+          
           if (onComplete) {
             // Pass the full created package data including ID
             onComplete({
               ...createdPackage,
+              id: packageId || createdPackage.id,
               ...pendingPackagePreview, // Merge preview data for any missing fields
             })
           }
         } else if (createPart?.output?.success === false) {
           // Handle creation failure
           setIsSavingPackage(false)
-          console.error('Package creation failed:', createPart.output.error)
+          const errorMessage = createPart.output.error || createPart.output.message || 'Unknown error'
+          console.error('❌ Package creation failed:', {
+            error: errorMessage,
+            output: createPart.output
+          })
+          // TODO: Show error message to user in UI
         }
       }
     },
-  })
+  } as any)
 
+  // Extract values from chat hook with fallbacks (using type assertion to handle AI SDK types)
   const { 
     messages = [], 
     input: chatInput = '', 
@@ -87,7 +124,7 @@ export function PackageOnboarding({
     handleSubmit, 
     isLoading = false,
     append
-  } = chatHook || {}
+  } = (chatHook || {}) as any
 
   const handleDescribeSubmit = async () => {
     if (!packageDescription.trim()) return
@@ -96,11 +133,9 @@ export function PackageOnboarding({
     setStep('details')
 
     // Create a message that asks the AI to generate package details
-    const prompt = `Create a package for my property with these details:
-- Name: "${packageName || 'New Package'}"
-- Description: "${packageDescription}"
-
-Please use the previewPackageTool to show me the package details including minNights, maxNights, multiplier, category, and features.`
+    // Use direct command format to trigger immediate tool call
+    // Make it extremely explicit to force tool execution
+    const prompt = `CALL previewPackageTool NOW with name="${packageName || 'New Package'}", description="${packageDescription}", postId="${postId}". DO NOT respond with text - call the tool immediately.`
 
     // Use append method if available, otherwise use handleInputChange + handleSubmit
     if (append && typeof append === 'function') {
@@ -129,20 +164,17 @@ Please use the previewPackageTool to show me the package details including minNi
     const previewData = { ...pendingPackagePreview }
     
     // Create a message that explicitly asks the AI to use createPackageTool
-    const createMessage = `Please create the package using createPackageTool with these exact details:
-- name: "${previewData.name}"
-- description: "${previewData.description}"
-- category: "${previewData.category}"
-- minNights: ${previewData.minNights}
-- maxNights: ${previewData.maxNights}
-- baseRate: ${previewData.baseRate || 0}
-- multiplier: ${previewData.multiplier || 1}
-- entitlement: "${previewData.entitlement || 'standard'}"
-- postId: "${postId}"
-- features: ${JSON.stringify(previewData.features || [])}
-${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}
-
-Create this package now.`
+    // Use direct command format to trigger immediate tool call
+    // Ensure postId is included - use previewData.postId if available, otherwise use prop postId
+    const packagePostId = previewData.postId || postId
+    const createMessage = `Create this package now using createPackageTool. Package details: name="${previewData.name}", description="${previewData.description}", category="${previewData.category}", minNights=${previewData.minNights}, maxNights=${previewData.maxNights}, baseRate=${previewData.baseRate || 0}, multiplier=${previewData.multiplier || 1}, entitlement="${previewData.entitlement || 'standard'}", postId="${packagePostId}", features=${JSON.stringify(previewData.features || [])}${previewData.revenueCatId ? `, revenueCatId="${previewData.revenueCatId}"` : ''}${previewData.yocoId ? `, yocoId="${previewData.yocoId}"` : ''}.`
+    
+    console.log('📦 Creating package with postId:', { 
+      packagePostId, 
+      previewPostId: previewData.postId, 
+      propPostId: postId,
+      previewData 
+    })
     
     // Use append method if available, otherwise use handleInputChange + handleSubmit
     if (append && typeof append === 'function') {
@@ -183,7 +215,7 @@ Create this package now.`
   const renderMessages = () => {
     return (
       <div className="space-y-4">
-        {messages.map((message) => (
+        {messages.map((message: any) => (
           <div key={message.id} className="flex gap-3">
             <div className="flex-shrink-0">
               <div className={cn(
@@ -401,7 +433,7 @@ Create this package now.`
       {renderMessages()}
 
       {/* Pending Package Preview */}
-      {pendingPackagePreview && (
+      {pendingPackagePreview && !createdPackageId && (
         <div className="my-4">
           <PackagePreview
             {...pendingPackagePreview}
@@ -414,14 +446,81 @@ Create this package now.`
         </div>
       )}
 
+      {/* Success State with Quick Actions */}
+      {createdPackageId && (
+        <Card className="p-6 border-green-200 bg-green-50">
+          <div className="space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-green-100 rounded-full">
+                <Package className="h-5 w-5 text-green-700" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-green-900 mb-1">
+                  Package Created Successfully!
+                </h3>
+                <p className="text-sm text-green-700">
+                  Your package has been created and is ready to use.
+                </p>
+              </div>
+            </div>
+            
+            {/* Quick Actions */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
+                }}
+                className="bg-white hover:bg-green-50 border-green-300"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                View Package API
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/manage/packages?postId=${postId}`, '_blank')
+                }}
+                className="bg-white hover:bg-green-50 border-green-300"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Manage Packages
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCreatedPackageId(null)
+                  setPendingPackagePreview(null)
+                  setStep('describe')
+                  setPackageName('')
+                  setPackageDescription('')
+                }}
+                className="bg-white hover:bg-green-50 border-green-300"
+              >
+                <Package className="h-4 w-4 mr-2" />
+                Create Another
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Loading State */}
-      {(isGenerating || isLoading) && !pendingPackagePreview && (
+      {(isGenerating || isLoading) && !pendingPackagePreview && !createdPackageId && (
         <Card className="p-8">
           <div className="flex flex-col items-center justify-center space-y-4">
             <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
             <p className="text-sm text-slate-500">
               Generating package details...
             </p>
+            {(isGenerating || isLoading) && (
+              <p className="text-xs text-slate-400 mt-2">
+                This may take a few seconds. The AI is analyzing your request...
+              </p>
+            )}
           </div>
         </Card>
       )}
