@@ -70,12 +70,129 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    const body = await request.json()
+    // Parse JSON with better error handling
+    let body: any
+    let requestText: string = ''
+    try {
+      requestText = await request.text()
+      if (!requestText || requestText.trim() === '') {
+        return NextResponse.json(
+          { error: 'Request body is empty' },
+          { status: 400 }
+        )
+      }
+      body = JSON.parse(requestText)
+    } catch (jsonError) {
+      console.error('JSON parse error:', jsonError)
+      console.error('Request body:', requestText || 'Unable to read body')
+      return NextResponse.json(
+        { 
+          error: 'Invalid JSON in request body', 
+          details: jsonError instanceof Error ? jsonError.message : 'Unknown JSON parse error' 
+        },
+        { status: 400 }
+      )
+    }
+    
+    // Validate and sanitize the data
+    const cleanData: any = {}
+    
+    // Handle post field - if it's a slug or title, look up the ID
+    if (body.post !== undefined) {
+      if (typeof body.post === 'string') {
+        // Check if it's already an ID (MongoDB ObjectId format)
+        if (/^[0-9a-fA-F]{24}$/.test(body.post)) {
+          cleanData.post = body.post
+        } else {
+          // It's likely a slug or title, try to find the post
+          try {
+            // First try by slug
+            let posts = await payload.find({
+              collection: 'posts',
+              where: {
+                slug: {
+                  equals: body.post,
+                },
+              },
+              limit: 1,
+            })
+            
+            // If not found by slug, try by title (case-insensitive, partial match)
+            if (posts.docs.length === 0) {
+              posts = await payload.find({
+                collection: 'posts',
+                where: {
+                  title: {
+                    contains: body.post,
+                  },
+                },
+                limit: 1,
+              })
+            }
+            
+            if (posts.docs.length > 0) {
+              cleanData.post = posts.docs[0].id
+              console.log(`Found post "${posts.docs[0].title}" (${posts.docs[0].id}) for query "${body.post}"`)
+            } else {
+              return NextResponse.json(
+                { error: `Post with slug or title "${body.post}" not found` },
+                { status: 404 }
+              )
+            }
+          } catch (postError) {
+            console.error('Error looking up post:', postError)
+            return NextResponse.json(
+              { error: 'Failed to look up post', details: postError instanceof Error ? postError.message : 'Unknown error' },
+              { status: 500 }
+            )
+          }
+        }
+      } else if (typeof body.post === 'object' && body.post?.id) {
+        cleanData.post = body.post.id
+      } else if (body.post === null) {
+        // Allow null to clear the post field
+        return NextResponse.json(
+          { error: 'Post field is required and cannot be null' },
+          { status: 400 }
+        )
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid post field format. Expected string ID, slug, or title; or object with id property.' },
+          { status: 400 }
+        )
+      }
+    }
+    
+    // Copy other fields that are safe to update
+    const allowedFields = [
+      'name',
+      'description',
+      'multiplier',
+      'category',
+      'entitlement',
+      'minNights',
+      'maxNights',
+      'maxConcurrentBookings',
+      'baseRate',
+      'isEnabled',
+      'revenueCatId',
+      'yocoId',
+      'relatedPage',
+      'features',
+    ]
+    
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) {
+        cleanData[field] = body[field]
+      }
+    }
+    
+    console.log('Updating package with clean data:', JSON.stringify(cleanData, null, 2))
     
     const updated = await payload.update({
       collection: 'packages',
       id,
-      data: body,
+      data: cleanData,
       user,
     })
     
