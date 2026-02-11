@@ -83,7 +83,7 @@ export function PricingSection({
                         ? `${latestTokenUsage.total} Tokens`
                         : 'Tokens'}
                     </strong>{' '}
-                    included monthly
+                    For rescheduling and cancellations
                   </span>
                 </div>
                 {latestTokenUsage && (
@@ -153,25 +153,24 @@ export function PricingSection({
         className="relative flex flex-col overflow-hidden rounded-lg border border-[#0891b2] bg-white shadow-md ring-1 ring-[#0891b2]/20"
       >
         <div className="absolute -right-12 top-6 rotate-45 bg-[#0891b2] px-12 py-1 text-xs font-bold text-white shadow-sm">
-          HOST
+          INVEST
         </div>
 
         <div className="bg-[#ecfeff] p-6">
           <div className="flex items-center justify-between">
             <Badge className="bg-[#0891b2] text-white border-transparent">
-              Pro Hosting
+            Shareholder
             </Badge>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0e7490]">
               <Zap className="h-3 w-3" />
-              Power User
+           Development contribution
             </div>
           </div>
           <h3 className="mt-4 text-2xl font-bold text-[#020817]">
-            Annual Pro Plek
+            Host your Plek
           </h3>
           <p className="mt-2 text-sm text-slate-500">
-            Unlock pro masterclasses, host pricing tools, and annual access to
-            the Simple Plek garden network.
+            Share your availability, host guests, and anoffer your own addons packages in a CID community.
           </p>
         </div>
 
@@ -194,12 +193,12 @@ export function PricingSection({
                 <div className="mt-2 flex items-center gap-2 rounded bg-slate-50 px-3 py-2 text-sm text-slate-600">
                   <Sparkles className="h-4 w-4 text-[#0891b2]" />
                   <span>
-                    <strong>Unlimited</strong> hosting tools access
+                    <strong>Package</strong> creation and management
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
                   Includes {proProduct.periodCount} {proProduct.period}
-                  {proProduct.periodCount > 1 ? 's' : ''} of pro hosting
+                  {proProduct.periodCount > 1 ? 's' : ''} photography shoot
                 </p>
               </>
             ) : (
@@ -249,7 +248,7 @@ export function PricingSection({
               : 'Upgrade to Pro with Yoco'}
           </Button>
           <p className="mt-3 text-center text-xs text-slate-400">
-            Includes 1 hour of pro hosting credit
+            Includes 1 hour of photography shoot
           </p>
         </div>
       </motion.div>

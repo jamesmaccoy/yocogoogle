@@ -188,7 +188,7 @@ class YocoService {
         period: 'hour' as const,
         periodCount: 1,
         category: 'special' as const,
-        features: ['VIP treatment', 'Premium amenities', 'Personal concierge'],
+        features: ['Invite link sharing', 'Schedule overview', 'Create your own addons'],
         isEnabled: true,
         entitlement: 'pro' as const,
         icon: '✨',
