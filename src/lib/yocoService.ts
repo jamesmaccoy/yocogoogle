@@ -146,7 +146,7 @@ class YocoService {
         period: 'month' as const,
         periodCount: 1,
         category: 'standard' as const,
-        features: ['Unlock the booking calendar', 'Member rates on pleks', 'Community events'],
+        features: ['Unlock availability calendar', 'Longer stays', 'Addon packages'],
         isEnabled: true,
         entitlement: 'standard' as const,
         icon: '🌿',

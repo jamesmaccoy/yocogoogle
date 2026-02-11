@@ -47,15 +47,15 @@ export function PricingSection({
             </Badge>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0f766e]">
               <Coins className="h-3 w-3" />
-              Includes Tokens
+              Includes CID greening
             </div>
           </div>
           <h3 className="mt-4 text-2xl font-bold text-[#020817]">
-            Garden Community
+            Membership
           </h3>
           <p className="mt-2 text-sm text-slate-500">
-            Weekly membership to curated simple pleks with flexible bookings and
-            virtual wine experiences.
+          Monthly membership to curated simple pleks with flexible bookings and
+            package addons 
           </p>
         </div>
 
