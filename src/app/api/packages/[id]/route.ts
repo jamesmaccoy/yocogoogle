@@ -70,25 +70,87 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    // Parse JSON with better error handling
+    // Parse request body - handle both JSON and form data
     let body: any
-    let requestText: string = ''
+    const contentType = request.headers.get('content-type') || ''
+    
     try {
-      requestText = await request.text()
-      if (!requestText || requestText.trim() === '') {
-        return NextResponse.json(
-          { error: 'Request body is empty' },
-          { status: 400 }
-        )
+      if (contentType.includes('multipart/form-data')) {
+        // Handle multipart/form-data (Payload CMS form submissions)
+        const formData = await request.formData()
+        const payloadField = formData.get('_payload')
+        
+        if (!payloadField) {
+          return NextResponse.json(
+            { error: 'Missing _payload field in form data' },
+            { status: 400 }
+          )
+        }
+        
+        // Parse the JSON from the _payload field
+        try {
+          body = typeof payloadField === 'string' 
+            ? JSON.parse(payloadField) 
+            : JSON.parse(payloadField.toString())
+        } catch (parseError) {
+          console.error('JSON parse error from _payload:', parseError)
+          return NextResponse.json(
+            { error: 'Invalid JSON in _payload field', details: parseError instanceof Error ? parseError.message : 'Unknown error' },
+            { status: 400 }
+          )
+        }
+      } else if (contentType.includes('application/json')) {
+        // Handle JSON requests
+        const requestText = await request.text()
+        if (!requestText || requestText.trim() === '') {
+          return NextResponse.json(
+            { error: 'Request body is empty' },
+            { status: 400 }
+          )
+        }
+        body = JSON.parse(requestText)
+      } else if (contentType.includes('application/x-www-form-urlencoded')) {
+        // Handle URL-encoded form data
+        const formData = await request.formData()
+        body = {} as any
+        
+        // Convert FormData to regular object
+        for (const [key, value] of formData.entries()) {
+          if (key.includes('[') && key.includes(']')) {
+            // Handle nested form fields like "meta[title]"
+            const match = key.match(/^(\w+)\[(\w+)\]$/)
+            if (match && match.length >= 3) {
+              const parentKey = match[1]
+              const childKey = match[2]
+              if (parentKey && childKey) {
+                if (!body[parentKey]) body[parentKey] = {}
+                body[parentKey][childKey] = value
+              }
+            } else {
+              body[key] = value
+            }
+          } else {
+            body[key] = value
+          }
+        }
+      } else {
+        // Try to parse as JSON as fallback
+        const requestText = await request.text()
+        if (!requestText || requestText.trim() === '') {
+          return NextResponse.json(
+            { error: 'Request body is empty' },
+            { status: 400 }
+          )
+        }
+        body = JSON.parse(requestText)
       }
-      body = JSON.parse(requestText)
-    } catch (jsonError) {
-      console.error('JSON parse error:', jsonError)
-      console.error('Request body:', requestText || 'Unable to read body')
+    } catch (parseError) {
+      console.error('Request parse error:', parseError)
+      console.error('Content-Type:', contentType)
       return NextResponse.json(
         { 
-          error: 'Invalid JSON in request body', 
-          details: jsonError instanceof Error ? jsonError.message : 'Unknown JSON parse error' 
+          error: 'Invalid request body format', 
+          details: parseError instanceof Error ? parseError.message : 'Unknown parse error' 
         },
         { status: 400 }
       )
@@ -130,9 +192,10 @@ export async function PATCH(
               })
             }
             
-            if (posts.docs.length > 0) {
-              cleanData.post = posts.docs[0].id
-              console.log(`Found post "${posts.docs[0].title}" (${posts.docs[0].id}) for query "${body.post}"`)
+            if (posts.docs.length > 0 && posts.docs[0]) {
+              const foundPost = posts.docs[0]
+              cleanData.post = foundPost.id
+              console.log(`Found post "${foundPost.title}" (${foundPost.id}) for query "${body.post}"`)
             } else {
               return NextResponse.json(
                 { error: `Post with slug or title "${body.post}" not found` },
