@@ -106,19 +106,52 @@ export async function POST(request: NextRequest) {
       const crypto = await import('crypto')
       const resetToken = crypto.randomBytes(32).toString('hex')
       
+      if (!resetToken || resetToken.length === 0) {
+        console.error('Failed to generate reset token: token is empty')
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
+      
       // Set expiration to 1 hour from now
       const resetPasswordExpiration = new Date()
       resetPasswordExpiration.setHours(resetPasswordExpiration.getHours() + 1)
 
       // Update user with reset token and expiration
-      await payload.update({
+      // Use overrideAccess to bypass access control for password reset tokens
+      try {
+        await payload.update({
+          collection: 'users',
+          id: user.id,
+          data: {
+            resetPasswordToken: resetToken,
+            resetPasswordExpiration: resetPasswordExpiration.toISOString(),
+          },
+          overrideAccess: true, // Bypass access control for password reset
+        })
+      } catch (updateError: any) {
+        console.error('Failed to update user with reset token:', updateError)
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
+
+      // Verify the token was saved
+      const updatedUser = await payload.findByID({
         collection: 'users',
         id: user.id,
-        data: {
-          resetPasswordToken: resetToken,
-          resetPasswordExpiration: resetPasswordExpiration.toISOString(),
-        },
+        overrideAccess: true, // Bypass access control to read the token
       })
+
+      if (!updatedUser || (updatedUser as any).resetPasswordToken !== resetToken) {
+        console.error('Failed to verify reset token was saved to database')
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
 
       // Build reset link using the token we just generated
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
