@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
+import { Resend } from 'resend'
+import PasswordResetEmail from '@/emails/PasswordReset'
+import { render } from '@react-email/components'
+
+const resendApiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS
+const resend = new Resend(resendApiKey)
 
 // Simple in-memory rate limiting store
 // In production, consider using Redis or a database
@@ -72,20 +78,124 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
-    // Use Payload's built-in forgotPassword operation
-    // This will generate a reset token and send an email using the configured email adapter
-    // Rate limiting above prevents abuse/loops
+    // Check if user exists
+    const users = await payload.find({
+      collection: 'users',
+      where: {
+        email: {
+          equals: normalizedEmail,
+        },
+      },
+      limit: 1,
+    })
+
+    // Always return success message to prevent email enumeration
+    // Even if user doesn't exist, we return the same message
+    if (users.docs.length === 0) {
+      return NextResponse.json({
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      })
+    }
+
+    const user = users.docs[0]
+
+    // Use Payload's built-in forgotPassword operation to generate token
+    // We'll disable email sending and send via Resend API directly
     try {
       await payload.forgotPassword({
         collection: 'users',
         data: {
           email: normalizedEmail,
         },
-        // Email will be sent automatically using Payload's email adapter configuration
-        // The email template can be customized in payload.config.ts email settings
+        disableEmail: true, // Disable default email, we'll send via Resend API
       })
+
+      // Fetch the user again to get the reset token
+      const updatedUser = await payload.findByID({
+        collection: 'users',
+        id: user.id,
+      })
+
+      // Get the reset token from Payload's structure
+      const resetToken = (updatedUser as any).resetPasswordToken
+
+      if (!resetToken) {
+        console.error('Failed to generate reset token')
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
+
+      // Build reset link
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+      const resetLink = `${baseUrl}/reset-password?token=${resetToken}`
+
+      // Render email template
+      const emailHtml = await render(
+        PasswordResetEmail({
+          resetLink,
+          userName: user.name || user.email.split('@')[0],
+          expiryTime: '1 hour',
+        }),
+      )
+
+      // Get from address with validation (same logic as magic auth email)
+      let fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim() || process.env.EMAIL_FROM?.trim() || 'info@simpleplek.co.za'
+      
+      // Extract email if formatted as "Name <email@example.com>"
+      const emailMatch = fromAddress.match(/<([^>]+)>/)
+      if (emailMatch) {
+        fromAddress = emailMatch[1]
+      }
+      
+      // Replace noreply with info
+      if (fromAddress === 'noreply@simpleplek.co.za') {
+        fromAddress = 'info@simpleplek.co.za'
+      }
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(fromAddress)) {
+        console.error(`Invalid EMAIL_FROM_ADDRESS format: ${fromAddress}`)
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
+
+      // Get name, cleaning it if needed
+      let fromName = process.env.EMAIL_FROM_NAME?.trim()
+      if (fromName) {
+        // Remove email formatting if present
+        const nameMatch = fromName.match(/^([^<]+)\s*</)
+        if (nameMatch) {
+          fromName = nameMatch[1].trim()
+        }
+      }
+
+      const fromField = fromName && fromName.length > 0
+        ? `${fromName} <${fromAddress}>`
+        : fromAddress
+
+      // Send email using Resend API
+      const { error: emailError } = await resend.emails.send({
+        from: fromField,
+        to: normalizedEmail,
+        subject: 'Reset Your Password - Simpleplek',
+        html: emailHtml,
+      })
+
+      if (emailError) {
+        console.error('Failed to send password reset email:', emailError)
+        // Still return success to prevent email enumeration
+        return NextResponse.json({
+          message: 'If an account exists with this email, a password reset link has been sent.'
+        })
+      }
+
+      console.log(`Password reset email sent to ${normalizedEmail}`)
     } catch (error: any) {
-      // Payload may throw if user doesn't exist, but we don't want to reveal that
       // Log the error for debugging but return generic success message
       console.error('Password reset request error:', error)
     }
