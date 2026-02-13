@@ -1,4 +1,3 @@
-import EmailPasswordForm from '../login/_components/EmailPasswordForm'
 import ForgotPasswordForm from './_components/ForgotPasswordForm'
 
 export default function ForgotPasswordPage() {
