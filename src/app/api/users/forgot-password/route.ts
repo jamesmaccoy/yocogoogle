@@ -99,35 +99,28 @@ export async function POST(request: NextRequest) {
 
     const user = users.docs[0]
 
-    // Use Payload's built-in forgotPassword operation to generate token
-    // We'll disable email sending and send via Resend API directly
+    // Manually generate reset token to avoid Payload's email sending
+    // This gives us full control over the email sending process
     try {
-      await payload.forgotPassword({
-        collection: 'users',
-        data: {
-          email: normalizedEmail,
-        },
-        disableEmail: true, // Disable default email, we'll send via Resend API
-      })
+      // Generate a secure random token (similar to what Payload does internally)
+      const crypto = await import('crypto')
+      const resetToken = crypto.randomBytes(32).toString('hex')
+      
+      // Set expiration to 1 hour from now
+      const resetPasswordExpiration = new Date()
+      resetPasswordExpiration.setHours(resetPasswordExpiration.getHours() + 1)
 
-      // Fetch the user again to get the reset token
-      const updatedUser = await payload.findByID({
+      // Update user with reset token and expiration
+      await payload.update({
         collection: 'users',
         id: user.id,
+        data: {
+          resetPasswordToken: resetToken,
+          resetPasswordExpiration: resetPasswordExpiration.toISOString(),
+        },
       })
 
-      // Get the reset token from Payload's structure
-      const resetToken = (updatedUser as any).resetPasswordToken
-
-      if (!resetToken) {
-        console.error('Failed to generate reset token')
-        // Still return success to prevent email enumeration
-        return NextResponse.json({
-          message: 'If an account exists with this email, a password reset link has been sent.'
-        })
-      }
-
-      // Build reset link
+      // Build reset link using the token we just generated
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
       const resetLink = `${baseUrl}/reset-password?token=${resetToken}`
 
