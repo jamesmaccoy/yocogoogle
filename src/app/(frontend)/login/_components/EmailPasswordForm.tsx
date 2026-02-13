@@ -98,12 +98,8 @@ export default function EmailPasswordForm() {
             Password
           </label>
           <Link
-            href="#"
+            href="/forgot-password"
             className="text-xs text-zinc-500 hover:text-zinc-900 hover:underline"
-            onClick={(e) => {
-              e.preventDefault()
-              // TODO: Implement forgot password functionality
-            }}
           >
             Forgot password?
           </Link>
