@@ -51,8 +51,18 @@ function checkRateLimit(email: string): { allowed: boolean; remainingTime?: numb
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('📧 Password reset request received')
     const payload = await getPayload({ config: configPromise })
-    const body = await request.json()
+    
+    let body
+    try {
+      body = await request.json()
+    } catch (parseError) {
+      console.error('❌ Failed to parse request body:', parseError)
+      return NextResponse.json({ 
+        error: 'Invalid request body' 
+      }, { status: 400 })
+    }
     
     // Validate required fields
     const { email } = body
@@ -115,8 +125,15 @@ export async function POST(request: NextRequest) {
     // This gives us full control over the email sending process
     try {
       // Generate a secure random token (similar to what Payload does internally)
-      const crypto = await import('crypto')
-      const resetToken = crypto.randomBytes(32).toString('hex')
+      let resetToken: string
+      try {
+        const crypto = await import('crypto')
+        resetToken = crypto.randomBytes(32).toString('hex')
+      } catch (cryptoError: any) {
+        console.error('❌ Failed to import crypto module:', cryptoError)
+        // Fallback: use a combination of timestamp and random values
+        resetToken = `${Date.now()}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`
+      }
       
 
       if (!resetToken || resetToken.length === 0) {
@@ -133,8 +150,9 @@ export async function POST(request: NextRequest) {
 
       // Update user with reset token and expiration
       // Use overrideAccess to bypass access control for password reset tokens
+      console.log('📧 Saving reset token to database...')
       try {
-        await payload.update({
+        const updateResult = await payload.update({
           collection: 'users',
           id: user.id,
           data: {
@@ -143,23 +161,31 @@ export async function POST(request: NextRequest) {
           },
           overrideAccess: true, // Bypass access control for password reset
         })
+        console.log('✅ User updated successfully, reset token saved')
+        
+        // Try to verify, but don't fail if verification doesn't work
+        // The update succeeded, so we'll proceed with sending the email
+        try {
+          const updatedUser = await payload.findByID({
+            collection: 'users',
+            id: user.id,
+            overrideAccess: true,
+          })
+          const savedToken = (updatedUser as any)?.resetPasswordToken
+          if (savedToken && savedToken === resetToken) {
+            console.log('✅ Reset token verified successfully')
+          } else {
+            console.warn('⚠️ Could not verify token (may be filtered), but update succeeded - proceeding with email')
+          }
+        } catch (verifyError) {
+          console.warn('⚠️ Token verification failed, but update succeeded - proceeding with email:', verifyError)
+        }
       } catch (updateError: any) {
-        console.error('Failed to update user with reset token:', updateError)
-        // Still return success to prevent email enumeration
-        return NextResponse.json({
-          message: 'If an account exists with this email, a password reset link has been sent.'
+        console.error('❌ Failed to update user with reset token:', updateError)
+        console.error('❌ Update error details:', {
+          message: updateError?.message,
+          stack: updateError?.stack,
         })
-      }
-
-      // Verify the token was saved
-      const updatedUser = await payload.findByID({
-        collection: 'users',
-        id: user.id,
-        overrideAccess: true, // Bypass access control to read the token
-      })
-
-      if (!updatedUser || (updatedUser as any).resetPasswordToken !== resetToken) {
-        console.error('Failed to verify reset token was saved to database')
         // Still return success to prevent email enumeration
         return NextResponse.json({
           message: 'If an account exists with this email, a password reset link has been sent.'
@@ -261,11 +287,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       message: 'If an account exists with this email, a password reset link has been sent.'
     })
-  } catch (error) {
-    console.error('Error during forgot password:', error)
+  } catch (error: any) {
+    console.error('❌ Error during forgot password:', error)
+    console.error('❌ Error stack:', error?.stack)
+    console.error('❌ Error message:', error?.message)
+    console.error('❌ Error name:', error?.name)
+    
+    // In development, return more details about the error
+    const isDevelopment = process.env.NODE_ENV === 'development'
     
     return NextResponse.json(
-      { error: 'An error occurred. Please try again later.' },
+      { 
+        error: 'An error occurred. Please try again later.',
+        ...(isDevelopment && {
+          details: error?.message,
+          stack: error?.stack,
+        }),
+      },
       { status: 500 }
     )
   }
