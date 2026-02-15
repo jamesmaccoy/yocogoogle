@@ -6,6 +6,9 @@ import PasswordResetEmail from '@/emails/PasswordReset'
 import { render } from '@react-email/components'
 
 const resendApiKey = process.env.RESEND_API_KEY || process.env.SMTP_PASS
+if (!resendApiKey) {
+  console.error('❌ RESEND_API_KEY or SMTP_PASS environment variable is not set!')
+}
 const resend = new Resend(resendApiKey)
 
 // Simple in-memory rate limiting store
@@ -98,6 +101,15 @@ export async function POST(request: NextRequest) {
     }
 
     const user = users.docs[0]
+    if (!user) {
+      // This should never happen due to the check above, but TypeScript needs it
+      console.error('❌ User not found after length check (should not happen)')
+      return NextResponse.json({
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      })
+    }
+
+    console.log(`📧 Processing password reset for user: ${user.email} (ID: ${user.id})`)
 
     // Manually generate reset token to avoid Payload's email sending
     // This gives us full control over the email sending process
@@ -106,6 +118,7 @@ export async function POST(request: NextRequest) {
       const crypto = await import('crypto')
       const resetToken = crypto.randomBytes(32).toString('hex')
       
+
       if (!resetToken || resetToken.length === 0) {
         console.error('Failed to generate reset token: token is empty')
         // Still return success to prevent email enumeration
@@ -158,6 +171,8 @@ export async function POST(request: NextRequest) {
       const resetLink = `${baseUrl}/reset-password?token=${resetToken}`
 
       // Render email template
+      console.log('📧 Rendering password reset email template...')
+      console.log('📧 Reset link:', resetLink)
       const emailHtml = await render(
         PasswordResetEmail({
           resetLink,
@@ -165,13 +180,14 @@ export async function POST(request: NextRequest) {
           expiryTime: '1 hour',
         }),
       )
+      console.log('📧 Email template rendered successfully, length:', emailHtml?.length || 0)
 
       // Get from address with validation (same logic as magic auth email)
       let fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim() || process.env.EMAIL_FROM?.trim() || 'info@simpleplek.co.za'
       
       // Extract email if formatted as "Name <email@example.com>"
       const emailMatch = fromAddress.match(/<([^>]+)>/)
-      if (emailMatch) {
+      if (emailMatch && emailMatch[1]) {
         fromAddress = emailMatch[1]
       }
       
@@ -195,7 +211,7 @@ export async function POST(request: NextRequest) {
       if (fromName) {
         // Remove email formatting if present
         const nameMatch = fromName.match(/^([^<]+)\s*</)
-        if (nameMatch) {
+        if (nameMatch && nameMatch[1]) {
           fromName = nameMatch[1].trim()
         }
       }
@@ -205,25 +221,40 @@ export async function POST(request: NextRequest) {
         : fromAddress
 
       // Send email using Resend API
-      const { error: emailError } = await resend.emails.send({
+      console.log('📧 Attempting to send password reset email via Resend API...')
+      console.log('📧 Email details:', {
+        from: fromField,
+        to: normalizedEmail,
+        subject: 'Reset Your Password - Simpleplek',
+        hasHtml: !!emailHtml,
+        htmlLength: emailHtml?.length || 0,
+      })
+
+      const emailResponse = await resend.emails.send({
         from: fromField,
         to: normalizedEmail,
         subject: 'Reset Your Password - Simpleplek',
         html: emailHtml,
       })
 
-      if (emailError) {
-        console.error('Failed to send password reset email:', emailError)
+      if (emailResponse.error) {
+        console.error('❌ Failed to send password reset email:', JSON.stringify(emailResponse.error, null, 2))
         // Still return success to prevent email enumeration
         return NextResponse.json({
           message: 'If an account exists with this email, a password reset link has been sent.'
         })
       }
 
-      console.log(`Password reset email sent to ${normalizedEmail}`)
+      console.log(`✅ Password reset email sent successfully to ${normalizedEmail}`)
+      console.log('📧 Resend response:', JSON.stringify(emailResponse.data, null, 2))
     } catch (error: any) {
       // Log the error for debugging but return generic success message
-      console.error('Password reset request error:', error)
+      console.error('❌ Password reset request error:', error)
+      console.error('❌ Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+      })
     }
 
     // Always return success message to prevent email enumeration
