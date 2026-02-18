@@ -1,5 +1,6 @@
 import { Purchases } from '@revenuecat/purchases-js'
 import { Endpoint } from 'payload'
+import { parseICalFeed } from '@/utilities/parseICalFeed'
 
 export const unavailableDates: Endpoint = {
   method: 'get',
@@ -27,6 +28,7 @@ export const unavailableDates: Endpoint = {
       let resolvedPostId = postId
 
       // If slug is provided, find the post by slug
+      let post: any = null
       if (slug && !postId) {
         const posts = await req.payload.find({
           collection: 'posts',
@@ -36,7 +38,9 @@ export const unavailableDates: Endpoint = {
             },
           },
           select: {
+            id: true,
             slug: true,
+            googleCalendarUrl: true,
           },
           limit: 1,
         })
@@ -45,7 +49,18 @@ export const unavailableDates: Endpoint = {
           return Response.json({ message: 'Post not found' }, { status: 404 })
         }
 
-        resolvedPostId = posts.docs[0]?.id
+        post = posts.docs[0]
+        resolvedPostId = post.id
+      } else if (resolvedPostId) {
+        // Fetch post to get Google Calendar URL
+        post = await req.payload.findByID({
+          collection: 'posts',
+          id: resolvedPostId,
+          select: {
+            id: true,
+            googleCalendarUrl: true,
+          },
+        })
       }
 
       // Find all bookings for this post with package information
@@ -280,19 +295,42 @@ export const unavailableDates: Endpoint = {
       // Remove duplicates if needed
       const uniqueUnavailableDates = [...new Set(unavailableDates)]
 
+      // Fetch unavailable dates from Google Calendar if configured
+      let googleCalendarDates: string[] = []
+      if (post?.googleCalendarUrl) {
+        try {
+          console.log('📅 Fetching Google Calendar dates from:', post.googleCalendarUrl)
+          googleCalendarDates = await parseICalFeed(post.googleCalendarUrl)
+          
+          if (googleCalendarDates.length > 0) {
+            console.log(`📅 Found ${googleCalendarDates.length} unavailable dates from Google Calendar`)
+          }
+        } catch (error) {
+          console.error('Error fetching Google Calendar dates:', error)
+          // Continue without Google Calendar dates if fetch fails
+        }
+      }
+
+      // Merge dates from both sources (bookings + Google Calendar)
+      const allUnavailableDates = [...uniqueUnavailableDates, ...googleCalendarDates]
+      const finalUnavailableDates = [...new Set(allUnavailableDates)].sort()
+
       console.log('📅 Final unavailable dates summary:', {
-        totalUnavailableDates: uniqueUnavailableDates.length,
-        unavailableDates: uniqueUnavailableDates.slice(0, 10), // Show first 10
+        totalUnavailableDates: finalUnavailableDates.length,
+        bookingDates: uniqueUnavailableDates.length,
+        googleCalendarDates: googleCalendarDates.length,
+        unavailableDates: finalUnavailableDates.slice(0, 10), // Show first 10
         totalBookingsProcessed: bookings.docs.length,
         totalPackagesFound: packages.docs.length,
         packagesWithLimits: Array.from(packageConcurrencyMap.entries()).map(([id, limit]) => ({
           id,
           limit,
         })),
+        hasGoogleCalendar: !!post?.googleCalendarUrl,
       })
 
       return Response.json({
-        unavailableDates: uniqueUnavailableDates,
+        unavailableDates: finalUnavailableDates,
       })
     } catch (error) {
       console.error('Error fetching unavailable dates:', error)

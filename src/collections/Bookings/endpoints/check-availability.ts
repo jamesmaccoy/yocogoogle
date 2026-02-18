@@ -1,4 +1,5 @@
 import { Endpoint } from 'payload'
+import { parseICalFeed } from '@/utilities/parseICalFeed'
 
 export const checkAvailability: Endpoint = {
   method: 'get',
@@ -20,6 +21,7 @@ export const checkAvailability: Endpoint = {
       const targetPackageId = typeof packageId === 'string' ? packageId : undefined
 
       // If slug is provided, find the post by slug
+      let post: any = null
       if (slug && !postId) {
         const posts = await req.payload.find({
           collection: 'posts',
@@ -29,7 +31,9 @@ export const checkAvailability: Endpoint = {
             },
           },
           select: {
+            id: true,
             slug: true,
+            googleCalendarUrl: true,
           },
           limit: 1,
         })
@@ -38,7 +42,18 @@ export const checkAvailability: Endpoint = {
           return Response.json({ message: 'Post not found' }, { status: 404 })
         }
 
-        resolvedPostId = posts.docs[0]?.id
+        post = posts.docs[0]
+        resolvedPostId = post.id
+      } else if (resolvedPostId) {
+        // Fetch post to get Google Calendar URL
+        post = await req.payload.findByID({
+          collection: 'posts',
+          id: resolvedPostId,
+          select: {
+            id: true,
+            googleCalendarUrl: true,
+          },
+        })
       }
 
       // Parse the requested date range
@@ -207,8 +222,36 @@ export const checkAvailability: Endpoint = {
         isAvailable: conflictingBookings.length < concurrencyLimit,
       })
 
-      // If any bookings were found, the dates are not available
-      const isAvailable = conflictingBookings.length < concurrencyLimit
+      // Check Google Calendar availability if configured
+      let hasGoogleCalendarConflict = false
+      if (post?.googleCalendarUrl) {
+        try {
+          console.log('📅 Checking Google Calendar for conflicts:', post.googleCalendarUrl)
+          const googleCalendarDates = await parseICalFeed(post.googleCalendarUrl)
+          
+          // Check if any Google Calendar dates overlap with the requested range
+          const requestedDates: string[] = []
+          const currentDate = new Date(requestStart)
+          while (currentDate < requestEnd) {
+            const dateISO = currentDate.toISOString().split('T')[0]
+            requestedDates.push(dateISO)
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+          }
+          
+          // Check for overlap
+          hasGoogleCalendarConflict = requestedDates.some(date => googleCalendarDates.includes(date))
+          
+          if (hasGoogleCalendarConflict) {
+            console.log('❌ Google Calendar conflict detected for requested dates')
+          }
+        } catch (error) {
+          console.error('Error checking Google Calendar availability:', error)
+          // Continue without Google Calendar check if fetch fails
+        }
+      }
+
+      // If any bookings were found OR Google Calendar has conflicts, the dates are not available
+      const isAvailable = conflictingBookings.length < concurrencyLimit && !hasGoogleCalendarConflict
 
       // If unavailable, find suggested available dates
       let suggestedDates: Array<{ startDate: string; endDate: string; duration: number }> = []
@@ -230,7 +273,17 @@ export const checkAvailability: Endpoint = {
           limit: 100,
         })
 
-        // Find available date ranges
+        // Get Google Calendar dates if configured
+        let googleCalendarDates: string[] = []
+        if (post?.googleCalendarUrl) {
+          try {
+            googleCalendarDates = await parseICalFeed(post.googleCalendarUrl)
+          } catch (error) {
+            console.error('Error fetching Google Calendar dates for suggestions:', error)
+          }
+        }
+
+        // Find available date ranges (considering both bookings and Google Calendar)
         suggestedDates = findAvailableDateRanges(
           requestStart,
           duration,
@@ -238,7 +291,8 @@ export const checkAvailability: Endpoint = {
             fromDate: new Date(b.fromDate),
             toDate: new Date(b.toDate),
           })),
-          3 // Suggest up to 3 alternative date ranges
+          3, // Suggest up to 3 alternative date ranges
+          googleCalendarDates // Pass Google Calendar dates to avoid conflicts
         )
       }
 
@@ -251,6 +305,8 @@ export const checkAvailability: Endpoint = {
         metadata: {
           concurrencyLimit,
           conflictingCount: conflictingBookings.length,
+          hasGoogleCalendarConflict,
+          hasGoogleCalendar: !!post?.googleCalendarUrl,
         },
         suggestedDates: suggestedDates.length > 0 ? suggestedDates : undefined,
       })
@@ -266,7 +322,8 @@ function findAvailableDateRanges(
   requestedStart: Date,
   duration: number,
   existingBookings: Array<{ fromDate: Date; toDate: Date }>,
-  maxSuggestions: number = 3
+  maxSuggestions: number = 3,
+  googleCalendarDates: string[] = []
 ): Array<{ startDate: string; endDate: string; duration: number }> {
   const suggestions: Array<{ startDate: string; endDate: string; duration: number }> = []
   
@@ -297,11 +354,31 @@ function findAvailableDateRanges(
   const searchEnd = new Date(requestedStartNormalized)
   searchEnd.setUTCDate(searchEnd.getUTCDate() + lookForwardDays)
 
-  // Helper to check if a date range conflicts with any booking
+  // Helper to check if a date range conflicts with any booking or Google Calendar event
   const hasConflict = (testStart: Date, testEnd: Date): boolean => {
-    return sortedBookings.some(booking => {
+    // Check bookings
+    const bookingConflict = sortedBookings.some(booking => {
       return testStart < booking.toDate && testEnd > booking.fromDate
     })
+    
+    if (bookingConflict) return true
+    
+    // Check Google Calendar dates
+    if (googleCalendarDates.length > 0) {
+      const testDates: string[] = []
+      const currentDate = new Date(testStart)
+      while (currentDate < testEnd) {
+        const dateISO = currentDate.toISOString().split('T')[0]
+        testDates.push(dateISO)
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1)
+      }
+      
+      // Check if any test date is in Google Calendar unavailable dates
+      const googleCalendarConflict = testDates.some(date => googleCalendarDates.includes(date))
+      if (googleCalendarConflict) return true
+    }
+    
+    return false
   }
 
   // Check dates before the requested start (earlier options)

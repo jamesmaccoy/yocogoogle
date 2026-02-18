@@ -390,6 +390,10 @@ export interface Post {
     | null;
   baseRate?: number | null;
   /**
+   * Public iCal feed URL for Google Calendar (e.g., https://calendar.google.com/calendar/ical/.../public/basic.ics). This calendar will be checked for availability alongside bookings.
+   */
+  googleCalendarUrl?: string | null;
+  /**
    * Custom settings for packages associated with this post
    */
   packageSettings?:
@@ -1705,6 +1709,7 @@ export interface PostsSelect<T extends boolean = true> {
         name?: T;
       };
   baseRate?: T;
+  googleCalendarUrl?: T;
   packageSettings?:
     | T
     | {

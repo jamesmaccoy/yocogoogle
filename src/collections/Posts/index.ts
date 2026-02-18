@@ -251,6 +251,15 @@ export const Posts: CollectionConfig<'posts'> = {
       },
     },
     {
+      name: 'googleCalendarUrl',
+      type: 'text',
+      label: 'Google Calendar iCal URL',
+      admin: {
+        position: 'sidebar',
+        description: 'Public iCal feed URL for Google Calendar (e.g., https://calendar.google.com/calendar/ical/.../public/basic.ics). This calendar will be checked for availability alongside bookings.',
+      },
+    },
+    {
       name: 'packageSettings',
       type: 'array',
       label: 'Package Settings',
