@@ -121,23 +121,23 @@ export const PostHero: React.FC<{
           </motion.div>
         ) : (
           // Show gradient background for non-subscribers (no image)
-          <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
-            {displayImage && (
-              // Members-only badge in bottom right corner
-              <div className="absolute inset-0 z-20 flex items-end justify-end p-6">
-                <Link
-                  href="/subscribe"
-                  className="flex items-center gap-2 bg-black/50 text-white/90 backdrop-blur-sm border border-white/10 px-4 py-2 text-sm leading-5 no-underline hover:bg-black/70 transition-colors rounded-sm"
-                >
-                  <Lock size={14} className="text-white/80" />
-                  <span>Members only</span>
-                </Link>
-              </div>
-            )}
-          </div>
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900" />
         )}
         <div className="absolute pointer-events-none left-0 bottom-0 w-full h-1/2 bg-gradient-to-t from-black to-transparent z-10" />
       </motion.div>
+      {/* Members-only badge positioned outside the z-index: -1 container */}
+      {!shouldShowImage && displayImage && (
+        <div className="absolute bottom-4 left-4 md:bottom-6 md:right-6 md:left-auto z-[60] pointer-events-auto">
+          <Link
+            href="/subscribe"
+            className="flex items-center gap-2 bg-black/50 text-white/90 backdrop-blur-sm border border-white/10 px-4 py-2 text-sm leading-5 no-underline hover:bg-black/70 transition-colors rounded-sm pointer-events-auto"
+          >
+            <Lock size={14} className="text-white/80" />
+            <span className="hidden sm:inline">Members only</span>
+            <span className="sm:hidden">Members</span>
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
