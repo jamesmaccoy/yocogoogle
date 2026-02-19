@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Sparkles, ArrowUpIcon, Mic, Loader2, Package, Calendar, TrendingUp, Home, Star, FileText, BarChart2 } from 'lucide-react'
+import { Sparkles, ArrowUpIcon, Mic, Loader2, Package, Calendar, TrendingUp, Home, Star, FileText, BarChart2, Eye, ExternalLink } from 'lucide-react'
 import {
   InputGroup,
   InputGroupTextarea,
@@ -41,6 +41,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const [lastResponse, setLastResponse] = useState<string | null>(null)
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
   const [isSavingPackage, setIsSavingPackage] = useState(false)
+  const [createdPackageId, setCreatedPackageId] = useState<string | null>(null)
   const [restoredEstimate, setRestoredEstimate] = useState<any>(null)
   const estimateRestoredRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -151,13 +152,14 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     }
   }, [chatHook, isManageContext])
 
-  // Monitor messages for package preview tool calls as they stream in
+  // Monitor messages for package preview and creation tool calls as they stream in
   useEffect(() => {
     if (!isManageContext || !messages.length) return
 
     // Check the last message for tool calls
     const lastMessage = messages[messages.length - 1]
     if (lastMessage?.role === 'assistant' && lastMessage.parts) {
+      // Check for package preview
       const previewPart = lastMessage.parts.find((part: any) =>
         part.type === 'tool-previewPackage' && part.state === 'output-available'
       )
@@ -167,8 +169,36 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         }
         setPendingPackagePreview(previewPart.output)
       }
+
+      // Check for package creation success
+      const createPart = lastMessage.parts.find((part: any) =>
+        part.type === 'tool-createPackage' && part.state === 'output-available'
+      )
+      if (createPart?.output?.success) {
+        const packageId = createPart.output.packageId || 
+                         createPart.output.package?.id || 
+                         createPart.output.id
+        if (packageId && packageId !== createdPackageId) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('✅ Package created successfully:', { 
+              packageId, 
+              output: createPart.output 
+            })
+          }
+          setCreatedPackageId(packageId)
+          setPendingPackagePreview(null) // Clear preview after successful creation
+          
+          // Trigger package list refresh event for parent components
+          const postId = context?.data?.postId || context?.data?.posts?.[0]?.id
+          if (postId) {
+            window.dispatchEvent(new CustomEvent('packageCreated', {
+              detail: { packageId, postId, package: createPart.output.package }
+            }))
+          }
+        }
+      }
     }
-  }, [messages, isManageContext, pendingPackagePreview])
+  }, [messages, isManageContext, pendingPackagePreview, createdPackageId, context])
 
   // Input change handler for manage context (manual state management)
   const handleManageInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -847,14 +877,55 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                           </div>
                         )
                       case 'output-available':
+                        const packageId = part.output.packageId || part.output.package?.id
+                        const postId = context?.data?.postId || context?.data?.posts?.[0]?.id
                         return (
                           <div key={index} className={cn(
-                            "text-sm p-3 rounded-lg",
+                            "text-sm p-4 rounded-lg space-y-3",
                             part.output.success
                               ? "bg-green-50 text-green-800 border border-green-200"
                               : "bg-red-50 text-red-800 border border-red-200"
                           )}>
-                            {part.output.message}
+                            <div className="font-medium">{part.output.message}</div>
+                            {part.output.success && packageId && (
+                              <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    window.open(`/api/packages/${packageId}?depth=2`, '_blank')
+                                  }}
+                                  className="bg-white hover:bg-green-50 border-green-300 text-xs"
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  View API
+                                </Button>
+                                {postId && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      window.open(`/manage/packages/${postId}`, '_blank')
+                                    }}
+                                    className="bg-white hover:bg-green-50 border-green-300 text-xs"
+                                  >
+                                    <Package className="h-3 w-3 mr-1" />
+                                    Manage Packages
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setCreatedPackageId(null)
+                                    setPendingPackagePreview(null)
+                                  }}
+                                  className="bg-white hover:bg-green-50 border-green-300 text-xs"
+                                >
+                                  Create Another
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )
                       case 'output-error':
@@ -1164,20 +1235,85 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           )}
         </div>
 
-        {/* Pending package preview - shown prominently when available */}
-        {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
-        {pendingPackagePreview && (
-          <div className="my-6 border-t border-slate-200 pt-6">
-            <div className="max-w-2xl mx-auto">
-              <PackagePreview
-                {...pendingPackagePreview}
-                onConfirm={handleConfirmPackage}
-                onCancel={handleCancelPackage}
-                isSaving={isSavingPackage}
-              />
+      {/* Pending package preview - shown prominently when available */}
+      {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
+      {pendingPackagePreview && !createdPackageId && (
+        <div className="my-6 border-t border-slate-200 pt-6">
+          <div className="max-w-2xl mx-auto">
+            <PackagePreview
+              {...pendingPackagePreview}
+              onConfirm={handleConfirmPackage}
+              onCancel={handleCancelPackage}
+              isSaving={isSavingPackage}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Success message after package creation */}
+      {createdPackageId && (
+        <div className="my-6 border-t border-slate-200 pt-6">
+          <div className="max-w-2xl mx-auto">
+            <div className="p-6 border-green-200 bg-green-50 rounded-lg">
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-green-100 rounded-full">
+                    <Package className="h-5 w-5 text-green-700" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-green-900 mb-1">
+                      Package Created Successfully!
+                    </h3>
+                    <p className="text-sm text-green-700">
+                      Your package has been created and is ready to use. It will appear in your package list.
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Quick Actions */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
+                    }}
+                    className="bg-white hover:bg-green-50 border-green-300"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Package API
+                  </Button>
+                  {context?.data?.postId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        window.open(`/manage/packages/${context.data.postId}`, '_blank')
+                      }}
+                      className="bg-white hover:bg-green-50 border-green-300"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Manage Packages
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setCreatedPackageId(null)
+                      setPendingPackagePreview(null)
+                    }}
+                    className="bg-white hover:bg-green-50 border-green-300"
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    Create Another
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
         {/* MCP Test Result */}
         {mcpTestResult && (

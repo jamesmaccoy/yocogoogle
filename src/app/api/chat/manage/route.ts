@@ -306,6 +306,18 @@ export async function POST(request: NextRequest) {
           })
 
           // Return structured response with package ID prominently displayed
+          const categoryEmojiMap: Record<string, string> = {
+            standard: '🏠',
+            hosted: '✨',
+            addon: '🧹',
+            special: '🎁',
+          }
+          const categoryEmoji = (created.category && categoryEmojiMap[created.category]) || '📦'
+
+          const categoryMessage = created.category === 'special' 
+            ? ' Special packages are very popular with customers and can help attract more bookings!'
+            : ''
+
           return {
             success: true,
             package: {
@@ -323,7 +335,7 @@ export async function POST(request: NextRequest) {
               postId: typeof created.post === 'string' ? created.post : created.post?.id,
             },
             packageId: created.id, // Also include at top level for easy access
-            message: `Package "${name}" has been created successfully! You can view it at /api/packages/${created.id}?depth=2`,
+            message: `${categoryEmoji} Package "${name}" has been created successfully!${categoryMessage} You can view and manage all your packages at /manage/packages/${finalPostId}.`,
           }
         } catch (error: any) {
           console.error('Error creating package:', error)
@@ -589,6 +601,20 @@ export async function POST(request: NextRequest) {
     // Use the correct model name format with 'models/' prefix for AI SDK v5
     const model = googleAI('models/gemini-2.0-flash-exp')
 
+    // Analyze existing packages to provide insights
+    const specialPackages = existingPackages.docs.filter((pkg: any) => pkg.category === 'special')
+    const packageStats = {
+      total: existingPackages.docs.length,
+      byCategory: {
+        standard: existingPackages.docs.filter((pkg: any) => pkg.category === 'standard').length,
+        hosted: existingPackages.docs.filter((pkg: any) => pkg.category === 'hosted').length,
+        addon: existingPackages.docs.filter((pkg: any) => pkg.category === 'addon').length,
+        special: specialPackages.length,
+      },
+      enabled: existingPackages.docs.filter((pkg: any) => pkg.isEnabled).length,
+      disabled: existingPackages.docs.filter((pkg: any) => !pkg.isEnabled).length,
+    }
+
     const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 
 🚨 CRITICAL TOOL CALLING RULES - FOLLOW THESE EXACTLY:
@@ -615,8 +641,18 @@ AFTER TOOL CALLS:
 HOST'S PROPERTIES:
 ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
 
+PACKAGE STATISTICS:
+- Total Packages: ${packageStats.total}
+- By Category: Standard (${packageStats.byCategory.standard}), Hosted (${packageStats.byCategory.hosted}), Addon (${packageStats.byCategory.addon}), Special (${packageStats.byCategory.special})
+- Enabled: ${packageStats.enabled}, Disabled: ${packageStats.disabled}
+
 EXISTING PACKAGES:
 ${existingPackages.docs.map((pkg: any) => `- ${pkg.name} (${pkg.category}, ${pkg.minNights}-${pkg.maxNights} nights, ${pkg.isEnabled ? 'enabled' : 'disabled'})`).join('\n') || 'No packages yet'}
+
+⭐ SPECIAL PACKAGES INSIGHT:
+${specialPackages.length > 0 
+  ? `You have ${specialPackages.length} special package(s). Special packages are popular with customers and offer unique experiences. Consider creating more special packages for seasonal promotions, unique experiences, or limited-time offers.`
+  : 'You don\'t have any special packages yet. Special packages are great for promotions, unique experiences, and attracting customers. Consider creating special packages for seasonal offers or unique experiences.'}
 
 PROPERTY & PACKAGE MANAGEMENT GUIDELINES:
 
@@ -632,7 +668,11 @@ PROPERTY CREATION:
 
 PACKAGE MANAGEMENT:
 1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents, R300 = 30000 cents
-2. Categories: standard (regular accommodation), hosted (with concierge/services), addon (one-time extras like cleaning/wine), special (promotional/unique)
+2. Categories: 
+   - standard: Regular accommodation packages (most common)
+   - hosted: Packages with concierge services and premium amenities
+   - addon: One-time extras like cleaning, wine, guided tours (not accommodation)
+   - special: Promotional/unique packages - these are VERY POPULAR with customers! Consider creating special packages for seasonal promotions, unique experiences, or limited-time offers
 3. Entitlements: standard (all customers), pro (premium customers only)
 4. When user wants to create a package (e.g., "create a package", "make a package", "new package", "package for R300"):
    - IMMEDIATELY call previewPackageTool - DO NOT respond with text first
@@ -647,7 +687,7 @@ PACKAGE MANAGEMENT:
    - For addon packages: baseRate 20000-50000 cents (R200-R500), minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
    - For standard packages: baseRate 15000-30000 cents (R150-R300), minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]
    - For hosted packages: baseRate 30000-60000 cents (R300-R600), minNights: 3, maxNights: 14, features: ["Concierge service", "Premium amenities", "Personalized experience"]
-   - For special packages: baseRate 25000-50000 cents (R250-R500), minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience"]
+   - For special packages: baseRate 25000-50000 cents (R250-R500), minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience", "Best value"]
    - Always generate 3-5 relevant features based on category and package type
 6. CRUD Operations:
    - CREATE PROPERTY: Use createPostTool when user wants to create a new property
@@ -659,6 +699,8 @@ PACKAGE MANAGEMENT:
 8. Be helpful and guide the host through decisions
 9. When showing package previews, ensure ALL fields are filled with reasonable guesses so the user can see a complete package before confirming
 10. After creating a property, automatically offer to create a package for it
+11. SPECIAL PACKAGES: These are very popular with customers! When appropriate, suggest creating special packages for promotions, seasonal offers, or unique experiences. After creating a package, mention that special packages tend to attract more bookings.
+12. PACKAGE MANAGEMENT: After creating a package, remind the host they can view and manage all packages at /manage/packages/[postId]. They can enable/disable packages, update pricing, and see which packages are performing well.
 
 When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.`
 
@@ -674,11 +716,6 @@ When user asks to create a package from a property they offer, create the proper
         updatePackage: updatePackageTool,
         deletePackage: deletePackageTool,
       },
-      maxToolRoundtrips: 5, // Allow multiple tool calls in sequence
-      // Force tool execution when user explicitly requests it
-      ...(messages[messages.length - 1]?.content?.includes('CALL previewPackageTool NOW') && {
-        // Some models support toolChoice to force tool execution
-      }),
     })
 
     return result.toUIMessageStreamResponse()

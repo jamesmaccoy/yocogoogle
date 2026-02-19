@@ -101,6 +101,25 @@ export default function ManagePackagesPage({ postId }: { postId: string }) {
     }
   }, [postId])
 
+  // Listen for package creation events from AI Assistant
+  useEffect(() => {
+    const handlePackageCreated = (event: CustomEvent) => {
+      const { packageId, postId: createdPostId } = event.detail
+      if (createdPostId === postId) {
+        // Refresh the package list
+        reload()
+        console.log('📦 Package created, refreshing list:', packageId)
+      }
+    }
+
+    window.addEventListener('packageCreated', handlePackageCreated as EventListener)
+    
+    return () => {
+      window.removeEventListener('packageCreated', handlePackageCreated as EventListener)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postId])
+
   // Self destruct state
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmText, setConfirmText] = useState('')
