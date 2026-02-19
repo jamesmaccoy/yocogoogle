@@ -3,6 +3,8 @@
 import { formatDateTime } from 'src/utilities/formatDateTime'
 import React from 'react'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
+import { Lock } from 'lucide-react'
 
 import type { Post } from '@/payload-types'
 
@@ -121,11 +123,15 @@ export const PostHero: React.FC<{
           // Show gradient background for non-subscribers (no image)
           <div className="absolute inset-0 w-full h-full bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
             {displayImage && (
-              <div className="absolute inset-0 flex items-center justify-center z-20">
-                <div className="text-white/90 text-center px-6 py-4 bg-black/50 rounded-lg backdrop-blur-sm border border-white/10 max-w-md">
-                  <p className="text-lg font-semibold mb-2">Image for members only</p>
-                  <p className="text-sm text-white/80">Subscribe to view full image</p>
-                </div>
+              // Members-only badge in bottom right corner
+              <div className="absolute inset-0 z-20 flex items-end justify-end p-6">
+                <Link
+                  href="/subscribe"
+                  className="flex items-center gap-2 bg-black/50 text-white/90 backdrop-blur-sm border border-white/10 px-4 py-2 text-sm leading-5 no-underline hover:bg-black/70 transition-colors rounded-sm"
+                >
+                  <Lock size={14} className="text-white/80" />
+                  <span>Members only</span>
+                </Link>
               </div>
             )}
           </div>

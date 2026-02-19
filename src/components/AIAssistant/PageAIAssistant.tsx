@@ -61,6 +61,17 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   // Fallback: if pathname includes /manage, treat as manage context
   const isManageContext = context?.type === 'manage' || (typeof pathname === 'string' && pathname.includes('/manage'))
 
+  // Debug: Log context detection
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 PageAIAssistant context detection:', {
+      contextType: context?.type,
+      pathname,
+      isManageContext,
+      hasContextData: !!context?.data,
+      contextDataKeys: context?.data ? Object.keys(context.data) : [],
+    })
+  }
+
   // Debug logging
   if (process.env.NODE_ENV === 'development') {
     console.log('🔍 PageAIAssistant context:', {
@@ -125,25 +136,35 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     },
   } as any)
 
-  // Extract values from chat hook with new API (v2.0+)
-  // The new API provides: messages, sendMessage, status, error
-  // It does NOT provide: input, handleInputChange, handleSubmit, setInput, append
+  // Extract values from chat hook with AI SDK v2 API
+  // v2 provides: messages, sendMessage, stop, status, error (no more append/handleSubmit)
   const {
     messages = [],
     sendMessage,
+    stop: chatStop,
     status,
     error: chatError
   } = (chatHook || {}) as any
 
-  // Derive loading state from status
-  const chatIsLoading = status === 'in_progress' || status === 'streaming'
+  // Debug: Log hook state in development
+  if (process.env.NODE_ENV === 'development' && isManageContext) {
+    console.log('🔍 useChat hook state:', {
+      hasChatHook: !!chatHook,
+      hasSendMessage: !!sendMessage,
+      sendMessageType: typeof sendMessage,
+      status,
+      messagesCount: messages.length,
+      isManageContext,
+    })
+  }
 
-  // Debug: Log chat hook structure in development
+  // Derive loading state from status (v2 API uses 'submitted' | 'streaming' | 'ready' | 'error')
+  const chatIsLoading = status === 'submitted' || status === 'streaming'
+
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && isManageContext && chatHook) {
       console.log('🔍 Chat hook structure:', {
         hasChatHook: !!chatHook,
-        chatHookType: typeof chatHook,
         chatHookKeys: Object.keys(chatHook || {}),
         hasSendMessage: 'sendMessage' in (chatHook || {}),
         sendMessageType: typeof (chatHook as any)?.sendMessage,
@@ -175,19 +196,19 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         part.type === 'tool-createPackage' && part.state === 'output-available'
       )
       if (createPart?.output?.success) {
-        const packageId = createPart.output.packageId || 
-                         createPart.output.package?.id || 
-                         createPart.output.id
+        const packageId = createPart.output.packageId ||
+          createPart.output.package?.id ||
+          createPart.output.id
         if (packageId && packageId !== createdPackageId) {
           if (process.env.NODE_ENV === 'development') {
-            console.log('✅ Package created successfully:', { 
-              packageId, 
-              output: createPart.output 
+            console.log('✅ Package created successfully:', {
+              packageId,
+              output: createPart.output
             })
           }
           setCreatedPackageId(packageId)
           setPendingPackagePreview(null) // Clear preview after successful creation
-          
+
           // Trigger package list refresh event for parent components
           const postId = context?.data?.postId || context?.data?.posts?.[0]?.id
           if (postId) {
@@ -318,28 +339,19 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
 
-    // Double-check context - if we're in manage context, we MUST use the manage endpoint
-    // Fallback: if pathname includes /manage, treat as manage context
     const currentIsManageContext = context?.type === 'manage' || (typeof pathname === 'string' && pathname.includes('/manage'))
-    
+
     if (process.env.NODE_ENV === 'development') {
       console.log('📤 handleSendMessage called:', {
         isManageContext,
         currentIsManageContext,
-        contextType: context?.type,
-        contextData: context?.data,
         hasSendMessage: !!sendMessage,
         willUse: currentIsManageContext ? 'sendMessage (/api/chat/manage)' : 'sendSimpleMessage (/api/chat)',
       })
     }
 
     if (currentIsManageContext) {
-      // Use AI SDK's sendMessage for manage context (new API v2.0+)
-      if (!sendMessage) {
-        console.error('❌ sendMessage is not available but isManageContext is true!')
-        return
-      }
-      
+      // Use AI SDK v2 sendMessage for manage context
       const messageToSend = manageInput.trim()
       if (!messageToSend) return
 
@@ -347,10 +359,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         console.log('🚀 Sending message via sendMessage to /api/chat/manage:', {
           message: messageToSend.substring(0, 50),
           hasSendMessage: !!sendMessage,
-          isManageContext: currentIsManageContext,
           status,
-          apiEndpoint: '/api/chat/manage',
-          contextType: context?.type,
         })
       }
 
@@ -358,19 +367,18 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
       setManageInput('')
 
       try {
-        // New API: sendMessage accepts { text: string } or string
-        // This will call /api/chat/manage because useChat is configured with that endpoint
-        await sendMessage({ text: messageToSend })
+        if (sendMessage && typeof sendMessage === 'function') {
+          await sendMessage({ role: 'user', content: messageToSend })
+        } else {
+          console.warn('⚠️ sendMessage not available, falling back to /api/chat')
+          await sendSimpleMessage(messageToSend)
+        }
       } catch (error) {
         console.error('Error sending message:', error)
-        // Restore input on error
         setManageInput(messageToSend)
       }
     } else {
       // Use simple fetch for other contexts
-      if (process.env.NODE_ENV === 'development') {
-        console.log('⚠️ Using sendSimpleMessage (/api/chat) - not in manage context')
-      }
       const messageToSend = input.trim()
       if (!messageToSend || isLoadingSimple) return
       setInput('')
@@ -385,8 +393,6 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     const previewData = { ...pendingPackagePreview }
     setPendingPackagePreview(null)
 
-    // Create a message that explicitly asks the AI to use createPackageTool
-    // Format: Structured message that the AI will parse and use to call createPackageTool
     const createMessage = `Please create the package using createPackageTool with these details:
 - name: "${previewData.name}"
 - description: "${previewData.description}"
@@ -401,19 +407,10 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : ''}
 ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📦 Confirming package creation:', {
-        packageName: previewData.name,
-        hasSendMessage: !!sendMessage,
-      })
-    }
-
     try {
-      // Use sendMessage API directly (new API v2.0+)
-      await sendMessage({ text: createMessage })
+      await sendMessage({ role: 'user', content: createMessage })
     } catch (error) {
       console.error('Error confirming package:', error)
-      // Restore preview on error
       setPendingPackagePreview(previewData)
     } finally {
       setIsSavingPackage(false)
@@ -567,12 +564,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
   const handleActionClick = async (action: string) => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('🔘 Action button clicked:', {
-        action,
-        isManageContext,
-        hasSendMessage: !!sendMessage,
-        status,
-      })
+      console.log('🔘 Action button clicked:', { action, isManageContext, hasSendMessage: !!sendMessage, status })
     }
 
     if (isManageContext) {
@@ -581,18 +573,12 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         return
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🚀 Sending action via sendMessage:', action)
-      }
-
       try {
-        // Use sendMessage API directly (new API v2.0+)
-        await sendMessage({ text: action })
+        await sendMessage({ role: 'user', content: action })
       } catch (error) {
         console.error('Error sending action:', error)
       }
     } else {
-      // For other contexts, use simple sendSimpleMessage
       await sendSimpleMessage(action)
     }
   }
@@ -610,7 +596,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
   const handleCurrentInputChange = isManageContext
     ? handleManageInputChange
     : handleInputChange
-  
+
   // Only disable input when actually loading
   const currentIsLoading = isManageContext ? chatIsLoading : isLoadingSimple
 
@@ -1061,45 +1047,45 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
   // Primary variant for Magic Patterns design
   const isBookingsContext = context?.type === 'bookings'
-  
+
   // Handle estimate restoration for bookings context
   // Auto-restore if there's a latest estimate (either from URL param or latest estimate)
   useEffect(() => {
     if (isBookingsContext && context?.data?.latestEstimate && !estimateRestoredRef.current) {
       // Check if we should restore (either explicit flag or just having a latest estimate)
-      const shouldRestore = context?.data?.restoreEstimate || 
-                           (context?.data?.latestEstimate && !lastResponse) // Auto-restore if no response yet
-      
+      const shouldRestore = context?.data?.restoreEstimate ||
+        (context?.data?.latestEstimate && !lastResponse) // Auto-restore if no response yet
+
       if (shouldRestore) {
         const estimate = context.data.latestEstimate
         estimateRestoredRef.current = true
         setRestoredEstimate(estimate)
-        
+
         // Create restoration message
         const post = typeof estimate.post === 'object' ? estimate.post : null
         const postTitle = post?.title || 'your property'
         const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
         const toDate = estimate.toDate ? new Date(estimate.toDate) : null
-        
+
         let restorationMessage = `Welcome back! I've restored your estimate for ${postTitle}.`
-        
+
         if (fromDate && toDate) {
           const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
           const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
         }
-        
+
         if (estimate.total) {
           restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
         }
-        
+
         restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
-        
+
         setLastResponse(restorationMessage)
       }
     }
   }, [isBookingsContext, context?.data?.latestEstimate, context?.data?.restoreEstimate, lastResponse])
-  
+
   // Function to restore estimate manually
   const handleRestoreEstimate = useCallback(async (estimateId: string) => {
     try {
@@ -1108,29 +1094,29 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         const estimate = await response.json()
         setRestoredEstimate(estimate)
         estimateRestoredRef.current = true
-        
+
         // Create restoration message
         const post = typeof estimate.post === 'object' ? estimate.post : null
         const postTitle = post?.title || 'your property'
         const fromDate = estimate.fromDate ? new Date(estimate.fromDate) : null
         const toDate = estimate.toDate ? new Date(estimate.toDate) : null
-        
+
         let restorationMessage = `I've restored your estimate for ${postTitle}.`
-        
+
         if (fromDate && toDate) {
           const duration = Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24))
           const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           restorationMessage += ` Your selected dates are ${formatDate(fromDate)} to ${formatDate(toDate)} (${duration} ${duration === 1 ? 'night' : 'nights'}).`
         }
-        
+
         if (estimate.total) {
           restorationMessage += ` Total: R${estimate.total.toFixed(0)}.`
         }
-        
+
         restorationMessage += ` You can continue your booking journey here or ask me anything about your estimate.`
-        
+
         setLastResponse(restorationMessage)
-        
+
         // Update URL to include restoreEstimate parameter
         const url = new URL(window.location.href)
         url.searchParams.set('restoreEstimate', estimateId)
@@ -1152,7 +1138,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             </span>
           </div>
           <h1 className="text-2xl sm:text-[30px] font-bold leading-tight sm:leading-9 tracking-[-0.75px] text-[#0f172a] mb-3">
-            {isBookingsContext 
+            {isBookingsContext
               ? "How can I help with your bookings today?"
               : "How can I help manage your properties today?"}
           </h1>
@@ -1167,7 +1153,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         <div>
           {/* Render manage context messages with generative UI */}
           {isManageContext && renderManageMessages()}
-          
+
           {/* Render simple response for bookings context */}
           {isBookingsContext && lastResponse && (
             <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6 shadow-sm">
@@ -1185,21 +1171,21 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               </div>
             </div>
           )}
-          
+
           {/* Empty state placeholder */}
           {isManageContext && (!messages || messages.length === 0) && !pendingPackagePreview && (
             <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
               Start a conversation to see messages here...
             </div>
           )}
-          
+
           {/* Empty state for bookings context */}
           {isBookingsContext && !lastResponse && !restoredEstimate && (
             <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
               Start a conversation to see messages here...
             </div>
           )}
-          
+
           {/* Show restored estimate details */}
           {isBookingsContext && restoredEstimate && (
             <div className="mb-6 rounded-lg border border-teal-200 bg-teal-50/30 p-4">
@@ -1235,85 +1221,85 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           )}
         </div>
 
-      {/* Pending package preview - shown prominently when available */}
-      {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
-      {pendingPackagePreview && !createdPackageId && (
-        <div className="my-6 border-t border-slate-200 pt-6">
-          <div className="max-w-2xl mx-auto">
-            <PackagePreview
-              {...pendingPackagePreview}
-              onConfirm={handleConfirmPackage}
-              onCancel={handleCancelPackage}
-              isSaving={isSavingPackage}
-            />
+        {/* Pending package preview - shown prominently when available */}
+        {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
+        {pendingPackagePreview && !createdPackageId && (
+          <div className="my-6 border-t border-slate-200 pt-6">
+            <div className="max-w-2xl mx-auto">
+              <PackagePreview
+                {...pendingPackagePreview}
+                onConfirm={handleConfirmPackage}
+                onCancel={handleCancelPackage}
+                isSaving={isSavingPackage}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Success message after package creation */}
-      {createdPackageId && (
-        <div className="my-6 border-t border-slate-200 pt-6">
-          <div className="max-w-2xl mx-auto">
-            <div className="p-6 border-green-200 bg-green-50 rounded-lg">
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-green-100 rounded-full">
-                    <Package className="h-5 w-5 text-green-700" />
+        {/* Success message after package creation */}
+        {createdPackageId && (
+          <div className="my-6 border-t border-slate-200 pt-6">
+            <div className="max-w-2xl mx-auto">
+              <div className="p-6 border-green-200 bg-green-50 rounded-lg">
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-100 rounded-full">
+                      <Package className="h-5 w-5 text-green-700" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-green-900 mb-1">
+                        Package Created Successfully!
+                      </h3>
+                      <p className="text-sm text-green-700">
+                        Your package has been created and is ready to use. It will appear in your package list.
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-green-900 mb-1">
-                      Package Created Successfully!
-                    </h3>
-                    <p className="text-sm text-green-700">
-                      Your package has been created and is ready to use. It will appear in your package list.
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Quick Actions */}
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
-                    }}
-                    className="bg-white hover:bg-green-50 border-green-300"
-                  >
-                    <Eye className="h-4 w-4 mr-2" />
-                    View Package API
-                  </Button>
-                  {context?.data?.postId && (
+
+                  {/* Quick Actions */}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        window.open(`/manage/packages/${context.data.postId}`, '_blank')
+                        window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
                       }}
                       className="bg-white hover:bg-green-50 border-green-300"
                     >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Manage Packages
+                      <Eye className="h-4 w-4 mr-2" />
+                      View Package API
                     </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCreatedPackageId(null)
-                      setPendingPackagePreview(null)
-                    }}
-                    className="bg-white hover:bg-green-50 border-green-300"
-                  >
-                    <Package className="h-4 w-4 mr-2" />
-                    Create Another
-                  </Button>
+                    {context?.data?.postId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          window.open(`/manage/packages/${context.data.postId}`, '_blank')
+                        }}
+                        className="bg-white hover:bg-green-50 border-green-300"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Manage Packages
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCreatedPackageId(null)
+                        setPendingPackagePreview(null)
+                      }}
+                      className="bg-white hover:bg-green-50 border-green-300"
+                    >
+                      <Package className="h-4 w-4 mr-2" />
+                      Create Another
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
         {/* MCP Test Result */}
         {mcpTestResult && (
@@ -1348,7 +1334,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               value={currentInput}
               onChange={handleCurrentInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={placeholder || (isBookingsContext 
+              placeholder={placeholder || (isBookingsContext
                 ? "Ask about your bookings, upcoming trips, or get recommendations..."
                 : "Describe a new package for your property or ask about recent bookings...")}
               className="w-full min-h-[120px] resize-none bg-transparent outline-none border-0 p-4 text-base font-normal leading-6 text-[#0f172a] placeholder:text-[#94a3b8]"
