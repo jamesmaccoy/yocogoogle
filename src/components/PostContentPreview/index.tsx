@@ -102,7 +102,7 @@ export const PostContentPreview: React.FC<{
 
   // Get author info
   const hasAuthors = post.populatedAuthors && Array.isArray(post.populatedAuthors) && post.populatedAuthors.length > 0
-  const authorName = hasAuthors ? formatAuthors(post.populatedAuthors) : 'The Team'
+  const authorName = hasAuthors && post.populatedAuthors ? formatAuthors(post.populatedAuthors) : 'The Team'
 
   // Calculate read time
   const fullText = post.content && typeof post.content === 'object' && post.content.root
@@ -116,45 +116,45 @@ export const PostContentPreview: React.FC<{
 
   return (
     <div className="w-full max-w-[672px] mx-auto mt-16 mb-12">
-      <div className="relative bg-white">
+      <div className="relative bg-white dark:bg-zinc-900">
         {/* Editorial Header */}
         <div className="mb-8">
-          <span className="inline-block text-xs font-bold tracking-widest text-[rgb(20,184,166)] mb-3">
+          <span className="inline-block text-xs font-bold tracking-widest text-teal-500 dark:text-teal-400 mb-3">
             {categoryLabel.toUpperCase()}
           </span>
-          <h1 className="text-3xl md:text-4xl font-bold text-[rgb(15,23,42)] mb-4 leading-tight">
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4 leading-tight">
             {post.title}
           </h1>
 
           {/* Meta Row */}
-          <div className="flex items-center gap-4 text-sm text-[rgb(100,116,139)]">
+          <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
             {hasAuthors && (
               <>
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-                    <User className="w-3 h-3 text-gray-500" />
+                  <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                    <User className="w-3 h-3 text-gray-500 dark:text-gray-400" />
                   </div>
-                  <span className="font-medium text-[rgb(15,23,42)]">
+                  <span className="font-medium text-slate-900 dark:text-slate-100">
                     {authorName}
                   </span>
                 </div>
-                <span>·</span>
+                <span className="text-slate-400 dark:text-slate-500">·</span>
               </>
             )}
             <div className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" />
+              <Clock className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               <span>{readTime} min read</span>
             </div>
             {post.publishedAt && (
               <>
-                <span>·</span>
+                <span className="text-slate-400 dark:text-slate-500">·</span>
                 <span>{formatDateTime(post.publishedAt)}</span>
               </>
             )}
           </div>
         </div>
 
-        <hr className="border-gray-100 mb-8" />
+        <hr className="border-gray-100 dark:border-gray-800 mb-8" />
 
         {/* Excerpt with Fade */}
         <div
@@ -164,36 +164,36 @@ export const PostContentPreview: React.FC<{
           }}
         >
           {contentPreview.map((paragraph, index) => (
-            <p key={index} className="text-lg leading-8 text-[rgb(51,65,85)] mb-4">
+            <p key={index} className="text-lg leading-8 text-slate-700 dark:text-slate-300 mb-4">
               {paragraph}
             </p>
           ))}
           {/* Gradient Fade */}
-          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-white via-white/80 to-transparent pointer-events-none" />
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-white via-white/80 to-transparent dark:from-zinc-900 dark:via-zinc-900/80 pointer-events-none" />
         </div>
 
         {/* Subscribe Gate */}
-        <div className="mt-0 border-t border-gray-100 pt-10 pb-2 text-center">
-          <div className="w-12 h-12 bg-[rgb(240,253,250)] rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-6 h-6 text-[rgb(20,184,166)]" />
+        <div className="mt-0 border-t border-gray-100 dark:border-gray-800 pt-10 pb-2 text-center">
+          <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-6 h-6 text-teal-500 dark:text-teal-400" />
           </div>
-          <h3 className="text-xl font-bold text-[rgb(15,23,42)] mb-2">
+          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">
             This post is for subscribers
           </h3>
-          <p className="text-[rgb(100,116,139)] mb-6 max-w-sm mx-auto text-sm leading-relaxed">
+          <p className="text-slate-500 dark:text-slate-400 mb-6 max-w-sm mx-auto text-sm leading-relaxed">
             Subscribe to read the full story and get access to all member content, including exclusive retreat offers.
           </p>
           <div className="flex flex-col items-center gap-3 max-w-xs mx-auto">
             <Link
               href="/subscribe"
-              className="w-full bg-[rgb(20,184,166)] hover:bg-[rgb(13,148,136)] text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 no-underline"
+              className="w-full bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 no-underline"
             >
               Subscribe — from R99/month
               <ChevronRight className="w-4 h-4" />
             </Link>
             <Link
               href="/login"
-              className="text-sm font-medium text-[rgb(100,116,139)] hover:text-[rgb(15,23,42)] transition-colors no-underline"
+              className="text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors no-underline"
             >
               Already a member? Sign in
             </Link>
