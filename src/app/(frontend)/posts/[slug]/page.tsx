@@ -8,6 +8,7 @@ import { draftMode } from 'next/headers'
 import React, { cache, Suspense } from 'react'
 import RichText from '@/components/RichText'
 import { SmartEstimateBlock } from '@/blocks/EstimateBlock/SmartEstimateBlock'
+import { PostContentPreview } from '@/components/PostContentPreview'
 
 import type { Post } from '@/payload-types'
 
@@ -97,6 +98,7 @@ export default async function Post({ params: paramsPromise }: Args) {
             postContent={post.content}
           />
         </Suspense>
+        <PostContentPreview post={post as Post} />
           {post.relatedPosts && post.relatedPosts.length > 0 && (
             <RelatedPosts
               className="mt-12 max-w-[52rem] lg:grid lg:grid-cols-subgrid col-start-1 col-span-3 grid-rows-[2fr]"
