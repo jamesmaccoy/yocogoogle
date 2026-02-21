@@ -188,7 +188,7 @@ export const PostContentPreview: React.FC<{
               href="/subscribe"
               className="w-full bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 no-underline"
             >
-              Subscribe — from R99/month
+              Subscribe — from R25/month
               <ChevronRight className="w-4 h-4" />
             </Link>
             <Link
