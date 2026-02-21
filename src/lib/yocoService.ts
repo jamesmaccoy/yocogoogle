@@ -285,7 +285,10 @@ class YocoService {
       }
 
       // Build success URL with booking data
-      const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+      // Use production URL in production, localhost in development
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? (process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za')
+        : (process.env.NEXT_PUBLIC_URL || 'http://localhost:3000')
       const successParams = new URLSearchParams({ success: 'true' })
       if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
       if (bookingData?.postId) successParams.set('postId', bookingData.postId)
@@ -433,7 +436,10 @@ class YocoService {
       }
 
       // Build success URL with booking data
-      const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+      // Use production URL in production, localhost in development
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? (process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za')
+        : (process.env.NEXT_PUBLIC_URL || 'http://localhost:3000')
       const successParams = new URLSearchParams({ success: 'true' })
       if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
       if (bookingData?.postId) successParams.set('postId', bookingData.postId)
@@ -565,7 +571,10 @@ class YocoService {
     customerName: string,
     bookingData?: BookingMetadata,
   ): YocoPaymentLink {
-    const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+    // Use production URL in production, localhost in development
+    const baseUrl = process.env.NODE_ENV === 'production' 
+      ? (process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za')
+      : (process.env.NEXT_PUBLIC_URL || 'http://localhost:3000')
     const successParams = new URLSearchParams({ success: 'true' })
     if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
     if (bookingData?.postId) successParams.set('postId', bookingData.postId)
@@ -631,7 +640,10 @@ class YocoService {
     total: number,
     bookingData?: BookingMetadata,
   ): YocoPaymentLink {
-    const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
+    // Use production URL in production, localhost in development
+    const baseUrl = process.env.NODE_ENV === 'production' 
+      ? (process.env.NEXT_PUBLIC_URL || 'https://www.simpleplek.co.za')
+      : (process.env.NEXT_PUBLIC_URL || 'http://localhost:3000')
     const successParams = new URLSearchParams({ success: 'true' })
     if (bookingData?.estimateId) successParams.set('estimateId', bookingData.estimateId)
     if (bookingData?.postId) successParams.set('postId', bookingData.postId)

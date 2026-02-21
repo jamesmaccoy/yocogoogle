@@ -114,7 +114,11 @@ export const VerifyMagicToken: Endpoint = {
         domain: collectionConfig.auth.cookies.domain,
       })
 
-      return Response.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/bookings`)
+      // Use production URL in production, localhost in development
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? (process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.simpleplek.co.za')
+        : (process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000')
+      return Response.redirect(`${baseUrl}/bookings`)
     } catch (err) {
       console.error('Error verifying magic token:', err)
 

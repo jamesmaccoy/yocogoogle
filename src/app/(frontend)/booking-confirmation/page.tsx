@@ -22,7 +22,11 @@ export default async function BookingConfirmationPage({
   const { user } = await payload.auth({ headers: await headers() })
   
   if (!user) {
-    redirect('/login')
+    // Preserve the current URL path and query params for redirect after login
+    const currentPath = '/booking-confirmation'
+    const queryString = new URLSearchParams(resolvedSearchParams as Record<string, string>).toString()
+    const redirectUrl = queryString ? `${currentPath}?${queryString}` : currentPath
+    redirect(`/login?redirect=${encodeURIComponent(redirectUrl)}`)
   }
 
   // Handle payment success callback - create booking if estimate ID is provided

@@ -3,6 +3,25 @@
 ## Server Status
 ✅ Development server is running at `http://localhost:3000`
 
+## Recent Fixes
+
+### Production Redirect URLs Fixed
+✅ **Fixed**: Subscription payment redirects now use production URL (`https://www.simpleplek.co.za`) instead of localhost in production environment.
+
+**Changes Made**:
+- Updated `src/lib/yocoService.ts` to detect production environment and use production URL
+- Updated `src/app/(frontend)/booking-confirmation/page.tsx` to preserve redirect parameters
+- Updated `src/collections/AuthRequests/endpoints/verify-magic-token.ts` to use correct base URL
+
+**How It Works**:
+- In **production**: Uses `NEXT_PUBLIC_URL` or defaults to `https://www.simpleplek.co.za`
+- In **development**: Uses `NEXT_PUBLIC_URL` or defaults to `http://localhost:3000`
+
+**Environment Variable Required**:
+```bash
+NEXT_PUBLIC_URL=https://www.simpleplek.co.za  # Production URL
+```
+
 ## Test Flow: Create Package and Assign to Post
 
 ### Prerequisites
