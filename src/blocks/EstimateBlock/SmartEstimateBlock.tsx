@@ -325,6 +325,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   const preservedStartDateRef = useRef<Date | null>(null)
   
   const subscriptionStatus = useSubscription()
+  const { isSubscribed, isLoading: isSubscriptionLoading } = subscriptionStatus
   const [customerEntitlement, setCustomerEntitlement] = useState<CustomerEntitlement>('none')
   
   const recognitionRef = useRef<any>(null)
@@ -3255,6 +3256,11 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
       }
     }
   }, [postId, currentUser?.id])
+  
+  // Hide SmartEstimateBlock for non-subscribers
+  if (!isSubscriptionLoading && !isSubscribed) {
+    return null
+  }
   
   return (
     <div className={cn("w-full max-w-[672px] mx-auto bg-zinc-50 dark:bg-zinc-900 text-slate-950 dark:text-slate-100 shadow-sm border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden flex flex-col h-[800px]", className)}>
