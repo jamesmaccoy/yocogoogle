@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
     
     const payload = await getPayload({ config: configPromise })
 
-    // Fetch recent estimates
+    // Fetch recent estimates with full details
     const estimates = await payload.find({
       collection: 'estimates',
       sort: '-updatedAt',
       limit: 100, // Get more estimates to find ones with activity
-      depth: 1,
+      depth: 2, // Include post and package details
     })
 
     // Collect all activity entries from estimates
@@ -22,6 +22,17 @@ export async function GET(request: NextRequest) {
       id: string
       estimateId: string
       estimateTitle: string
+      estimateSlug?: string | null
+      postId: string
+      postTitle?: string
+      postSlug?: string
+      fromDate?: string
+      toDate?: string
+      packageType?: string | null
+      selectedPackage?: {
+        package?: string | null
+        customName?: string | null
+      } | null
       user: string
       userName: string
       type: string
@@ -31,12 +42,22 @@ export async function GET(request: NextRequest) {
 
     estimates.docs.forEach((estimate) => {
       if (estimate.activity && Array.isArray(estimate.activity)) {
+        const post = typeof estimate.post === 'object' && estimate.post ? estimate.post : null
+        
         estimate.activity.forEach((activity) => {
           if (activity && activity.timestamp) {
             allActivity.push({
               id: activity.id || `${estimate.id}-${activity.timestamp}`,
               estimateId: estimate.id,
               estimateTitle: estimate.title || 'Untitled Estimate',
+              estimateSlug: estimate.slug || null,
+              postId: typeof estimate.post === 'string' ? estimate.post : post?.id || '',
+              postTitle: post?.title || undefined,
+              postSlug: post?.slug || undefined,
+              fromDate: estimate.fromDate || undefined,
+              toDate: estimate.toDate || undefined,
+              packageType: estimate.packageType || null,
+              selectedPackage: estimate.selectedPackage || null,
               user: typeof activity.user === 'string' ? activity.user : activity.user?.id || '',
               userName: activity.userName || 'Unknown User',
               type: activity.type || 'comment',

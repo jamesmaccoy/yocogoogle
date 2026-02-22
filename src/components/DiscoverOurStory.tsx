@@ -2,12 +2,24 @@
 
 import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { MessageSquare, Clock, User } from 'lucide-react'
+import { MessageSquare, Clock, User, Share2, ExternalLink, Loader2 } from 'lucide-react'
+import Link from 'next/link'
 
 interface ActivityItem {
   id: string
   estimateId: string
   estimateTitle: string
+  estimateSlug?: string | null
+  postId: string
+  postTitle?: string
+  postSlug?: string
+  fromDate?: string
+  toDate?: string
+  packageType?: string | null
+  selectedPackage?: {
+    package?: string | null
+    customName?: string | null
+  } | null
   user: string
   userName: string
   type: string
@@ -18,6 +30,8 @@ interface ActivityItem {
 export function DiscoverOurStory() {
   const [latestActivity, setLatestActivity] = useState<ActivityItem[]>([])
   const [loadingActivity, setLoadingActivity] = useState(true)
+  const [sharingEstimateId, setSharingEstimateId] = useState<string | null>(null)
+  const [sharedUrls, setSharedUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const fetchLatestActivity = async () => {
@@ -52,6 +66,74 @@ export function DiscoverOurStory() {
       day: 'numeric',
       year: 'numeric',
     })
+  }
+
+  const handleShareEstimate = async (activity: ActivityItem) => {
+    if (sharingEstimateId === activity.estimateId) return
+    
+    // If already shared, copy to clipboard
+    if (sharedUrls[activity.estimateId]) {
+      try {
+        await navigator.clipboard.writeText(sharedUrls[activity.estimateId])
+        alert('Share link copied to clipboard!')
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error)
+      }
+      return
+    }
+
+    setSharingEstimateId(activity.estimateId)
+    
+    try {
+      const response = await fetch(`/api/estimates/${activity.estimateId}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to share estimate')
+      }
+
+      const data = await response.json()
+      const shareUrl = data.shareUrl
+
+      // Store the shared URL
+      setSharedUrls(prev => ({
+        ...prev,
+        [activity.estimateId]: shareUrl,
+      }))
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(shareUrl)
+        alert('Estimate created and share link copied to clipboard!')
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error)
+        alert(`Estimate created! Share URL: ${shareUrl}`)
+      }
+    } catch (error) {
+      console.error('Error sharing estimate:', error)
+      alert(error instanceof Error ? error.message : 'Failed to share estimate')
+    } finally {
+      setSharingEstimateId(null)
+    }
+  }
+
+  const getEstimateUrl = (activity: ActivityItem) => {
+    return `/estimate/${activity.estimateId}`
+  }
+
+  const getPackageDisplayName = (activity: ActivityItem) => {
+    if (activity.selectedPackage?.customName) {
+      return activity.selectedPackage.customName
+    }
+    if (activity.packageType) {
+      return activity.packageType.charAt(0).toUpperCase() + activity.packageType.slice(1)
+    }
+    return null
   }
 
   return (
@@ -158,18 +240,56 @@ export function DiscoverOurStory() {
                             <p className="font-medium text-[#0a0a0a] text-lg">
                               {activity.userName}
                             </p>
-                            <p className="text-sm text-[#666] flex items-center gap-2">
-                              <span className="capitalize">
-                                {activity.type === 'comment' ? 'commented' : activity.type}
-                              </span>
-                              <span>•</span>
-                              <span>on {activity.estimateTitle}</span>
-                            </p>
+                            <div className="text-sm text-[#666] flex flex-col gap-1">
+                              <p className="flex items-center gap-2">
+                                <span className="capitalize">
+                                  {activity.type === 'comment' ? 'commented' : activity.type}
+                                </span>
+                                <span>•</span>
+                                <Link 
+                                  href={getEstimateUrl(activity)}
+                                  className="hover:text-[#0a0a0a] hover:underline flex items-center gap-1 transition-colors"
+                                >
+                                  <span>{activity.estimateTitle}</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </Link>
+                              </p>
+                              {getPackageDisplayName(activity) && (
+                                <p className="text-xs text-[#999]">
+                                  Package: {getPackageDisplayName(activity)}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-[#999]">
-                          <Clock className="w-4 h-4" />
-                          <span>{formatTimeAgo(activity.timestamp)}</span>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2 text-sm text-[#999]">
+                            <Clock className="w-4 h-4" />
+                            <span>{formatTimeAgo(activity.timestamp)}</span>
+                          </div>
+                          <button
+                            onClick={() => handleShareEstimate(activity)}
+                            disabled={sharingEstimateId === activity.estimateId}
+                            className="flex items-center gap-2 px-4 py-2 bg-[#0a0a0a] text-white rounded-md hover:bg-[#333] transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                            title={sharedUrls[activity.estimateId] ? 'Copy share link' : 'Create and share this estimate'}
+                          >
+                            {sharingEstimateId === activity.estimateId ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Creating...</span>
+                              </>
+                            ) : sharedUrls[activity.estimateId] ? (
+                              <>
+                                <Share2 className="w-4 h-4" />
+                                <span>Copy Link</span>
+                              </>
+                            ) : (
+                              <>
+                                <Share2 className="w-4 h-4" />
+                                <span>Share</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
 
