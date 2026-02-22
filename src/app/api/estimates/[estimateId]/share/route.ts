@@ -91,7 +91,12 @@ export async function POST(
 
     // Return the new estimate with shareable URL
     const baseUrl = process.env.NEXT_PUBLIC_URL || request.nextUrl.origin
-    const shareUrl = `${baseUrl}/estimate/${newEstimate.id}`
+    
+    // Use post slug format if available, otherwise fallback to estimate ID
+    const postSlug = typeof post === 'object' && post && post.slug ? post.slug : null
+    const shareUrl = postSlug 
+      ? `${baseUrl}/posts/${postSlug}?restoreEstimate=${newEstimate.id}`
+      : `${baseUrl}/estimate/${newEstimate.id}`
 
     return NextResponse.json({
       success: true,

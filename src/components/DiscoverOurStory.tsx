@@ -123,6 +123,9 @@ export function DiscoverOurStory() {
   }
 
   const getEstimateUrl = (activity: ActivityItem) => {
+    if (activity.postSlug) {
+      return `/posts/${activity.postSlug}?restoreEstimate=${activity.estimateId}`
+    }
     return `/estimate/${activity.estimateId}`
   }
 
@@ -227,21 +230,36 @@ export function DiscoverOurStory() {
                       duration: 0.5,
                       delay: index * 0.05,
                     }}
-                    className="bg-[#faf9f7] rounded-lg p-6 md:p-8 border border-[#e5e5e5] hover:border-[#0a0a0a] transition-colors"
+                    className="bg-[#faf9f7] rounded-lg p-8 md:p-10 border border-[#e5e5e5] hover:border-[#0a0a0a] transition-colors"
                   >
-                    <div className="flex flex-col gap-4">
-                      {/* Header */}
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#0a0a0a] flex items-center justify-center">
-                            <User className="w-5 h-5 text-white" />
+                    <div className="flex flex-col gap-6">
+                      {/* Comment Content - Primary Focus */}
+                      {activity.content ? (
+                        <div className="mb-2">
+                          <p className="text-xl md:text-2xl text-[#0a0a0a] leading-relaxed font-serif-text">
+                            {activity.content}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mb-2">
+                          <p className="text-lg md:text-xl text-[#999] italic font-serif-text">
+                            {activity.type === 'viewed' ? 'Viewed estimate' : activity.type === 'approved' ? 'Approved estimate' : 'Activity'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Header - Secondary */}
+                      <div className={`flex flex-col md:flex-row md:items-center md:justify-between gap-4 ${activity.content ? 'pt-4 border-t border-[#e5e5e5]' : ''}`}>
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-[#0a0a0a] flex items-center justify-center flex-shrink-0">
+                            <User className="w-6 h-6 text-white" />
                           </div>
                           <div>
-                            <p className="font-medium text-[#0a0a0a] text-lg">
+                            <p className="font-medium text-[#0a0a0a] text-base">
                               {activity.userName}
                             </p>
                             <div className="text-sm text-[#666] flex flex-col gap-1">
-                              <p className="flex items-center gap-2">
+                              <p className="flex items-center gap-2 flex-wrap">
                                 <span className="capitalize">
                                   {activity.type === 'comment' ? 'commented' : activity.type}
                                 </span>
@@ -293,17 +311,8 @@ export function DiscoverOurStory() {
                         </div>
                       </div>
 
-                      {/* Content */}
-                      {activity.content && (
-                        <div className="pl-14">
-                          <p className="text-[#666] leading-relaxed font-serif-text">
-                            {activity.content}
-                          </p>
-                        </div>
-                      )}
-
                       {/* Footer */}
-                      <div className="pl-14 pt-2 border-t border-[#e5e5e5]">
+                      <div className="pt-2 border-t border-[#e5e5e5]">
                         <p className="text-xs text-[#999]">
                           {formattedDate} at {formattedTime}
                         </p>
