@@ -36,6 +36,13 @@ const extractPlainTextFromContent = (content: any, depth = 0): string => {
   return ''
 }
 
+// Calculate read time (average reading speed: 200 words per minute)
+const calculateReadTime = (text: string): number => {
+  const words = text.split(/\s+/).filter(word => word.length > 0).length
+  const minutes = Math.ceil(words / 200)
+  return Math.max(1, minutes) // Minimum 1 minute
+}
+
 // Extract preview text (first 2-3 paragraphs) from post content
 const getContentPreview = (post: Post): string[] => {
   // Try to extract from content first
@@ -77,13 +84,6 @@ const getContentPreview = (post: Post): string[] => {
   return []
 }
 
-// Calculate read time (average reading speed: 200 words per minute)
-const calculateReadTime = (text: string): number => {
-  const words = text.split(/\s+/).filter(word => word.length > 0).length
-  const minutes = Math.ceil(words / 200)
-  return Math.max(1, minutes) // Minimum 1 minute
-}
-
 export const PostContentPreview: React.FC<{
   post: Post
 }> = ({ post }) => {
@@ -117,14 +117,11 @@ export const PostContentPreview: React.FC<{
   return (
     <div className="w-full max-w-[672px] mx-auto mt-16 mb-12">
       <div className="relative bg-white dark:bg-zinc-900">
-        {/* Editorial Header */}
+        {/* Editorial Header (without title) */}
         <div className="mb-8">
           <span className="inline-block text-xs font-bold tracking-widest text-teal-500 dark:text-teal-400 mb-3">
             {categoryLabel.toUpperCase()}
           </span>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4 leading-tight">
-            {post.title}
-          </h1>
 
           {/* Meta Row */}
           <div className="flex items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
