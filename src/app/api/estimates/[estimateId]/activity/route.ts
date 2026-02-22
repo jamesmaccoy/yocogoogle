@@ -11,22 +11,27 @@ export async function GET(
     const { estimateId } = await params
     const payload = await getPayload({ config: configPromise })
 
-    // Fetch the estimate with activity
+    // Fetch the estimate with activity (depth 2 to populate user objects)
     const estimate = await payload.findByID({
       collection: 'estimates',
       id: estimateId,
-      depth: 1,
+      depth: 2,
     })
 
     if (!estimate) {
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    // Return activity sorted by timestamp (newest first)
+    // Return activity sorted by timestamp (newest first) with user email
     const activity = estimate.activity && Array.isArray(estimate.activity)
-      ? estimate.activity.sort((a, b) => 
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        )
+      ? estimate.activity
+          .map((entry: any) => ({
+            ...entry,
+            userEmail: typeof entry.user === 'object' && entry.user ? entry.user.email : null,
+          }))
+          .sort((a, b) => 
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          )
       : []
 
     return NextResponse.json({ activity })
@@ -99,6 +104,7 @@ export async function POST(
     const newActivity = {
       user: user.id,
       userName,
+      userEmail: user.email || null,
       type,
       content: content || '',
       timestamp: new Date().toISOString(),

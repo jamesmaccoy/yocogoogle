@@ -127,6 +127,25 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   
+  // Get active tab from URL query parameter, default to 'details'
+  const [currentTab, setCurrentTab] = useState<string>(searchParams?.get('tab') || 'details')
+  
+  // Update tab when URL parameter changes
+  useEffect(() => {
+    const tab = searchParams?.get('tab') || 'details'
+    setCurrentTab(tab)
+  }, [searchParams])
+  
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setCurrentTab(value)
+    // Update URL without page reload
+    const newUrl = value === 'details' 
+      ? window.location.pathname 
+      : `${window.location.pathname}?tab=${value}`
+    router.replace(newUrl, { scroll: false })
+  }
+  
   // Check for cancellation from payment gateway
   useEffect(() => {
     const cancelled = searchParams?.get('cancelled') === 'true'
@@ -760,7 +779,7 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
 
         {/* Main Content */}
         <div className="bg-white dark:bg-card rounded-lg shadow-sm border border-border -mt-px">
-          <Tabs defaultValue="details" className="w-full">
+          <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
             <div className="px-6 pt-4 border-b border-border">
               <TabsList className="bg-transparent p-0 h-auto">
                 <TabsTrigger value="details" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
@@ -959,23 +978,39 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
                           const entryDate = entry.timestamp ? new Date(entry.timestamp) : new Date()
                           const timeAgo = formatDistanceToNow(entryDate, { addSuffix: true })
                           
+                          const userEmail = typeof entry.user === 'object' ? entry.user?.email : null
+                          const userName = entry.userName || (typeof entry.user === 'object' ? entry.user?.name : 'User')
+                          
                           return (
                             <div key={`${entry.timestamp}-${index}`} className="space-y-1 rounded-md border border-dashed p-2">
-                              <div className="flex items-center justify-between text-[0.68rem] uppercase tracking-wide text-muted-foreground">
-                                <span>
-                                  {entry.userName || (typeof entry.user === 'object' ? entry.user?.name : 'User')}
-                                  {entry.type === 'comment' && ' commented'}
-                                  {entry.type === 'viewed' && ' viewed'}
-                                  {entry.type === 'declined' && ' declined'}
-                                  {entry.type === 'approved' && ' approved'}
-                                </span>
-                                <span className="flex items-center gap-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Gravatar
+                                    email={userEmail}
+                                    size={24}
+                                    alt={userName}
+                                    className="h-6 w-6 rounded-full object-cover flex-shrink-0 border border-border"
+                                    fallback={
+                                      <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                                        <UserIcon className="h-3 w-3 text-muted-foreground" />
+                                      </div>
+                                    }
+                                  />
+                                  <span className="text-[0.68rem] uppercase tracking-wide text-muted-foreground">
+                                    {userName}
+                                    {entry.type === 'comment' && ' commented'}
+                                    {entry.type === 'viewed' && ' viewed'}
+                                    {entry.type === 'declined' && ' declined'}
+                                    {entry.type === 'approved' && ' approved'}
+                                  </span>
+                                </div>
+                                <span className="flex items-center gap-1 text-[0.68rem] uppercase tracking-wide text-muted-foreground">
                                   <Clock className="h-3 w-3" />
                                   {timeAgo}
                                 </span>
                               </div>
                               {entry.content && (
-                                <p className="whitespace-pre-wrap leading-snug text-sm text-foreground">
+                                <p className="whitespace-pre-wrap leading-snug text-sm text-foreground pl-8">
                                   {entry.content}
                                 </p>
                               )}

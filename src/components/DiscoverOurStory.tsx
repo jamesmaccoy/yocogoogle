@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { MessageSquare, Clock, User, Share2, ExternalLink, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { Gravatar } from '@/components/Gravatar'
 
 interface ActivityItem {
   id: string
@@ -22,6 +23,7 @@ interface ActivityItem {
   } | null
   user: string
   userName: string
+  userEmail?: string | null
   type: string
   content: string
   timestamp: string
@@ -263,9 +265,17 @@ export function DiscoverOurStory() {
                       {/* Header - Secondary */}
                       <div className={`flex flex-col md:flex-row md:items-center md:justify-between gap-4 ${activity.content ? 'pt-4 border-t border-[#e5e5e5]' : ''}`}>
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-[#0a0a0a] flex items-center justify-center flex-shrink-0">
-                            <User className="w-6 h-6 text-white" />
-                          </div>
+                          <Gravatar
+                            email={activity.userEmail}
+                            size={48}
+                            alt={activity.userName}
+                            className="h-12 w-12 rounded-full object-cover flex-shrink-0 border border-[#e5e5e5]"
+                            fallback={
+                              <div className="w-12 h-12 rounded-full bg-[#0a0a0a] flex items-center justify-center flex-shrink-0">
+                                <User className="w-6 h-6 text-white" />
+                              </div>
+                            }
+                          />
                           <div>
                             <p className="font-medium text-[#0a0a0a] text-base">
                               {activity.userName}

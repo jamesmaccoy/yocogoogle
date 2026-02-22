@@ -33,11 +33,12 @@ export async function GET(request: NextRequest) {
         package?: string | null
         customName?: string | null
       } | null
-      user: string
-      userName: string
-      type: string
-      content: string
-      timestamp: string
+              user: string
+              userName: string
+              userEmail?: string | null
+              type: string
+              content: string
+              timestamp: string
     }> = []
 
     estimates.docs.forEach((estimate) => {
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
               selectedPackage: estimate.selectedPackage || null,
               user: typeof activity.user === 'string' ? activity.user : activity.user?.id || '',
               userName: activity.userName || 'Unknown User',
+              userEmail: typeof activity.user === 'object' && activity.user ? activity.user.email : null,
               type: activity.type || 'comment',
               content: activity.content || '',
               timestamp: activity.timestamp,

@@ -1675,7 +1675,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       const created = await resp.json()
       // Refresh latest estimate state for future actions
       await loadLatestEstimate(true)
-      router.push(`/estimate/${created.id}`)
+      router.push(`/estimate/${created.id}?tab=guests`)
     } catch (e) {
       console.error('Failed navigating to estimate:', e)
     } finally {
@@ -3465,7 +3465,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                     disabled={isCreatingEstimate}
                     className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 bg-white dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-600 px-3 py-1.5 rounded-md transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Share
+                    Invite
                   </button>
                 </>
               )}
