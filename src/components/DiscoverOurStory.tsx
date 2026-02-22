@@ -98,7 +98,19 @@ export function DiscoverOurStory() {
       }
 
       const data = await response.json()
-      const shareUrl = data.shareUrl
+      const newEstimateId = data.estimateId || data.estimate?.id
+      
+      // Construct share URL using postSlug from activity if available
+      const baseUrl = window.location.origin
+      let shareUrl = data.shareUrl
+      
+      // Override with postSlug format if we have it
+      if (activity.postSlug && newEstimateId) {
+        shareUrl = `${baseUrl}/posts/${activity.postSlug}?restoreEstimate=${newEstimateId}`
+      } else if (newEstimateId) {
+        // Fallback to estimate URL if no postSlug
+        shareUrl = `${baseUrl}/estimate/${newEstimateId}`
+      }
 
       // Store the shared URL
       setSharedUrls(prev => ({

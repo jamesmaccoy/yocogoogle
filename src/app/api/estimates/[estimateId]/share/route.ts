@@ -45,12 +45,31 @@ export async function POST(
       duration = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
     }
 
-    // Get post details for title
-    const post = typeof originalEstimate.post === 'object' && originalEstimate.post
+    // Get post details for title and slug
+    let post = typeof originalEstimate.post === 'object' && originalEstimate.post
       ? originalEstimate.post
-      : await payload.findByID({ collection: 'posts', id: postId, depth: 0 })
+      : null
+    
+    // If post wasn't populated, fetch it with depth 1 to ensure we get all fields including slug
+    if (!post) {
+      post = await payload.findByID({ collection: 'posts', id: postId, depth: 1 })
+    }
 
     const postTitle = typeof post === 'object' && post ? post.title : 'Property'
+    const postSlug = typeof post === 'object' && post && 'slug' in post && post.slug 
+      ? String(post.slug) 
+      : null
+
+    // Debug logging (can be removed in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Share estimate - Post details:', {
+        postId,
+        postSlug,
+        hasPost: !!post,
+        postType: typeof post,
+        postKeys: post && typeof post === 'object' ? Object.keys(post) : null,
+      })
+    }
 
     // Create new estimate based on the original
     const newEstimateData: any = {
@@ -93,7 +112,6 @@ export async function POST(
     const baseUrl = process.env.NEXT_PUBLIC_URL || request.nextUrl.origin
     
     // Use post slug format if available, otherwise fallback to estimate ID
-    const postSlug = typeof post === 'object' && post && post.slug ? post.slug : null
     const shareUrl = postSlug 
       ? `${baseUrl}/posts/${postSlug}?restoreEstimate=${newEstimate.id}`
       : `${baseUrl}/estimate/${newEstimate.id}`
