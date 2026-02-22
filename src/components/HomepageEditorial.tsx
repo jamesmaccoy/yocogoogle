@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { LuxuryCard } from './ui/LuxuryCard'
 import { EditorialSection } from './EditorialSection'
@@ -12,9 +12,40 @@ interface HomepageEditorialProps {
   featuredPosts?: Post[]
 }
 
+interface ActivityItem {
+  id: string
+  estimateId: string
+  estimateTitle: string
+  user: string
+  userName: string
+  type: string
+  content: string
+  timestamp: string
+}
+
 export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps) {
   // Get first 3 posts for featured section
   const featured = featuredPosts.slice(0, 3)
+  const [latestActivity, setLatestActivity] = useState<ActivityItem[]>([])
+  const [loadingActivity, setLoadingActivity] = useState(true)
+
+  useEffect(() => {
+    const fetchLatestActivity = async () => {
+      try {
+        const response = await fetch('/api/estimates/activity/latest?limit=5')
+        if (response.ok) {
+          const data = await response.json()
+          setLatestActivity(data.activity || [])
+        }
+      } catch (error) {
+        console.error('Error fetching latest activity:', error)
+      } finally {
+        setLoadingActivity(false)
+      }
+    }
+
+    fetchLatestActivity()
+  }, [])
 
   return (
     <main className="bg-[#ffffff] min-h-screen w-full overflow-x-hidden">
@@ -72,8 +103,8 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
                 ?.filter((cat): cat is NonNullable<typeof cat> => 
                   typeof cat === 'object' && cat !== null && 'title' in cat
                 )
-                .map((cat) => cat.title)
-                .filter(Boolean) || []
+                .map((cat) => (typeof cat === 'object' && cat !== null && 'title' in cat ? cat.title : null))
+                .filter((title): title is string => Boolean(title)) || []
               
               const subtitle = categoryTitles.length > 0 ? categoryTitles[0] : undefined
               const tags = categoryTitles.length > 1 
@@ -96,6 +127,80 @@ export function HomepageEditorial({ featuredPosts = [] }: HomepageEditorialProps
                 />
               )
             })}
+          </div>
+        </section>
+      )}
+
+      {/* Latest Activity Section */}
+      {latestActivity.length > 0 && (
+        <section className="px-6 md:px-12 py-24 bg-[#ffffff]">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex justify-between items-end mb-12 border-b border-[#e5e5e5] pb-6">
+              <h3 className="font-serif-display text-3xl text-[#0a0a0a]">
+                Latest Activity
+              </h3>
+            </div>
+
+            <div className="space-y-6">
+              {latestActivity.map((activity, index) => {
+                const date = new Date(activity.timestamp)
+                const formattedDate = date.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })
+                const formattedTime = date.toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })
+
+                return (
+                  <motion.div
+                    key={activity.id}
+                    initial={{
+                      opacity: 0,
+                      y: 20,
+                    }}
+                    whileInView={{
+                      opacity: 1,
+                      y: 0,
+                    }}
+                    viewport={{
+                      once: true,
+                    }}
+                    transition={{
+                      duration: 0.5,
+                      delay: index * 0.1,
+                    }}
+                    className="border-b border-[#e5e5e5] pb-6 last:border-b-0"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="font-medium text-[#0a0a0a]">
+                            {activity.userName}
+                          </span>
+                          <span className="text-[#666] text-sm">
+                            {activity.type === 'comment' ? 'commented' : activity.type}
+                          </span>
+                          <span className="text-[#999] text-sm">
+                            on {activity.estimateTitle}
+                          </span>
+                        </div>
+                        {activity.content && (
+                          <p className="text-[#666] text-sm leading-relaxed">
+                            {activity.content}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-[#999] text-xs md:text-sm whitespace-nowrap">
+                        {formattedDate} at {formattedTime}
+                      </div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </div>
           </div>
         </section>
       )}

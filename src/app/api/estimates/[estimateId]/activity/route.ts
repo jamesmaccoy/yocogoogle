@@ -3,6 +3,42 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { getMeUser } from '@/utilities/getMeUser'
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ estimateId: string }> }
+) {
+  try {
+    const { estimateId } = await params
+    const payload = await getPayload({ config: configPromise })
+
+    // Fetch the estimate with activity
+    const estimate = await payload.findByID({
+      collection: 'estimates',
+      id: estimateId,
+      depth: 1,
+    })
+
+    if (!estimate) {
+      return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
+    }
+
+    // Return activity sorted by timestamp (newest first)
+    const activity = estimate.activity && Array.isArray(estimate.activity)
+      ? estimate.activity.sort((a, b) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
+      : []
+
+    return NextResponse.json({ activity })
+  } catch (error) {
+    console.error('Error fetching activity:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch activity' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ estimateId: string }> }
