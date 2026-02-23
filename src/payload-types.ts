@@ -1072,6 +1072,10 @@ export interface Estimate {
          * Cached user name for display
          */
         userName?: string | null;
+        /**
+         * Cached user email for Gravatar display
+         */
+        userEmail?: string | null;
         type: 'comment' | 'viewed' | 'declined' | 'approved';
         /**
          * Comment or activity description
@@ -1539,6 +1543,7 @@ export interface EstimatesSelect<T extends boolean = true> {
     | {
         user?: T;
         userName?: T;
+        userEmail?: T;
         type?: T;
         content?: T;
         timestamp?: T;

@@ -567,6 +567,14 @@ export const Estimate: CollectionConfig = {
           },
         },
         {
+          name: 'userEmail',
+          type: 'email',
+          required: false,
+          admin: {
+            description: 'Cached user email for Gravatar display'
+          },
+        },
+        {
           name: 'type',
           type: 'select',
           required: true,

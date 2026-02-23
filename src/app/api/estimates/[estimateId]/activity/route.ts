@@ -22,17 +22,44 @@ export async function GET(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
-    // Return activity sorted by timestamp (newest first) with user email
-    const activity = estimate.activity && Array.isArray(estimate.activity)
-      ? estimate.activity
-          .map((entry: any) => ({
-            ...entry,
-            userEmail: typeof entry.user === 'object' && entry.user ? entry.user.email : null,
-          }))
-          .sort((a, b) => 
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          )
+    // Process activity entries to ensure userEmail is available
+    const processedActivity = estimate.activity && Array.isArray(estimate.activity)
+      ? await Promise.all(
+          estimate.activity.map(async (entry: any) => {
+            // Prioritize stored userEmail
+            let userEmail = entry.userEmail
+            
+            // If no stored email, try to get from populated user object
+            if (!userEmail && typeof entry.user === 'object' && entry.user) {
+              userEmail = entry.user.email || null
+            }
+            
+            // If still no email and user is just an ID, fetch the user
+            if (!userEmail && typeof entry.user === 'string') {
+              try {
+                const user = await payload.findByID({
+                  collection: 'users',
+                  id: entry.user,
+                  depth: 0,
+                })
+                userEmail = user?.email || null
+              } catch (error) {
+                console.error('Error fetching user email:', error)
+              }
+            }
+            
+            return {
+              ...entry,
+              userEmail,
+            }
+          })
+        )
       : []
+
+    // Return activity sorted by timestamp (newest first)
+    const activity = processedActivity.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    )
 
     return NextResponse.json({ activity })
   } catch (error) {
@@ -124,9 +151,24 @@ export async function POST(
       },
     })
 
+    // Fetch updated estimate with depth 2 to populate user objects for response
+    const updatedEstimateWithUsers = await payload.findByID({
+      collection: 'estimates',
+      id: estimateId,
+      depth: 2,
+    })
+
+    // Process activity to include userEmail
+    const processedActivity = updatedEstimateWithUsers.activity && Array.isArray(updatedEstimateWithUsers.activity)
+      ? updatedEstimateWithUsers.activity.map((entry: any) => ({
+          ...entry,
+          userEmail: entry.userEmail || (typeof entry.user === 'object' && entry.user ? entry.user.email : null),
+        }))
+      : []
+
     return NextResponse.json({
       success: true,
-      activity: updatedEstimate.activity,
+      activity: processedActivity,
     })
   } catch (error) {
     console.error('Error adding activity to estimate:', error)

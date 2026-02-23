@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { trackBookingConversionGoogleAds } from '@/lib/googleAdsTracking'
+import { trackBookingConversionGoogleAds, trackBookingRescheduleGoogleAds } from '@/lib/googleAdsTracking'
 
 /**
  * Client-side Google Ads tracking component
@@ -16,13 +16,34 @@ export function GoogleAdsTracking() {
     // Check for booking confirmation parameters
     const success = searchParams.get('success')
     const estimateId = searchParams.get('estimateId')
+    const bookingId = searchParams.get('bookingId')
     const total = searchParams.get('total')
     const postId = searchParams.get('postId')
     const postTitle = searchParams.get('postTitle')
     const packageType = searchParams.get('packageType')
+    const isReschedule = searchParams.get('isReschedule') === 'true'
+    const oldFromDate = searchParams.get('oldFromDate')
+    const oldToDate = searchParams.get('oldToDate')
+    const newFromDate = searchParams.get('newFromDate')
+    const newToDate = searchParams.get('newToDate')
 
-    // Track booking conversion if this is a successful booking
-    if (success === 'true' && estimateId && total) {
+    // Track reschedule if this is a rescheduled booking
+    if (success === 'true' && isReschedule && (estimateId || bookingId) && total) {
+      const bookingValue = parseFloat(total) || 0
+      trackBookingRescheduleGoogleAds({
+        bookingId: bookingId || estimateId || '',
+        bookingValue,
+        postId: postId || undefined,
+        postTitle: postTitle || undefined,
+        packageType: packageType || undefined,
+        oldFromDate: oldFromDate || undefined,
+        oldToDate: oldToDate || undefined,
+        newFromDate: newFromDate || undefined,
+        newToDate: newToDate || undefined,
+      })
+    }
+    // Track regular booking conversion if this is a successful booking (not a reschedule)
+    else if (success === 'true' && !isReschedule && estimateId && total) {
       const bookingValue = parseFloat(total) || 0
       trackBookingConversionGoogleAds({
         bookingId: estimateId,

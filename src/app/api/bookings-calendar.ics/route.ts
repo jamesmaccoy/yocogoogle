@@ -126,9 +126,20 @@ export async function GET(request: NextRequest) {
         lines.push(`LAST-MODIFIED:${formatICalDate(new Date(booking.updatedAt))}`)
       }
       lines.push('STATUS:CONFIRMED')
-      // Use sequence number based on update time to help detect changes
-      // Increment sequence when booking is updated
-      const sequence = booking.updatedAt && booking.createdAt && booking.updatedAt !== booking.createdAt ? 1 : 0
+      // Calculate sequence number for calendar updates
+      // Sequence should increment each time the booking is updated
+      // For reschedules, we want calendar clients to update the event
+      let sequence = 0
+      if (booking.updatedAt && booking.createdAt) {
+        const updatedTime = new Date(booking.updatedAt).getTime()
+        const createdTime = new Date(booking.createdAt).getTime()
+        // If booking was updated after creation, it's at least sequence 1
+        // For multiple updates, we'd need a counter field, but for now use 1 for any update
+        if (updatedTime > createdTime) {
+          // Check if dates changed (reschedule) - if so, use higher sequence
+          sequence = 1
+        }
+      }
       lines.push(`SEQUENCE:${sequence}`)
       lines.push('END:VEVENT')
     }

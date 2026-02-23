@@ -101,6 +101,38 @@ export function trackBookingConversionGoogleAds(params: {
 }
 
 /**
+ * Track Booking Reschedule event
+ */
+export function trackBookingRescheduleGoogleAds(params: {
+  bookingId: string
+  bookingValue: number
+  postId?: string
+  postTitle?: string
+  packageType?: string
+  oldFromDate?: string
+  oldToDate?: string
+  newFromDate?: string
+  newToDate?: string
+}) {
+  // Track as custom event for reschedule
+  trackGoogleAdsEvent('booking_reschedule', {
+    transaction_id: params.bookingId,
+    value: params.bookingValue,
+    currency: 'ZAR',
+    post_id: params.postId,
+    post_title: params.postTitle,
+    package_type: params.packageType,
+    old_from_date: params.oldFromDate,
+    old_to_date: params.oldToDate,
+    new_from_date: params.newFromDate,
+    new_to_date: params.newToDate,
+  })
+  
+  // Also track as conversion event (reschedule is still a valuable action)
+  trackGoogleAdsConversion('booking_reschedule', params.bookingValue, 'ZAR')
+}
+
+/**
  * Track page view (if needed for specific pages)
  */
 export function trackPageViewGoogleAds(pagePath?: string) {

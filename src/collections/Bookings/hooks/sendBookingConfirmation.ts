@@ -208,6 +208,26 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
       packageName: packageName || 'none',
     })
 
+    // Determine if this is a reschedule (dates changed)
+    const isReschedule = operation === 'update' && (changes.fromDate || changes.toDate)
+    
+    // Calculate sequence number for calendar ICS
+    // Sequence should increment each time the booking is updated
+    // We'll use a simple calculation: 0 for new bookings, 1+ for updates
+    let sequence = 0
+    if (isReschedule) {
+      // For reschedules, calculate sequence based on update history
+      // If updatedAt differs from createdAt, this is at least the first update
+      if (doc.updatedAt && doc.createdAt) {
+        const updatedTime = new Date(doc.updatedAt).getTime()
+        const createdTime = new Date(doc.createdAt).getTime()
+        // Simple sequence: 0 for new, 1+ for each update
+        // We can't track exact count without a counter field, so use timestamp difference as proxy
+        // For now, use 1 for any reschedule
+        sequence = updatedTime > createdTime ? 1 : 0
+      }
+    }
+
     await Promise.all(
       uniqueRecipients.map((recipient) =>
         sendBookingConfirmationEmail({
@@ -219,6 +239,10 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
           bookingId: doc.id,
           bookingUrl,
           packageName,
+          isReschedule,
+          sequence,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt,
         }),
       ),
     )

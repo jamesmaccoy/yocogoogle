@@ -690,8 +690,27 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
         const booking = await bookingResponse.json()
         setPaymentSuccess(true)
         
+        // Build redirect URL with reschedule information if applicable
+        const redirectParams = new URLSearchParams({
+          total: bookingTotal.toString(),
+          duration: _bookingDuration.toString(),
+          transactionId: `subscription-${Date.now()}`,
+          success: 'true',
+          estimateId: data.id,
+          bookingId: booking.id,
+        })
+        
+        // Add reschedule information if this is a reschedule
+        if (isReschedule && originalBooking?.id) {
+          redirectParams.set('isReschedule', 'true')
+          if (originalBooking.fromDate) redirectParams.set('oldFromDate', new Date(originalBooking.fromDate).toISOString())
+          if (originalBooking.toDate) redirectParams.set('oldToDate', new Date(originalBooking.toDate).toISOString())
+          if (data.fromDate) redirectParams.set('newFromDate', new Date(data.fromDate).toISOString())
+          if (data.toDate) redirectParams.set('newToDate', new Date(data.toDate).toISOString())
+        }
+        
         // Redirect to booking confirmation page
-        router.push(`/booking-confirmation?total=${bookingTotal}&duration=${_bookingDuration}&transactionId=subscription-${Date.now()}&success=true&estimateId=${data.id}&bookingId=${booking.id}`)
+        router.push(`/booking-confirmation?${redirectParams.toString()}`)
         return
       }
 

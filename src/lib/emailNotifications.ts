@@ -19,6 +19,10 @@ type BookingConfirmationEmailInput = {
   bookingId: string
   bookingUrl: string
   packageName?: string
+  isReschedule?: boolean
+  sequence?: number
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface EstimateRequestNotification {
@@ -233,6 +237,10 @@ export async function sendBookingConfirmationEmail(
     endDate,
     bookingId: data.bookingId,
     bookingUrl: data.bookingUrl,
+    isReschedule: data.isReschedule || false,
+    sequence: data.sequence,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
   })
 
   const fromField = getFromField()
@@ -241,10 +249,17 @@ export async function sendBookingConfirmationEmail(
   const adminEmail = 'info@simpleplek.co.za'
   const bcc = adminEmail !== recipientEmail ? [adminEmail] : undefined
 
+  // Determine email subject based on whether this is a reschedule
+  const emailSubject = data.isReschedule 
+    ? `Booking rescheduled: ${data.propertyTitle}`
+    : `Booking confirmed: ${data.propertyTitle}`
+
   console.log('📧 Email configuration:', {
     from: fromField,
     to: recipientEmail,
     bcc: bcc || 'none (admin email matches recipient)',
+    isReschedule: data.isReschedule || false,
+    subject: emailSubject,
   })
 
   // Send email using Resend API
@@ -257,7 +272,7 @@ export async function sendBookingConfirmationEmail(
     from: fromField,
     to: recipientEmail,
     bcc: bcc,
-    subject: `Booking confirmed: ${data.propertyTitle}`,
+    subject: emailSubject,
     html: htmlBody,
     text: textBody,
     headers: {
@@ -478,6 +493,10 @@ function buildBookingICS({
   endDate,
   bookingId,
   bookingUrl,
+  isReschedule = false,
+  sequence = 0,
+  createdAt,
+  updatedAt,
 }: {
   summary: string
   description: string
@@ -485,6 +504,10 @@ function buildBookingICS({
   endDate: Date
   bookingId: string
   bookingUrl: string
+  isReschedule?: boolean
+  sequence?: number
+  createdAt?: string
+  updatedAt?: string
 }) {
   const formatDate = (date: Date) =>
     date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
@@ -492,11 +515,28 @@ function buildBookingICS({
   const dtStamp = formatDate(new Date())
   const dtStart = formatDate(startDate)
   const dtEnd = formatDate(endDate)
-  const created = dtStamp // Use current time as created time
-  const lastModified = dtStamp // Use current time as last modified
+  
+  // Use actual created/updated times if provided, otherwise use current time
+  const created = createdAt ? formatDate(new Date(createdAt)) : dtStamp
+  const lastModified = updatedAt ? formatDate(new Date(updatedAt)) : dtStamp
+
+  // Calculate sequence number if not provided
+  // For reschedules, increment sequence to trigger calendar updates
+  let calculatedSequence = sequence
+  if (isReschedule && sequence === 0) {
+    // If rescheduling and sequence not provided, calculate based on update time
+    calculatedSequence = updatedAt && createdAt && updatedAt !== createdAt ? 1 : 0
+  }
+
+  // Use METHOD:REQUEST for reschedules to trigger calendar client updates
+  // Use METHOD:PUBLISH for new bookings
+  const method = isReschedule ? 'REQUEST' : 'PUBLISH'
 
   // Build description with proper line breaks
   const descriptionParts = [description]
+  if (isReschedule) {
+    descriptionParts.push('This booking has been rescheduled. Please update your calendar.')
+  }
   descriptionParts.push(`Booking ID: ${bookingId}`)
   descriptionParts.push(`View details: ${bookingUrl}`)
   const fullDescription = descriptionParts.join('\\n')
@@ -506,7 +546,7 @@ function buildBookingICS({
     'VERSION:2.0',
     'PRODID:-//Simple Plek//Booking//EN',
     'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
+    `METHOD:${method}`,
     'BEGIN:VEVENT',
     `UID:${escapeICSText(`booking-${bookingId}@simpleplek.co.za`)}`,
     `DTSTAMP:${dtStamp}`,
@@ -518,7 +558,7 @@ function buildBookingICS({
     `CREATED:${created}`,
     `LAST-MODIFIED:${lastModified}`,
     'STATUS:CONFIRMED',
-    'SEQUENCE:0',
+    `SEQUENCE:${calculatedSequence}`,
     'TRANSP:OPAQUE',
     'END:VEVENT',
     'END:VCALENDAR',
