@@ -70,6 +70,19 @@ export async function GET(request: Request) {
       conversionsApi: 'Check server logs for "Meta event sent successfully" messages when events are triggered',
       testEvent: 'Add ?test=true to this URL to send a test event to Meta Conversions API',
       verifyEvents: 'Go to Meta Events Manager → Test Events tab to see events in real-time',
+      audienceTracking: {
+        howToVerify: 'To verify your audience is populating:',
+        steps: [
+          '1. Visit an estimate page: https://www.simpleplek.co.za/estimate/[estimateId]',
+          '2. Open browser console and look for "Meta Pixel PageView tracked for estimate page" message',
+          '3. Check Meta Events Manager → Test Events tab - you should see PageView events',
+          '4. Wait 24-48 hours for audience to populate (Meta needs time to process)',
+          '5. Go to Meta Ads Manager → Audiences → Check your audience size',
+          '6. Your audience rule: "URL contains estimate" should match estimate pages',
+        ],
+        audienceUrl: 'https://adsmanager.facebook.com/adsmanager/audiences?act=10150271799221351',
+        expectedBehavior: 'PageView events on /estimate/* pages should automatically include the URL, which Meta uses to match your audience rule.',
+      },
     },
   })
 }

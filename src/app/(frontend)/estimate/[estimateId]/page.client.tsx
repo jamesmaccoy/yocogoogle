@@ -43,6 +43,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { trackEstimateViewGoogleAds } from '@/lib/googleAdsTracking'
 import { getGravatarUrl } from '@/utils/gravatar'
 import { Gravatar } from '@/components/Gravatar'
+import { EstimateAds } from '@/components/MetaAds/EstimateAds'
 
 type TokenUsageSummary = {
   total: number | null
@@ -223,6 +224,36 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
       })
     }
   }, [data?.id, _bookingTotal, _postId, data?.title, data?.post])
+
+  // Track PageView with URL for Meta audience matching
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).fbq) {
+      return
+    }
+
+    // Ensure PageView is tracked with current URL for audience matching
+    // Meta Pixel automatically includes URL, but we'll track it explicitly to ensure it's captured
+    const currentUrl = window.location.href
+    const currentPath = window.location.pathname
+
+    // Only track if we're on an estimate page
+    if (currentPath.includes('/estimate/')) {
+      // Track PageView with explicit URL parameter
+      ;(window as any).fbq('track', 'PageView', {
+        content_name: 'Estimate Page',
+        content_category: 'estimate',
+      }, {
+        eventID: `pageview-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        eventSourceUrl: currentUrl,
+      })
+
+      console.log('Meta Pixel PageView tracked for estimate page:', {
+        url: currentUrl,
+        path: currentPath,
+        estimateId: data?.id,
+      })
+    }
+  }, [data?.id])
   const { packages, loading, error } = usePackages(_postId)
 
   // Payment states
@@ -776,8 +807,28 @@ export default function EstimateDetailsClientPage({ data, user }: Props) {
   const guestCount = Array.isArray(allGuests) ? allGuests.length : 0
   const onlineCount = guestCount // Mock online count - can be enhanced with real data
 
+  // Prepare estimate data for Meta Ads tracking
+  const estimateForAds = data ? {
+    id: data.id,
+    total: _bookingTotal,
+    title: typeof data.post === 'object' ? data.post?.title : data.title || undefined,
+    post: typeof data.post === 'object' ? {
+      id: data.post.id,
+      title: data.post.title || undefined,
+      slug: (data.post.slug ?? undefined) as string | undefined,
+      meta: data.post.meta ? {
+        image: data.post.meta.image ? {
+          url: (typeof data.post.meta.image === 'object' ? (data.post.meta.image.url ?? undefined) : undefined) as string | undefined,
+        } : undefined,
+      } : undefined,
+    } : typeof data.post === 'string' ? data.post : undefined,
+    packageType: (data as any).packageType || undefined,
+  } : null
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Meta Ads tracking for estimate views */}
+      <EstimateAds estimate={estimateForAds} />
       <div className="mx-auto max-w-2xl">
         {/* Secure Estimate Banner */}
         <div className="bg-primary/10 border-b border-primary/20 px-6 py-3 flex items-center justify-between">
