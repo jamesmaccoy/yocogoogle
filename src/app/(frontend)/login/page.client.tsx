@@ -59,7 +59,7 @@ export default function LoginPage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm">
             <Command className="h-5 w-5" />
           </div>
-          Per hour bookings for your next project
+          <a href='https://aptunderwear.co.za/' className='text-white hover:text-zinc-400 transition-colors'>Apt underwear </a>and <a href='https://lush.co.za/' className='text-white hover:text-zinc-400 transition-colors'>LUSH</a> products on the shelf
         </div>
 
         {/* Testimonial */}
