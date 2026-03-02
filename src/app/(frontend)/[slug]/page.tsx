@@ -96,8 +96,8 @@ export default async function Page({ params: paramsPromise }: Args) {
     })
 
     // Extract hero media from page
-    const heroMedia = page?.hero?.media && typeof page.hero.media === 'object' 
-      ? page.hero.media 
+    const heroMedia = page?.hero?.media && typeof page.hero.media === 'object'
+      ? page.hero.media
       : null
 
     return (
@@ -105,8 +105,8 @@ export default async function Page({ params: paramsPromise }: Args) {
         <PageClient page={page} draft={draft} url={url} />
         <PayloadRedirects disableNotFound url={url} />
         {draft && <LivePreviewListener />}
-        <ScrollAnimationHero 
-          featuredPosts={posts.docs} 
+        <ScrollAnimationHero
+          featuredPosts={posts.docs}
           heroMedia={heroMedia}
         />
         <HomepageEditorial featuredPosts={posts.docs} />

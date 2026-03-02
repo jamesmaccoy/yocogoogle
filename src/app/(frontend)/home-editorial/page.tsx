@@ -54,7 +54,7 @@ export default async function HomeEditorialPage() {
 
   return (
     <>
-      <ScriptVideoBackground featuredPosts={posts.docs} />
+      <ScriptVideoBackground featuredPosts={posts.docs} sceneIndices={[1, 2, 6]} />
       <HomepageEditorial featuredPosts={posts.docs} />
     </>
   )

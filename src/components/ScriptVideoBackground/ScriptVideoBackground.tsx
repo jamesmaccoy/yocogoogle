@@ -10,9 +10,11 @@ const SCENE_DURATION_PER_TEXT = 4000; // ms per text block
 
 interface ScriptVideoBackgroundProps {
     featuredPosts?: Post[];
+    /** 1-based indices of scenes to show. Omit to show all scenes. */
+    sceneIndices?: number[];
 }
 
-export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ featuredPosts = [] }) => {
+export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ featuredPosts = [], sceneIndices }) => {
     const containerRef = React.useRef<HTMLDivElement>(null);
     const { scrollYProgress } = useScroll({
         target: containerRef,
@@ -55,7 +57,13 @@ export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ fe
         });
     }, [featuredPosts]);
 
-    const totalScenes = activeScript.length;
+    // Filter to specific scenes if requested (1-based indices)
+    const filteredScript = useMemo(() => {
+        if (!sceneIndices || sceneIndices.length === 0) return activeScript;
+        return sceneIndices.map(i => activeScript[i - 1]).filter((s): s is typeof activeScript[number] => s !== undefined);
+    }, [activeScript, sceneIndices]);
+
+    const totalScenes = filteredScript.length;
 
     // Transform scroll progress to scene index
     // We want to snap or blend? For now, straight mapping.
@@ -70,13 +78,11 @@ export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ fe
             setActiveIndex(index);
 
             // Calculate text index within the scene
-            // Each scene gets a slice of the scroll progress (1 / totalScenes)
-            // Within that slice, we divide by number of texts
             const sceneProgress = (latest - index); // 0 to 1 within the scene
-            const currentScene = activeScript[index];
+            const currentScene = filteredScript[index];
             if (currentScene && currentScene.texts.length > 0) {
                 const textIdx = Math.min(
-                    Math.floor(sceneProgress * currentScene.texts.length * 1.5), // Multiply to speed up text cycle slightly so it finishes before scene end
+                    Math.floor(sceneProgress * currentScene.texts.length * 1.5),
                     currentScene.texts.length - 1
                 );
                 setActiveTextIndex(textIdx);
@@ -85,7 +91,7 @@ export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ fe
             }
         });
         return () => unsubscribe();
-    }, [currentSceneIndex, totalScenes, activeScript]);
+    }, [currentSceneIndex, totalScenes, filteredScript]);
 
     return (
         <div ref={containerRef} className="relative w-full" style={{ height: `${totalScenes * 100}vh` }}>
@@ -94,7 +100,7 @@ export const ScriptVideoBackground: React.FC<ScriptVideoBackgroundProps> = ({ fe
                     {activeIndex + 1} / {totalScenes}
                 </div>
 
-                {activeScript.map((scene, index) => (
+                {filteredScript.map((scene, index) => (
                     <Scene
                         key={`${scene.id}-${index}`}
                         scene={scene}
