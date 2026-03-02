@@ -475,6 +475,24 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     return filtered
   }, [customerEntitlement])
 
+  // Recalculate duration when dates change
+  useEffect(() => {
+    if (startDate && endDate) {
+      // Normalize dates to midnight for accurate calculation
+      const normalizedStart = new Date(startDate)
+      normalizedStart.setHours(0, 0, 0, 0)
+      const normalizedEnd = new Date(endDate)
+      normalizedEnd.setHours(0, 0, 0, 0)
+      
+      // Calculate nights (difference in days)
+      const calculatedDuration = Math.ceil((normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24))
+      
+      if (calculatedDuration > 0) {
+        setDuration(calculatedDuration)
+      }
+    }
+  }, [startDate, endDate])
+
   // Helper function to normalize date to YYYY-MM-DD format for comparison
   const normalizeDateToString = (date: Date | string): string => {
     if (typeof date === 'string') {
@@ -1898,12 +1916,31 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       // Filter packages by duration if dates are selected
       let suitablePackages = filteredPackages
       if (startDate && endDate) {
-        const selectedDuration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+        // Normalize dates to midnight for accurate calculation
+        const normalizedStart = new Date(startDate)
+        normalizedStart.setHours(0, 0, 0, 0)
+        const normalizedEnd = new Date(endDate)
+        normalizedEnd.setHours(0, 0, 0, 0)
+        
+        const selectedDuration = Math.ceil((normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24))
         setDuration(selectedDuration)
         
         // Filter packages that match the duration
         suitablePackages = filteredPackages.filter((pkg: any) => {
-          return selectedDuration >= pkg.minNights && selectedDuration <= pkg.maxNights
+          const matches = selectedDuration >= pkg.minNights && selectedDuration <= pkg.maxNights
+          // Debug logging for the 7-night package
+          if (pkg.id === '68a587eb420e4517de8d2b33' || pkg.name?.includes('Stay 7 nights')) {
+            console.log('🔍 Package filtering debug (7-night package):', {
+              packageId: pkg.id,
+              packageName: pkg.name,
+              minNights: pkg.minNights,
+              maxNights: pkg.maxNights,
+              selectedDuration,
+              matches,
+              condition: `${selectedDuration} >= ${pkg.minNights} && ${selectedDuration} <= ${pkg.maxNights}`
+            })
+          }
+          return matches
         })
         
         // If no exact matches, include packages that can accommodate the duration
@@ -1912,6 +1949,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
             return pkg.maxNights >= selectedDuration || pkg.maxNights === 1 // Include per-night packages
           })
         }
+        
+        // Debug logging
+        console.log('📦 Package filtering summary:', {
+          selectedDuration,
+          totalFiltered: filteredPackages.length,
+          suitableAfterDurationFilter: suitablePackages.length,
+          sevenNightPackageFound: suitablePackages.some((pkg: any) => pkg.id === '68a587eb420e4517de8d2b33' || pkg.name?.includes('Stay 7 nights'))
+        })
       }
       
       // Filter for per-hour packages (1 night duration) if toggle is on
@@ -1977,7 +2022,13 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           // Filter packages by duration if dates are selected
           let suitablePackages = allPackages
           if (startDate && endDate) {
-            const selectedDuration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+            // Normalize dates to midnight for accurate calculation
+            const normalizedStart = new Date(startDate)
+            normalizedStart.setHours(0, 0, 0, 0)
+            const normalizedEnd = new Date(endDate)
+            normalizedEnd.setHours(0, 0, 0, 0)
+            
+            const selectedDuration = Math.ceil((normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24))
             setDuration(selectedDuration)
             
             // Filter packages that match the duration
@@ -2211,18 +2262,30 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       }
     }
     
-    // Parse duration (nights, days)
-    const durationPatterns = [
-      /(\d+)\s+(?:night|nights)/i,
-      /(\d+)\s+(?:day|days)/i,
-      /for\s+(\d+)/i,
-    ]
-    
-    for (const pattern of durationPatterns) {
-      const match = message.match(pattern)
-      if (match && match[1]) {
-        parsedDuration = parseInt(match[1])
-        break
+    // Parse duration (nights, days, weeks)
+    // First check for "a week" or "one week" (special case with no number)
+    if (lowerMessage.match(/(?:^|\s)(?:a|one)\s+week(?:\s|$)/i)) {
+      parsedDuration = 7
+    } else {
+      const durationPatterns = [
+        /(\d+)\s+(?:night|nights)/i,
+        /(\d+)\s+(?:day|days)/i,
+        /(\d+)\s+(?:week|weeks)/i,
+        /for\s+(\d+)/i,
+      ]
+      
+      for (const pattern of durationPatterns) {
+        const match = message.match(pattern)
+        if (match && match[1]) {
+          const value = parseInt(match[1])
+          // If pattern matches "week" or "weeks", convert to nights (7 nights per week)
+          if (pattern.source.includes('week')) {
+            parsedDuration = value * 7
+          } else {
+            parsedDuration = value
+          }
+          break
+        }
       }
     }
     
