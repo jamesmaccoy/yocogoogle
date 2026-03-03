@@ -46,7 +46,7 @@ export const script: SceneData[] = [
         type: 'video',
         src: `${ASSET_PREFIX}/video2.mp4`,
         texts: [
-            "See the details\ncome to life."
+            "Rent to own\n with a membership"
         ]
     },
     {
@@ -78,8 +78,8 @@ export const script: SceneData[] = [
         type: 'image',
         src: `${ASSET_PREFIX}/Img_2023_10_12_18_07_19~2 (1).png`,
         texts: [
-            "The estimate said there\nwere enough tokens\nleft until spring.",
-            "Rescheduling is instantly\nreflected in that\nclubhouse I read."
+            "The statement\nreflects your\ntokens remaining.",
+            "Upgrade to Pro to\n Host your own \nshort term bookings"
         ]
     },
     {
@@ -87,7 +87,7 @@ export const script: SceneData[] = [
         type: 'image',
         src: `${ASSET_PREFIX}/guest_book.png`,
         texts: [
-            "Leave a note used\nto mean a paper\non the counter."
+            "Review a record\npayment and notes\non every guest"
         ]
     },
     {
