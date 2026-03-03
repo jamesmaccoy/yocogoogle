@@ -25,6 +25,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { isEnabled } = await draftMode()
   // Google Tag Manager ID
   const gtmId = process.env.NEXT_PUBLIC_GTM_ID || 'GTM-5KT6R7LB'
+  // Google Analytics 4 Measurement ID
+  const ga4Id = process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS || 'G-SMDR6QF6S0'
   // Google Ads conversion tag ID
   const googleAdsId = process.env.NEXT_PUBLIC_GOOGLE_ADS || 'AW-684914935'
   // Meta Pixel ID - use the pixel ID from your Meta Business account
@@ -49,19 +51,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             `,
           }}
         />
-        {/* Google tag (gtag.js) - Google Ads conversion tracking */}
+        {/* Google Analytics 4 */}
         <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${googleAdsId}`}
-          strategy="beforeInteractive"
+          src={`https://www.googletagmanager.com/gtag/js?id=${ga4Id}`}
+          strategy="afterInteractive"
         />
         <Script
-          id="google-ads-conversion"
-          strategy="beforeInteractive"
+          id="google-analytics-4"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               window.dataLayer = window.dataLayer || [];
               function gtag(){dataLayer.push(arguments);}
               gtag('js', new Date());
+              gtag('config', '${ga4Id}', { send_page_view: true });
               gtag('config', '${googleAdsId}');
             `,
           }}
