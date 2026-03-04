@@ -5,6 +5,7 @@ import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 import { adminOrSelfOrGuests } from '../Bookings/access/adminOrSelfOrGuests'
 import { generateJwtToken, verifyJwtToken, generateShortToken } from '@/utilities/token'
+import { trackEstimateCreated, trackGuestJoined } from '@/lib/metaConversions'
 
 export const Estimate: CollectionConfig = {
   slug: 'estimates',
@@ -290,6 +291,16 @@ export const Estimate: CollectionConfig = {
             guests: [...(estimate.guests || []), req.user.id],
           },
         })
+
+        // Fire Meta Conversion event for Facebook Custom Audience (fire-and-forget)
+        try {
+          await trackGuestJoined({
+            resourceId: _estimateId,
+            resourceType: 'estimate',
+            userId: req.user.id,
+            userEmail: (req.user as any).email || undefined,
+          })
+        } catch (_) { }
 
         return Response.json({
           message: 'Estimate updated',
@@ -616,6 +627,30 @@ export const Estimate: CollectionConfig = {
           return { ...data, token }
         }
         return data
+      },
+    ],
+    afterChange: [
+      async ({ doc, req, operation }) => {
+        if (operation === 'create') {
+          // Fire Meta Conversion event for Facebook Custom Audience (fire-and-forget)
+          try {
+            const customerId = typeof doc.customer === 'string' ? doc.customer : doc.customer?.id
+            const customerEmail = (req.user as any)?.email ||
+              (typeof doc.customer === 'object' ? (doc.customer as any)?.email : undefined)
+            const postId = typeof doc.post === 'string' ? doc.post : (doc.post as any)?.id
+            const postTitle = typeof doc.post === 'object' ? (doc.post as any)?.title : undefined
+            await trackEstimateCreated({
+              estimateId: doc.id,
+              estimateValue: doc.total ? Number(doc.total) : undefined,
+              postId,
+              postTitle,
+              packageType: doc.packageType || undefined,
+              userId: customerId,
+              userEmail: customerEmail,
+            })
+          } catch (_) { }
+        }
+        return doc
       },
     ],
   },

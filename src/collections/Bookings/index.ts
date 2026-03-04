@@ -5,6 +5,7 @@ import { slugField } from '@/fields/slug'
 import type { CollectionConfig } from 'payload'
 
 import { generateJwtToken, verifyJwtToken, generateShortToken } from '@/utilities/token'
+import { trackGuestJoined } from '@/lib/metaConversions'
 import { unavailableDates } from './endpoints/unavailable-dates'
 import { checkAvailability } from './endpoints/check-availability'
 import { multiPostAvailability } from './endpoints/multi-post-availability'
@@ -305,6 +306,16 @@ export const Booking: CollectionConfig = {
             guests: [...(booking.guests || []), req.user.id],
           },
         })
+
+        // Fire Meta Conversion event for Facebook Custom Audience (fire-and-forget)
+        try {
+          await trackGuestJoined({
+            resourceId: _bookingId,
+            resourceType: 'booking',
+            userId: req.user.id,
+            userEmail: (req.user as any).email || undefined,
+          })
+        } catch (_) { }
 
         return Response.json({
           message: 'Booking updated',

@@ -54,7 +54,7 @@ export async function sendMetaEvent(data: MetaEventData): Promise<void> {
     console.warn('Meta Conversions API: Missing META_PIXEL_ID or NEXT_PUBLIC_META_PIXEL_ID')
     return
   }
-  
+
   if (!accessToken) {
     console.warn('Meta Conversions API: Missing META_ACCESS_TOKEN. Events will not be sent server-side.')
     console.warn('To enable Conversions API, add META_ACCESS_TOKEN to your environment variables.')
@@ -74,26 +74,26 @@ export async function sendMetaEvent(data: MetaEventData): Promise<void> {
         action_source: data.actionSource || 'website',
         user_data: data.userData
           ? {
-              ...(data.userData.email && { em: hashData(data.userData.email) }),
-              ...(data.userData.phone && { ph: hashData(data.userData.phone) }),
-              ...(data.userData.firstName && { fn: hashData(data.userData.firstName) }),
-              ...(data.userData.lastName && { ln: hashData(data.userData.lastName) }),
-              ...(data.userData.externalId && { external_id: hashData(data.userData.externalId) }),
-              ...(data.userData.clientIpAddress && { client_ip_address: data.userData.clientIpAddress }),
-              ...(data.userData.clientUserAgent && { client_user_agent: data.userData.clientUserAgent }),
-            }
+            ...(data.userData.email && { em: hashData(data.userData.email) }),
+            ...(data.userData.phone && { ph: hashData(data.userData.phone) }),
+            ...(data.userData.firstName && { fn: hashData(data.userData.firstName) }),
+            ...(data.userData.lastName && { ln: hashData(data.userData.lastName) }),
+            ...(data.userData.externalId && { external_id: hashData(data.userData.externalId) }),
+            ...(data.userData.clientIpAddress && { client_ip_address: data.userData.clientIpAddress }),
+            ...(data.userData.clientUserAgent && { client_user_agent: data.userData.clientUserAgent }),
+          }
           : undefined,
         custom_data: data.customData
           ? {
-              ...(data.customData.value !== undefined && { value: data.customData.value }),
-              ...(data.customData.currency && { currency: data.customData.currency }),
-              ...(data.customData.contentName && { content_name: data.customData.contentName }),
-              ...(data.customData.contentCategory && { content_category: data.customData.contentCategory }),
-              ...(data.customData.contentIds && { content_ids: data.customData.contentIds }),
-              ...(data.customData.contents && { contents: data.customData.contents }),
-              ...(data.customData.numItems !== undefined && { num_items: data.customData.numItems }),
-              ...(data.customData.orderId && { order_id: data.customData.orderId }),
-            }
+            ...(data.customData.value !== undefined && { value: data.customData.value }),
+            ...(data.customData.currency && { currency: data.customData.currency }),
+            ...(data.customData.contentName && { content_name: data.customData.contentName }),
+            ...(data.customData.contentCategory && { content_category: data.customData.contentCategory }),
+            ...(data.customData.contentIds && { content_ids: data.customData.contentIds }),
+            ...(data.customData.contents && { contents: data.customData.contents }),
+            ...(data.customData.numItems !== undefined && { num_items: data.customData.numItems }),
+            ...(data.customData.orderId && { order_id: data.customData.orderId }),
+          }
           : undefined,
       },
     ],
@@ -146,7 +146,7 @@ function hashData(data: string): string {
   // Meta requires PII data to be hashed with SHA-256
   // We normalize the data first (lowercase, trim whitespace)
   const normalized = data.toLowerCase().trim()
-  
+
   // Use Node.js crypto module for SHA-256 hashing
   try {
     return createHash('sha256').update(normalized).digest('hex')
@@ -222,9 +222,78 @@ export async function trackImageView(params: {
       ...(params.postId && { contentIds: [params.postId] }),
       ...(params.postTitle && { contentName: params.postTitle }),
       contentCategory: params.isRestricted ? 'restricted_image' : 'image',
-      contentType: 'image',
       // Track restricted views as potential conversions (value 0 indicates interest without purchase)
       ...(params.isRestricted && { value: 0, currency: 'ZAR' }),
+    },
+    eventSourceUrl: params.eventSourceUrl,
+    actionSource: 'website',
+  })
+}
+
+/**
+ * Helper: Track EstimateCreated event — fired server-side when a user submits a new estimate.
+ * This adds the user to a Facebook Custom Audience for "estimate requesters".
+ */
+export async function trackEstimateCreated(params: {
+  estimateId?: string
+  estimateValue?: number
+  postId?: string
+  postTitle?: string
+  packageType?: string
+  userId?: string
+  userEmail?: string
+  clientIp?: string
+  userAgent?: string
+  eventSourceUrl?: string
+}): Promise<void> {
+  await sendMetaEvent({
+    eventName: 'EstimateCreated',
+    userData: {
+      ...(params.userId && { externalId: params.userId }),
+      ...(params.userEmail && { email: params.userEmail }),
+      ...(params.clientIp && { clientIpAddress: params.clientIp }),
+      ...(params.userAgent && { clientUserAgent: params.userAgent }),
+    },
+    customData: {
+      ...(params.estimateValue !== undefined && {
+        value: params.estimateValue,
+        currency: 'ZAR',
+      }),
+      ...(params.postId && { contentIds: [params.postId] }),
+      ...(params.postTitle && { contentName: params.postTitle }),
+      ...(params.packageType && { contentCategory: params.packageType }),
+      ...(params.estimateId && { orderId: params.estimateId }),
+    },
+    eventSourceUrl: params.eventSourceUrl,
+    actionSource: 'website',
+  })
+}
+
+/**
+ * Helper: Track GuestJoined event — fired server-side when a guest accepts an invite
+ * to an estimate or booking. Adds the guest to the same Facebook Custom Audience.
+ */
+export async function trackGuestJoined(params: {
+  resourceId?: string
+  resourceType?: 'estimate' | 'booking'
+  userId?: string
+  userEmail?: string
+  clientIp?: string
+  userAgent?: string
+  eventSourceUrl?: string
+}): Promise<void> {
+  await sendMetaEvent({
+    eventName: 'GuestJoined',
+    userData: {
+      ...(params.userId && { externalId: params.userId }),
+      ...(params.userEmail && { email: params.userEmail }),
+      ...(params.clientIp && { clientIpAddress: params.clientIp }),
+      ...(params.userAgent && { clientUserAgent: params.userAgent }),
+    },
+    customData: {
+      ...(params.resourceId && { orderId: params.resourceId }),
+      ...(params.resourceType && { contentCategory: params.resourceType }),
+      contentName: 'Guest Invite Accepted',
     },
     eventSourceUrl: params.eventSourceUrl,
     actionSource: 'website',
