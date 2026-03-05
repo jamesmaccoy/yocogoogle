@@ -25,8 +25,8 @@ function TabButton({
       onClick={onClick}
       className={`
         flex-1 flex items-center justify-center h-9 text-sm font-medium rounded-md transition-all duration-200
-        ${isActive 
-          ? 'bg-primary text-primary-foreground shadow-sm' 
+        ${isActive
+          ? 'bg-primary text-primary-foreground shadow-sm'
           : 'bg-secondary/50 text-secondary-foreground hover:bg-secondary/70'}
       `}
     >
@@ -69,12 +69,12 @@ export default function LoginPage() {
               <Quote className="h-8 w-8 rotate-180 opacity-50" />
             </div>
             <p className="text-xl font-medium leading-relaxed">
-              "Life is a series of experiences some real some fantasy but you don't have to decide which are which as long as you know there are some things you can always count on"
+              "Quaint but fun.. especially for surf holiday.."
             </p>
             <footer className="text-sm text-zinc-400 mt-4">
-              Frank Rob
+              Vuyo
               <span className="block text-xs text-zinc-500 mt-1">
-                Art Director 1962-1965, See poster in the out house
+                ⭐️⭐️⭐️
               </span>
             </footer>
           </blockquote>
