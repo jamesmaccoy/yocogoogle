@@ -92,6 +92,24 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
     }
   }, [fromDate, toDate])
 
+  const trackInviteAcceptEvent = () => {
+    if (typeof window === 'undefined' || !(window as any).gtag) {
+      return
+    }
+
+    const gtag = (window as any).gtag as (...args: any[]) => void
+    const isBookingEvent = isBooking
+    const id = tokenPayload.id
+
+    gtag('event', 'invite_accept', {
+      event_category: isBookingEvent ? 'booking' : 'estimate',
+      event_label: isBookingEvent ? 'booking_invite_accept' : 'estimate_invite_accept',
+      booking_id: isBookingEvent ? id : undefined,
+      estimate_id: !isBookingEvent ? id : undefined,
+      token,
+    })
+  }
+
   const handleInviteAccept = async () => {
     try {
       setIsLoading(true)
@@ -124,6 +142,7 @@ export default function InviteClientPage({ booking, estimate, tokenPayload, toke
         setError(responseData.message || 'Unknown error')
         return
       }
+      trackInviteAcceptEvent()
       if (isBooking) {
         router.push(`/bookings/${tokenPayload.id}`)
       } else if (isEstimate) {
