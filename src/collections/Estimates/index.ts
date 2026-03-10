@@ -64,6 +64,19 @@ export const Estimate: CollectionConfig = {
             )
           }
 
+          // Prevent generating share links for expired/past-date estimates
+          if (estimate.toDate) {
+            const toDate = new Date(estimate.toDate as any)
+            if (!Number.isNaN(toDate.getTime()) && toDate.getTime() < Date.now()) {
+              return Response.json(
+                {
+                  message: 'Estimate has expired',
+                },
+                { status: 410 },
+              )
+            }
+          }
+
           // Check if user is authorized
           if (
             typeof estimate.customer === 'string'
@@ -178,6 +191,19 @@ export const Estimate: CollectionConfig = {
           )
         }
 
+        // Prevent refreshing share links for expired/past-date estimates
+        if (estimate.toDate) {
+          const toDate = new Date(estimate.toDate as any)
+          if (!Number.isNaN(toDate.getTime()) && toDate.getTime() < Date.now()) {
+            return Response.json(
+              {
+                message: 'Estimate has expired',
+              },
+              { status: 410 },
+            )
+          }
+        }
+
         // Generate short token for invite URL
         const token = generateShortToken(10)
 
@@ -269,6 +295,19 @@ export const Estimate: CollectionConfig = {
             },
             { status: 404 },
           )
+        }
+
+        // Block accepting invites for expired/past-date estimates
+        if (estimate.toDate) {
+          const toDate = new Date(estimate.toDate as any)
+          if (!Number.isNaN(toDate.getTime()) && toDate.getTime() < Date.now()) {
+            return Response.json(
+              {
+                message: 'Estimate has expired',
+              },
+              { status: 410 },
+            )
+          }
         }
 
         if (

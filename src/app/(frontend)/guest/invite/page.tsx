@@ -183,6 +183,43 @@ export default async function GuestInvite({ searchParams }: { searchParams: Sear
     notFound()
   }
 
+  // If this is an estimate invite for past dates, show an explicit message.
+  if (tokenData.type === 'estimate') {
+    const toDate = (details as any).toDate ? new Date((details as any).toDate) : null
+    const isExpired = Boolean(toDate && !Number.isNaN(toDate.getTime()) && toDate.getTime() < Date.now())
+    if (isExpired) {
+      return (
+        <div className="container flex min-h-[80vh] items-center justify-center px-4 py-12">
+          <Card className="w-full max-w-md shadow-lg">
+            <CardHeader className="space-y-1 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+                <AlertCircleIcon className="h-10 w-10 text-red-500" />
+              </div>
+              <CardTitle className="text-2xl font-bold">Invite Expired</CardTitle>
+              <CardDescription className="text-base">
+                This estimate was for dates that have already passed. Please ask the customer to share a new estimate.
+              </CardDescription>
+            </CardHeader>
+            <Separator />
+            <CardContent className="pt-6">
+              <div className="text-sm text-muted-foreground">
+                If you think this is a mistake, ask the customer to regenerate the invite link.
+              </div>
+            </CardContent>
+            <CardFooter className="flex flex-col space-y-3 pt-2">
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/">
+                  <ArrowLeftIcon className="mr-2 h-4 w-4" />
+                  Return Home
+                </Link>
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )
+    }
+  }
+
   return (
     <div className="mx-4">
       <InviteClientPage

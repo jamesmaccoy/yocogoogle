@@ -26,25 +26,29 @@ const InviteUrlDialog: FC<Props> = ({ trigger, estimateId, type = 'estimates' })
   const [copied, setCopied] = React.useState(false)
   const [tokenUrl, setTokenUrl] = React.useState<string>('')
   const [isLoading, setIsLoading] = React.useState(false)
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   //? Fetch the token from the server.
   useEffect(() => {
     const fetchToken = async () => {
       try {
         setIsLoading(true)
+        setErrorMessage(null)
         const res = await fetch(`/api/${type}/${estimateId}/token`, {
           method: 'POST',
           credentials: 'include',
         })
 
         if (!res.ok) {
-          throw new Error('Failed to fetch token')
+          const data = await res.json().catch(() => null)
+          throw new Error(data?.message || 'Failed to fetch token')
         }
 
         const data = await res.json()
         setToken(data.token)
       } catch (error) {
-        console.error('Error fetching token:', error)
+        const message = error instanceof Error ? error.message : 'Failed to generate invite link'
+        setErrorMessage(message)
       } finally {
         setIsLoading(false)
       }
@@ -84,19 +88,22 @@ const InviteUrlDialog: FC<Props> = ({ trigger, estimateId, type = 'estimates' })
   const refreshTokenHandler = async () => {
     try {
       setIsLoading(true)
+      setErrorMessage(null)
       const res = await fetch(`/api/${type}/${estimateId}/refresh-token`, {
         method: 'POST',
         credentials: 'include',
       })
 
       if (!res.ok) {
-        throw new Error('Failed to refresh token')
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.message || 'Failed to refresh token')
       }
 
       const data = await res.json()
       setToken(data.token)
     } catch (error) {
-      console.error('Error refreshing token:', error)
+      const message = error instanceof Error ? error.message : 'Failed to refresh invite link'
+      setErrorMessage(message)
     } finally {
       setIsLoading(false)
     }
@@ -118,6 +125,10 @@ const InviteUrlDialog: FC<Props> = ({ trigger, estimateId, type = 'estimates' })
           <div className="flex items-center justify-center gap-2">
             <Loader2Icon className="text-muted-foreground size-6 animate-spin" />
             <span className="text-muted-foreground">Generating link...</span>
+          </div>
+        ) : errorMessage ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {errorMessage}
           </div>
         ) : (
           <div>
