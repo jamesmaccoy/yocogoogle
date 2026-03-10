@@ -209,7 +209,7 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
     })
 
     // Determine if this is a reschedule (dates changed)
-    const isReschedule = operation === 'update' && (changes.fromDate || changes.toDate)
+    const isReschedule = operation === 'update' && Boolean(changes.fromDate || changes.toDate)
     
     // Calculate sequence number for calendar ICS
     // Sequence should increment each time the booking is updated
@@ -228,7 +228,7 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
       }
     }
 
-    await Promise.all(
+    const emailResults = await Promise.allSettled(
       uniqueRecipients.map((recipient) =>
         sendBookingConfirmationEmail({
           recipientEmail: recipient.email,
@@ -246,6 +246,24 @@ export const sendBookingConfirmationHook: CollectionAfterChangeHook = async ({
         }),
       ),
     )
+
+    const failedEmails = emailResults
+      .map((result, index) => ({ result, recipient: uniqueRecipients[index] }))
+      .filter(
+        (entry): entry is { result: PromiseRejectedResult; recipient: Recipient } =>
+          entry.result.status === 'rejected',
+      )
+
+    if (failedEmails.length > 0) {
+      console.error('❌ Some booking confirmation emails failed to send:', {
+        bookingId: doc.id,
+        failures: failedEmails.map(({ recipient, result }) => ({
+          id: recipient.id,
+          email: recipient.email,
+          reason: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        })),
+      })
+    }
 
     // Create notifications for all recipients
     type NotificationType = 'booking_created' | 'booking_cancelled' | 'booking_rescheduled' | 'booking_updated'
