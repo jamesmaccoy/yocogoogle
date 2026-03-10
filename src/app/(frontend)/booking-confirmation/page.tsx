@@ -398,7 +398,40 @@ export default async function BookingConfirmationPage({
             })
 
             if (existingBookings.docs.length > 0 && existingBookings.docs[0]) {
-              console.log('✅ Booking already exists for this estimate:', existingBookings.docs[0].id)
+              const existingBooking = existingBookings.docs[0]
+              console.log('✅ Booking already exists for this estimate:', existingBooking.id)
+
+              // Reconcile guests: if the estimate had accepted invitees, ensure they exist on the booking too.
+              // This fixes cases where the booking was created without copying `estimate.guests`.
+              const estimateGuestIds = Array.isArray(estimate.guests)
+                ? estimate.guests
+                    .map((g: any) => (typeof g === 'string' ? g : g?.id))
+                    .filter(Boolean)
+                : []
+
+              if (estimateGuestIds.length > 0) {
+                const existingGuestIds = Array.isArray((existingBooking as any).guests)
+                  ? (existingBooking as any).guests
+                      .map((g: any) => (typeof g === 'string' ? g : g?.id))
+                      .filter(Boolean)
+                  : []
+
+                const mergedGuestIds = Array.from(new Set([...existingGuestIds, ...estimateGuestIds]))
+
+                if (mergedGuestIds.length !== existingGuestIds.length) {
+                  await payload.update({
+                    collection: 'bookings',
+                    id: existingBooking.id,
+                    data: {
+                      guests: mergedGuestIds,
+                    },
+                  })
+                  console.log('✅ Booking guests reconciled from estimate:', {
+                    bookingId: existingBooking.id,
+                    added: mergedGuestIds.length - existingGuestIds.length,
+                  })
+                }
+              }
             } else {
               // Get the post to get its title for the booking title
               let postTitle = 'Booking'
@@ -661,6 +694,14 @@ export default async function BookingConfirmationPage({
                   customer: user.id,
                 }
 
+                // Carry over accepted invitees from the estimate.
+                // `estimate.guests` is a relationship array of user IDs / populated user objects.
+                if (Array.isArray(estimate.guests) && estimate.guests.length > 0) {
+                  bookingData.guests = estimate.guests.map((guest: any) =>
+                    typeof guest === 'string' ? guest : guest?.id,
+                  ).filter(Boolean)
+                }
+
                 // Include packageType - ALWAYS use resolved packageType (package ID) if available
                 // This ensures we store the actual package ID, not the ambiguous yocoId/revenueCatId
                 if (resolvedPackageType) {
@@ -702,9 +743,9 @@ export default async function BookingConfirmationPage({
                     bookingValue: bookingTotal,
                     postId: bookingPostId,
                     postTitle: postTitle,
-                    packageType: resolvedPackageType || estimatePackageType,
+                    packageType: resolvedPackageType || estimatePackageType || undefined,
                     userId: user.id,
-                    userEmail: user.email,
+                    userEmail: 'email' in user ? (user as any).email : undefined,
                     clientIp,
                     userAgent,
                     // Note: eventSourceUrl would ideally come from request headers
