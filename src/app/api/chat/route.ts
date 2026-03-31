@@ -1,11 +1,26 @@
+import { NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import configPromise from '@payload-config'
 import { getMeUser } from '@/utilities/getMeUser'
+import { z } from 'zod'
+import { streamText, tool } from 'ai'
+import { google } from '@ai-sdk/google'
 
 // Use the GEMINI_API_KEY environment variable defined in your .env file
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+
+// Zod schema for a generic suggested package (used in tool calling)
+const suggestPackageSchema = z.object({
+  name: z.string().describe('Catchy name for the package'),
+  price: z.number().describe('Price in ZAR (not cents)'),
+  description: z.string().describe('Clear value proposition for the package'),
+  items: z.array(z.string()).describe('List of items, services, or benefits included'),
+  marketingCopy: z
+    .string()
+    .describe('One or two sentences of marketing copy suitable for a Google Business / Yoco payment link description'),
+})
 
 const serializeUsageMetadata = (usage: any) => {
   if (!usage) return undefined
@@ -144,6 +159,54 @@ export async function POST(req: Request) {
     const roleArray = Array.isArray(userRole) ? userRole : userRole ? [userRole] : []
     const isHostOrAdmin = roleArray.includes('host') || roleArray.includes('admin')
 
+    // If this request comes from the Vercel AI SDK useChat hook (messages array present),
+    // switch to streaming mode using the AI SDK with tool calling.
+    if (Array.isArray((requestBody as any).messages)) {
+      const uiMessages = (requestBody as any).messages
+
+      // Build a lightweight system prompt using high-level context only.
+      const businessType =
+        bookingContext?.businessType ||
+        (pageData?.businessType as string | undefined) ||
+        (context === 'bookings' ? 'accommodation business' : 'customer')
+
+      const businessName =
+        bookingContext?.postTitle ||
+        pageData?.businessName ||
+        'this business'
+
+      const system = `You are an AI assistant helping a customer of ${businessName}, a ${businessType} in South Africa.
+
+You can freely answer questions about their bookings and packages, but when they clearly ask you to create or design a package
+("winter package", "special", "bundle", "deal", "offer", etc.), you should call the suggestPackage tool to propose a structured package.
+
+Always express prices in South African Rand (R), not cents.`
+
+      const result = streamText({
+        model: google('models/gemini-2.0-flash-exp') as any,
+        system,
+        messages: uiMessages,
+        tools: {
+          suggestPackage: tool({
+            description:
+              'Suggest a new package/bundle for this business. Use this when the user is describing or asking for a package/offer.',
+            parameters: suggestPackageSchema,
+            // For now, we just echo the structured suggestion back; persistence is handled by other routes.
+            // The frontend can render this as a "Magic Apply" / preview card.
+            execute: async (args) => {
+              return {
+                ...args,
+                status: 'draft',
+              }
+            },
+          }),
+        },
+      })
+
+      return result.toDataStreamResponse()
+    }
+
+    // Legacy path: plain JSON chat response (non-streaming) for callers that send a single `message` field.
     // Fetch user's bookings, estimates, and available packages
     const payload = await getPayload({ config: configPromise })
 
