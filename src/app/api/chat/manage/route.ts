@@ -6,6 +6,43 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { z } from 'zod'
 
+// Zod schemas to validate structured JSON that is streamed to the UI
+const packagePreviewSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  category: z.enum(['standard', 'hosted', 'addon', 'special']),
+  entitlement: z.enum(['standard', 'pro']),
+  minNights: z.number().int().min(1),
+  maxNights: z.number().int().min(1),
+  baseRate: z.number().int().min(0),
+  multiplier: z.number().min(0.1).max(3.0),
+  features: z.array(z.string()).min(1),
+  postId: z.string().optional(),
+  revenueCatId: z.string().optional(),
+  yocoId: z.string().optional(),
+  isPreview: z.literal(true),
+})
+
+const createdPackageSchema = z.object({
+  success: z.literal(true),
+  package: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    category: z.enum(['standard', 'hosted', 'addon', 'special']),
+    isEnabled: z.boolean(),
+    minNights: z.number(),
+    maxNights: z.number(),
+    baseRate: z.number().nullable().optional(),
+    multiplier: z.number(),
+    entitlement: z.enum(['standard', 'pro']),
+    features: z.any(),
+    postId: z.string().optional(),
+  }),
+  packageId: z.string(),
+  message: z.string(),
+})
+
 // Initialize Google provider with custom API key
 const googleAI = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
@@ -177,8 +214,8 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        // Return preview data with ALL values filled in
-        return {
+        // Build preview data with ALL values filled in and validate with Zod
+        const preview = {
           name,
           description,
           category,
@@ -193,6 +230,9 @@ export async function POST(request: NextRequest) {
           yocoId: input.yocoId || undefined,
           isPreview: true,
         }
+
+        // Ensure the streamed JSON matches the expected shape
+        return packagePreviewSchema.parse(preview)
       },
     })
 
@@ -318,7 +358,7 @@ export async function POST(request: NextRequest) {
             ? ' Special packages are very popular with customers and can help attract more bookings!'
             : ''
 
-          return {
+          const createdPayload = {
             success: true,
             package: {
               id: created.id,
@@ -337,6 +377,9 @@ export async function POST(request: NextRequest) {
             packageId: created.id, // Also include at top level for easy access
             message: `${categoryEmoji} Package "${name}" has been created successfully!${categoryMessage} You can view and manage all your packages at /manage/packages/${finalPostId}.`,
           }
+
+          // Validate the JSON we stream back to the client
+          return createdPackageSchema.parse(createdPayload)
         } catch (error: any) {
           console.error('Error creating package:', error)
           return {
