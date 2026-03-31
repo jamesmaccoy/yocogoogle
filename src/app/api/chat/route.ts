@@ -5,10 +5,15 @@ import configPromise from '@payload-config'
 import { getMeUser } from '@/utilities/getMeUser'
 import { z } from 'zod'
 import { streamText, tool } from 'ai'
-import { google } from '@ai-sdk/google'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 
 // Use the GEMINI_API_KEY environment variable defined in your .env file
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+
+// AI SDK provider for streaming (matches /api/chat/manage)
+const googleAI = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
+})
 
 // Zod schema for a generic suggested package (used in tool calling)
 const suggestPackageSchema = z.object({
@@ -181,8 +186,10 @@ You can freely answer questions about their bookings and packages, but when they
 
 Always express prices in South African Rand (R), not cents.`
 
+      const model = googleAI('models/gemini-2.0-flash-exp')
+
       const result = streamText({
-        model: google('models/gemini-2.0-flash-exp') as any,
+        model: model as any,
         system,
         messages: uiMessages,
         tools: {
