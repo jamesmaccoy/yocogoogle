@@ -186,7 +186,9 @@ You can freely answer questions about their bookings and packages, but when they
 
 Always express prices in South African Rand (R), not cents.`
 
-      const model = googleAI('models/gemini-2.0-flash-exp')
+      // NOTE: AI SDK 5 streaming currently requires model spec v2.
+      // `models/gemini-2.0-flash-exp` reports spec v3 and will throw AI_UnsupportedModelVersionError.
+      const model = googleAI('models/gemini-1.5-flash')
 
       const result = streamText({
         model: model as any,

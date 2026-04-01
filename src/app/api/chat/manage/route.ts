@@ -642,7 +642,9 @@ export async function POST(request: NextRequest) {
 
     // Initialize the Google provider model using @ai-sdk/google
     // Use the correct model name format with 'models/' prefix for AI SDK v5
-    const model = googleAI('models/gemini-2.0-flash-exp')
+    // NOTE: AI SDK 5 streaming currently requires model spec v2.
+    // `models/gemini-2.0-flash-exp` reports spec v3 and will throw AI_UnsupportedModelVersionError.
+    const model = googleAI('models/gemini-1.5-flash')
 
     // Analyze existing packages to provide insights
     const specialPackages = existingPackages.docs.filter((pkg: any) => pkg.category === 'special')
