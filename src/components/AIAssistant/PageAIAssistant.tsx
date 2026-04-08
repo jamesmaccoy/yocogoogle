@@ -30,6 +30,42 @@ interface PageAIAssistantProps {
 }
 
 export function PageAIAssistant({ context, placeholder, className, showActions = true, variant }: PageAIAssistantProps) {
+  const getToolName = (part: any): string => {
+    const type = typeof part?.type === 'string' ? part.type : ''
+    return type.startsWith('tool-') ? type.replace('tool-', '') : ''
+  }
+
+  const normalizePackagePreviewOutput = (toolName: string, output: any) => {
+    if (!output) return null
+
+    // `buildPackageDraft` wraps the package payload inside { package: ... }.
+    const raw = toolName === 'buildPackageDraft' && output.package ? output.package : output
+    if (!raw || typeof raw !== 'object') return null
+
+    const hasRequiredFields =
+      typeof raw.name === 'string' &&
+      typeof raw.description === 'string' &&
+      typeof raw.category === 'string'
+
+    if (!hasRequiredFields) return null
+
+    return {
+      name: raw.name,
+      description: raw.description,
+      category: raw.category,
+      entitlement: raw.entitlement || 'standard',
+      minNights: raw.minNights ?? 1,
+      maxNights: raw.maxNights ?? 1,
+      baseRate: raw.baseRate ?? 0,
+      multiplier: raw.multiplier ?? 1,
+      features: Array.isArray(raw.features) ? raw.features : [],
+      postId: raw.postId || context?.data?.postId || context?.data?.posts?.[0]?.id || '',
+      revenueCatId: raw.revenueCatId,
+      yocoId: raw.yocoId,
+      isPreview: true,
+    }
+  }
+
   const { currentUser } = useUserContext()
   const { isSubscribed } = useSubscription()
   const router = useRouter()
@@ -110,14 +146,23 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
       // Check if the finished message has a package preview tool call
       if (message?.role === 'assistant' && message.parts) {
-        const previewPart = message.parts.find((part: any) =>
-          part.type === 'tool-previewPackage' && part.state === 'output-available'
-        )
-        if (previewPart?.output) {
+        const previewPart = message.parts.find((part: any) => {
+          const toolName = getToolName(part)
+          return (
+            ['previewPackage', 'suggestPackage', 'buildPackageDraft'].includes(toolName) &&
+            part.state === 'output-available'
+          )
+        })
+
+        const previewOutput = previewPart
+          ? normalizePackagePreviewOutput(getToolName(previewPart), previewPart.output)
+          : null
+
+        if (previewOutput) {
           if (process.env.NODE_ENV === 'development') {
-            console.log('📦 Package preview received:', previewPart.output)
+            console.log('📦 Package preview received:', previewOutput)
           }
-          setPendingPackagePreview(previewPart.output)
+          setPendingPackagePreview(previewOutput)
         } else {
           // Check for other tool calls to debug
           const toolParts = message.parts.filter((p: any) => p.type?.startsWith('tool-'))
@@ -181,19 +226,26 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     const lastMessage = messages[messages.length - 1]
     if (lastMessage?.role === 'assistant' && lastMessage.parts) {
       // Check for package preview
-      const previewPart = lastMessage.parts.find((part: any) =>
-        part.type === 'tool-previewPackage' && part.state === 'output-available'
-      )
-      if (previewPart?.output && !pendingPackagePreview) {
+      const previewPart = lastMessage.parts.find((part: any) => {
+        const toolName = getToolName(part)
+        return (
+          ['previewPackage', 'suggestPackage', 'buildPackageDraft'].includes(toolName) &&
+          part.state === 'output-available'
+        )
+      })
+      const previewOutput = previewPart
+        ? normalizePackagePreviewOutput(getToolName(previewPart), previewPart.output)
+        : null
+      if (previewOutput && !pendingPackagePreview) {
         if (process.env.NODE_ENV === 'development') {
-          console.log('📦 Package preview detected in messages:', previewPart.output)
+          console.log('📦 Package preview detected in messages:', previewOutput)
         }
-        setPendingPackagePreview(previewPart.output)
+        setPendingPackagePreview(previewOutput)
       }
 
       // Check for package creation success
       const createPart = lastMessage.parts.find((part: any) =>
-        part.type === 'tool-createPackage' && part.state === 'output-available'
+        getToolName(part) === 'createPackage' && part.state === 'output-available'
       )
       if (createPart?.output?.success) {
         const packageId = createPart.output.packageId ||
@@ -783,6 +835,43 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                         {textContent || 'No content'}
                       </div>
                     )
+                  }
+
+                  if (part.type?.startsWith('tool-')) {
+                    const toolName = getToolName(part)
+                    if (['previewPackage', 'suggestPackage', 'buildPackageDraft'].includes(toolName)) {
+                      const normalizedOutput = normalizePackagePreviewOutput(toolName, part.output)
+                      switch (part.state) {
+                        case 'input-available':
+                          return (
+                            <div key={index} className="text-sm text-slate-500 italic">
+                              Preparing package preview...
+                            </div>
+                          )
+                        case 'output-available':
+                          if (!normalizedOutput) return null
+                          return (
+                            <div key={index} className="my-6 border-t border-slate-200 pt-6">
+                              <div className="max-w-2xl mx-auto">
+                                <PackagePreview
+                                  {...normalizedOutput}
+                                  onConfirm={handleConfirmPackage}
+                                  onCancel={handleCancelPackage}
+                                  isSaving={isSavingPackage}
+                                />
+                              </div>
+                            </div>
+                          )
+                        case 'output-error':
+                          return (
+                            <div key={index} className="text-sm text-red-600">
+                              Error: {part.errorText || 'Failed to preview package'}
+                            </div>
+                          )
+                        default:
+                          return null
+                      }
+                    }
                   }
 
                   if (part.type === 'tool-previewPackage') {
