@@ -1,4 +1,4 @@
-import { streamText, tool, convertToModelMessages, UIMessage, stepCountIs } from 'ai'
+import { streamText, tool, UIMessage, stepCountIs } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMeUser } from '@/utilities/getMeUser'
@@ -50,7 +50,10 @@ const googleAI = createGoogleGenerativeAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, pageData }: { messages: UIMessage[]; pageData?: any } = await request.json()
+    const requestBody = await request.json()
+    const pageData = requestBody?.pageData
+    const incomingMessages = Array.isArray(requestBody?.messages) ? requestBody.messages : []
+    const messages: UIMessage[] = incomingMessages as UIMessage[]
     const { user } = await getMeUser()
 
     if (!user) {
@@ -747,7 +750,7 @@ PACKAGE MANAGEMENT:
 
 When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.`
 
-    const lastUserMessage = [...(messages || [])]
+    const lastUserMessage = [...messages]
       .reverse()
       .find((m: any) => m?.role === 'user')
 
@@ -766,13 +769,41 @@ When user asks to create a package from a property they offer, create the proper
         lastUserText,
       )
 
+    const normalizedModelMessages = messages
+      .map((msg: any) => {
+        const role = msg?.role === 'assistant' ? 'assistant' : 'user'
+
+        if (Array.isArray(msg?.parts)) {
+          const content = msg.parts
+            .filter((part: any) => part?.type === 'text' && typeof part?.text === 'string')
+            .map((part: any) => part.text)
+            .join(' ')
+            .trim()
+          if (content) return { role, content }
+        }
+
+        if (typeof msg?.content === 'string' && msg.content.trim()) {
+          return { role, content: msg.content.trim() }
+        }
+
+        return null
+      })
+      .filter(Boolean)
+
+    const fallbackText =
+      typeof requestBody?.message === 'string' && requestBody.message.trim().length > 0
+        ? requestBody.message.trim()
+        : ''
+
     const result = streamText({
       model: model as any,
       system: systemPrompt,
-      messages: await convertToModelMessages(messages),
-      // Avoid incremental tool-input chunks that can include providerMetadata
-      // not recognized by older client-side stream validators.
-      toolCallStreaming: false,
+      messages:
+        normalizedModelMessages.length > 0
+          ? (normalizedModelMessages as any)
+          : fallbackText
+            ? ([{ role: 'user', content: fallbackText }] as any)
+            : ([] as any),
       ...(shouldForcePreviewTool ? { toolChoice: { type: 'tool' as const, toolName: 'previewPackage' } } : {}),
       tools: {
         createPost: createPostTool,
