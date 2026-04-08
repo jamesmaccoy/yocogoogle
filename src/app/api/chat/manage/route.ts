@@ -751,6 +751,9 @@ When user asks to create a package from a property they offer, create the proper
       model: model as any,
       system: systemPrompt,
       messages: await convertToModelMessages(messages),
+      // Avoid incremental tool-input chunks that can include providerMetadata
+      // not recognized by older client-side stream validators.
+      toolCallStreaming: false,
       tools: {
         createPost: createPostTool,
         previewPackage: previewPackageTool,

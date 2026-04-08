@@ -238,6 +238,9 @@ Always express prices in South African Rand (R), not cents.`
           normalizedModelMessages.length > 0
             ? (normalizedModelMessages as any)
             : ([{ role: 'user', content: message }] as any),
+        // Avoid incremental tool-input chunks that can include providerMetadata
+        // not recognized by older client-side stream validators.
+        toolCallStreaming: false,
         tools: {
           suggestPackage: tool({
             description:
