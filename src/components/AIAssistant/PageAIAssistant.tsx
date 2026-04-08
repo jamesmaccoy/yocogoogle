@@ -16,6 +16,7 @@ import { useUserContext } from '@/context/UserContext'
 import { useSubscription } from '@/hooks/useSubscription'
 import { cn } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { PackagePreview } from '@/components/PackagePreview'
 
 interface PageAIAssistantProps {
@@ -122,11 +123,20 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     })
   }
 
+  const manageTransport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat/manage',
+        body: {
+          pageData: context?.data || {},
+        },
+      }),
+    [context?.data],
+  )
+
   const chatHook = useChat({
-    api: '/api/chat/manage', // Always set - hook only used when isManageContext is true
-    body: {
-      pageData: context?.data || {},
-    },
+    // AI SDK React v3 uses transport instead of top-level `api`.
+    transport: manageTransport,
     onFinish: (result: any) => {
       // onFinish receives an object with a 'message' property, not the message directly
       const message = result?.message || result
