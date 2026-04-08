@@ -205,9 +205,9 @@ It must return a complete package object ready to save in the database (all requ
 
 Always express prices in South African Rand (R), not cents.`
 
-      // NOTE: AI SDK 5 streaming currently requires model spec v2.
-      // `models/gemini-2.0-flash-exp` reports spec v3 and will throw AI_UnsupportedModelVersionError.
-      const model = googleAI('models/gemini-1.5-flash')
+      // Keep model configurable because availability varies by Google project/API rollout.
+      const streamingModelName = process.env.GEMINI_STREAMING_MODEL || 'models/gemini-2.5-flash'
+      const model = googleAI(streamingModelName)
 
       const normalizedModelMessages = uiMessages
         .map((msg: any) => {
