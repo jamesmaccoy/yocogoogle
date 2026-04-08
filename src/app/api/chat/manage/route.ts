@@ -747,6 +747,25 @@ PACKAGE MANAGEMENT:
 
 When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.`
 
+    const lastUserMessage = [...(messages || [])]
+      .reverse()
+      .find((m: any) => m?.role === 'user')
+
+    const lastUserText =
+      typeof (lastUserMessage as any)?.content === 'string'
+        ? (lastUserMessage as any).content.toLowerCase()
+        : Array.isArray((lastUserMessage as any)?.parts)
+          ? (lastUserMessage as any).parts
+              .filter((p: any) => p?.type === 'text' && typeof p?.text === 'string')
+              .map((p: any) => p.text.toLowerCase())
+              .join(' ')
+          : ''
+
+    const shouldForcePreviewTool =
+      /(create|make|new package|build package|package for|suggest|winter package|special|bundle|deal|offer)/i.test(
+        lastUserText,
+      )
+
     const result = streamText({
       model: model as any,
       system: systemPrompt,
@@ -754,6 +773,7 @@ When user asks to create a package from a property they offer, create the proper
       // Avoid incremental tool-input chunks that can include providerMetadata
       // not recognized by older client-side stream validators.
       toolCallStreaming: false,
+      ...(shouldForcePreviewTool ? { toolChoice: { type: 'tool' as const, toolName: 'previewPackage' } } : {}),
       tools: {
         createPost: createPostTool,
         previewPackage: previewPackageTool,
