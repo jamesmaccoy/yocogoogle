@@ -26,6 +26,22 @@ const suggestPackageSchema = z.object({
     .describe('One or two sentences of marketing copy suitable for a Google Business / Yoco payment link description'),
 })
 
+// Schema for a package payload that is ready to be saved to DB.
+const packageDraftSchema = z.object({
+  name: z.string().describe('Package name'),
+  description: z.string().describe('Package description'),
+  category: z.enum(['standard', 'hosted', 'addon', 'special']).describe('Package category'),
+  entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement'),
+  minNights: z.number().min(0.5).describe('Minimum nights'),
+  maxNights: z.number().min(0.5).describe('Maximum nights'),
+  baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR)'),
+  multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
+  features: z.array(z.string()).default([]).describe('Feature list'),
+  postId: z.string().optional().describe('Property (post) ID'),
+  revenueCatId: z.string().optional().describe('Legacy RevenueCat product ID'),
+  yocoId: z.string().optional().describe('Yoco product ID'),
+})
+
 const serializeUsageMetadata = (usage: any) => {
   if (!usage) return undefined
 
@@ -165,7 +181,7 @@ export async function POST(req: Request) {
 
     // If this request comes from the Vercel AI SDK useChat hook (messages array present),
     // switch to streaming mode using the AI SDK with tool calling.
-    if (Array.isArray((requestBody as any).messages)) {
+    if (Array.isArray((requestBody as any).messages) && (requestBody as any).messages.length > 0) {
       const uiMessages = (requestBody as any).messages
 
       // Build a lightweight system prompt using high-level context only.
@@ -184,16 +200,44 @@ export async function POST(req: Request) {
 You can freely answer questions about their bookings and packages, but when they clearly ask you to create or design a package
 ("winter package", "special", "bundle", "deal", "offer", etc.), you should call the suggestPackage tool to propose a structured package.
 
+When the user asks to create/manage a package from a prompt, call the buildPackageDraft tool.
+It must return a complete package object ready to save in the database (all required fields populated, sensible defaults filled in).
+
 Always express prices in South African Rand (R), not cents.`
 
       // NOTE: AI SDK 5 streaming currently requires model spec v2.
       // `models/gemini-2.0-flash-exp` reports spec v3 and will throw AI_UnsupportedModelVersionError.
       const model = googleAI('models/gemini-1.5-flash')
 
+      const normalizedModelMessages = uiMessages
+        .map((msg: any) => {
+          const role = msg?.role === 'assistant' ? 'assistant' : 'user'
+
+          if (Array.isArray(msg?.parts)) {
+            const content = msg.parts
+              .filter((part: any) => part?.type === 'text' && typeof part?.text === 'string')
+              .map((part: any) => part.text)
+              .join(' ')
+              .trim()
+
+            if (content) return { role, content }
+          }
+
+          if (typeof msg?.content === 'string' && msg.content.trim()) {
+            return { role, content: msg.content.trim() }
+          }
+
+          return null
+        })
+        .filter(Boolean)
+
       const result = streamText({
         model: model as any,
         system,
-        messages: uiMessages,
+        messages:
+          normalizedModelMessages.length > 0
+            ? (normalizedModelMessages as any)
+            : ([{ role: 'user', content: message }] as any),
         tools: {
           suggestPackage: tool({
             description:
@@ -208,10 +252,78 @@ Always express prices in South African Rand (R), not cents.`
               }
             },
           }),
+          buildPackageDraft: tool({
+            description:
+              'Build a complete package payload from user prompt, auto-filling missing fields so it is ready to save to DB.',
+            parameters: packageDraftSchema.partial(),
+            execute: async (input) => {
+              const category = input.category ?? 'standard'
+              const defaultsByCategory: Record<string, { baseRate: number; minNights: number; maxNights: number; multiplier: number; features: string[] }> = {
+                standard: {
+                  baseRate: 20000,
+                  minNights: 1,
+                  maxNights: 7,
+                  multiplier: 1,
+                  features: ['Comfortable stay', 'Essential amenities', 'Flexible check-in'],
+                },
+                hosted: {
+                  baseRate: 45000,
+                  minNights: 2,
+                  maxNights: 14,
+                  multiplier: 1.2,
+                  features: ['Concierge support', 'Premium amenities', 'Personalized experience'],
+                },
+                addon: {
+                  baseRate: 30000,
+                  minNights: 0.5,
+                  maxNights: 1,
+                  multiplier: 1,
+                  features: ['One-time service', 'Quick turnaround', 'Quality guaranteed'],
+                },
+                special: {
+                  baseRate: 35000,
+                  minNights: 1,
+                  maxNights: 7,
+                  multiplier: 0.9,
+                  features: ['Limited offer', 'High value', 'Exclusive experience'],
+                },
+              }
+
+              const defaults = defaultsByCategory[category] ?? defaultsByCategory.standard
+              const inferredPostId =
+                input.postId ||
+                bookingContext?.postId ||
+                pageData?.postId ||
+                (Array.isArray(pageData?.posts) && pageData.posts.length > 0 ? pageData.posts[0].id : undefined)
+
+              const draft = packageDraftSchema.parse({
+                name: input.name ?? `${category === 'special' ? 'Special' : 'Custom'} Package`,
+                description:
+                  input.description ??
+                  `A ${category} package designed from your prompt, ready for database creation.`,
+                category,
+                entitlement: input.entitlement ?? 'standard',
+                minNights: input.minNights ?? defaults.minNights,
+                maxNights: input.maxNights ?? defaults.maxNights,
+                baseRate: input.baseRate ?? defaults.baseRate,
+                multiplier: input.multiplier ?? defaults.multiplier,
+                features: input.features && input.features.length > 0 ? input.features : defaults.features,
+                postId: inferredPostId,
+                revenueCatId: input.revenueCatId,
+                yocoId: input.yocoId,
+              })
+
+              return {
+                success: true,
+                status: 'ready_to_save',
+                package: draft,
+              }
+            },
+          }),
         },
       })
 
-      return result.toDataStreamResponse()
+      return result.toUIMessageStreamResponse()
     }
 
     // Legacy path: plain JSON chat response (non-streaming) for callers that send a single `message` field.

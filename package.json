@@ -22,7 +22,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@ai-sdk/google": "^2.0.64",
+    "@ai-sdk/google": "^3.0.60",
     "@google/genai": "^1.0.1",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.25.2",
@@ -61,7 +61,7 @@
     "@react-email/components": "^0.1.1",
     "@revenuecat/purchases-js": "^1.12.1",
     "@types/react-datepicker": "^7.0.0",
-    "ai": "^5.0.93",
+    "ai": "^6.0.153",
     "chart.js": "^4.4.9",
     "chrono-node": "^2.9.0",
     "class-variance-authority": "^0.7.0",
