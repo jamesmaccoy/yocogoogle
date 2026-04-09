@@ -109,7 +109,7 @@ export function Sidebar({
               Properties
             </h3>
             <Link
-              href="/manage/posts/new"
+              href="/manage/properties/new"
               className="p-1 hover:bg-slate-200 rounded transition-colors"
               title="Create new property"
             >
@@ -121,7 +121,7 @@ export function Sidebar({
               <div className="px-2 py-4 text-center">
                 <p className="text-xs text-slate-400 mb-2">No properties yet</p>
                 <Link
-                  href="/manage/posts/new"
+                  href="/manage/properties/new"
                   className="text-xs text-teal-600 hover:text-teal-700 font-medium"
                 >
                   Create your first

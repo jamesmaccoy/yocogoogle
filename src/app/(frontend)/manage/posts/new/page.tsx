@@ -16,7 +16,7 @@ export default async function NewPostPage() {
     
     // Check if user is authenticated and has host/admin role
     if (!meUser?.user) {
-      redirect('/login?redirect=/manage/posts/new')
+      redirect('/login?redirect=/manage/properties/new')
     }
     
     const role = meUser.user.role
@@ -26,12 +26,12 @@ export default async function NewPostPage() {
       redirect('/')
     }
     
-    // Redirect to Payload admin panel to create a new post
-    redirect('/admin/collections/posts/create')
+    // Legacy route: forward to the new onboarding flow
+    redirect('/manage/properties/new')
   } catch (error) {
     // Fallback redirect if there's any error
     console.error('Error in NewPostPage:', error)
-    redirect('/login?redirect=/manage/posts/new')
+    redirect('/login?redirect=/manage/properties/new')
   }
 }
 

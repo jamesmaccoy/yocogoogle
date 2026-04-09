@@ -45,9 +45,11 @@ interface AvailableProduct {
 
 interface PackageDashboardProps {
   postId: string;
+  /** If true, open the AI package onboarding immediately (create flow) */
+  startOnboarding?: boolean;
 }
 
-export default function PackageDashboard({ postId }: PackageDashboardProps) {
+export default function PackageDashboard({ postId, startOnboarding }: PackageDashboardProps) {
   const [packages, setPackages] = useState<Package[]>([]);
   const [availableProducts, setAvailableProducts] = useState<AvailableProduct[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -119,6 +121,14 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
       setLoading(false);
     }
   };
+
+  // Auto-open onboarding when the parent asks for it (e.g. after creating a new property)
+  useEffect(() => {
+    if (!startOnboarding) return;
+    // Always start in "create package" mode
+    setOnboardingExistingPackageId(null);
+    setShowOnboarding(true);
+  }, [startOnboarding]);
 
   const loadAvailableProducts = async () => {
     try {

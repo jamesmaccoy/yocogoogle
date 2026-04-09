@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
 import { Sidebar } from './components/Sidebar'
@@ -9,6 +9,7 @@ import PackageDashboard from '@/app/(frontend)/manage/packages/PackageDashboard'
 import AnnualStatementClient from '@/app/(frontend)/bookings/annual-statement/page.client'
 import { useUserContext } from '@/context/UserContext'
 import { LayoutDashboard, MessageSquare } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 
 type ManagePageClientProps = {
   posts: Post[]
@@ -17,8 +18,19 @@ type ManagePageClientProps = {
 
 export default function ManagePageClient({ posts, latestEstimatePostId }: ManagePageClientProps) {
   const { currentUser } = useUserContext()
+  const searchParams = useSearchParams()
+
+  const requestedPostId = useMemo(() => {
+    const q = searchParams?.get('postId')
+    return typeof q === 'string' && q.trim() ? q.trim() : null
+  }, [searchParams])
+
+  const shouldStartOnboarding = useMemo(() => {
+    return searchParams?.get('onboard') === '1'
+  }, [searchParams])
+
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
-    posts.length > 0 && posts[0] ? posts[0].id : null
+    requestedPostId || (posts.length > 0 && posts[0] ? posts[0].id : null)
   )
   const [activeTab, setActiveTab] = useState<'packages' | 'statement'>('packages')
   const [mobileView, setMobileView] = useState<'dashboard' | 'assistant'>('dashboard')
@@ -83,14 +95,14 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
                           You have no properties yet.
                         </div>
                         <Link 
-                          href="/manage/posts/new" 
+                          href="/manage/properties/new" 
                           className="inline-block bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-lg transition"
                         >
                           Create your first property
                         </Link>
                       </div>
                     ) : selectedPostId ? (
-                      <PackageDashboard postId={selectedPostId} />
+                      <PackageDashboard postId={selectedPostId} startOnboarding={shouldStartOnboarding} />
                     ) : (
                       <div className="text-center py-16 bg-white rounded-xl border border-slate-200 p-8">
                         <div className="text-gray-500 text-lg mb-4">

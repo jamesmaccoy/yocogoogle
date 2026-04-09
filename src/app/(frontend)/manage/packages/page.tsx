@@ -35,7 +35,7 @@ export default async function PackageManagePage() {
       <h1 className="text-3xl font-bold mb-6">Your Posts</h1>
       {posts.length === 0 ? (
         <div className="text-gray-500">
-          You have no posts yet. <Link href="/manage/posts/new" className="text-primary underline">Create your first post</Link>.
+          You have no posts yet. <Link href="/manage/properties/new" className="text-primary underline">Create your first property</Link>.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
