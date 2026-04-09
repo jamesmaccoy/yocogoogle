@@ -1,4 +1,4 @@
-import { streamText, tool, UIMessage, stepCountIs } from 'ai'
+import { streamText, tool, UIMessage } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMeUser } from '@/utilities/getMeUser'
@@ -41,12 +41,48 @@ const createdPackageSchema = z.object({
   }),
   packageId: z.string(),
   message: z.string(),
+  /** True when no listing was selected and a draft property was created first */
+  createdNewPost: z.boolean().optional(),
+  /** The property (post) the package is saved under */
+  postId: z.string().optional(),
 })
 
 // Initialize Google provider with custom API key
 const googleAI = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
 })
+
+/** Minimal Lexical root for draft posts (matches createPostTool in this file) */
+function buildMinimalPostContent(text: string) {
+  return {
+    root: {
+      type: 'root',
+      children: [
+        {
+          type: 'paragraph',
+          children: [
+            {
+              type: 'text',
+              text,
+              format: 0,
+              style: '',
+              mode: 'normal',
+              detail: 0,
+            },
+          ],
+          direction: 'ltr',
+          format: '',
+          indent: 0,
+          version: 1,
+        },
+      ],
+      direction: 'ltr',
+      format: '',
+      indent: 0,
+      version: 1,
+    },
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,15 +106,22 @@ export async function POST(request: NextRequest) {
 
     const payload = await getPayload({ config: configPromise })
     const posts = pageData?.posts || []
-    const postId = pageData?.postId || (posts.length > 0 ? posts[0].id : null)
+    /** Listing explicitly selected in Manage UI (sidebar); do not fall back to first post */
+    const selectedPostId =
+      typeof pageData?.postId === 'string' && pageData.postId.trim() ? pageData.postId.trim() : null
 
-    // Fetch post details for better context
+    const existingPackageIdFromContext =
+      typeof pageData?.existingPackageId === 'string' && pageData.existingPackageId.trim()
+        ? pageData.existingPackageId.trim()
+        : null
+
+    // Fetch post details for better context (only when a listing is selected)
     let postDetails: any = null
-    if (postId) {
+    if (selectedPostId) {
       try {
         postDetails = await payload.findByID({
           collection: 'posts',
-          id: postId,
+          id: selectedPostId,
           depth: 1,
         })
       } catch (e) {
@@ -86,17 +129,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch existing packages for context
-    const existingPackages = await payload.find({
-      collection: 'packages',
-      where: {
-        post: {
-          in: posts.map((p: any) => p.id),
-        },
-      },
-      depth: 1,
-      limit: 100,
-    })
+    // Fetch existing packages for context (skip invalid query when host has no posts yet)
+    const existingPackages =
+      posts.length > 0
+        ? await payload.find({
+            collection: 'packages',
+            where: {
+              post: {
+                in: posts.map((p: any) => p.id),
+              },
+            },
+            depth: 1,
+            limit: 100,
+          })
+        : { docs: [] as any[] }
 
     // Helper function to guess missing package values
     const guessPackageDefaults = (category: string, userInput: any) => {
@@ -159,7 +205,7 @@ export async function POST(request: NextRequest) {
         baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR). If not provided, will be guessed based on category (addon: R300, standard: R200, hosted: R450, special: R350).'),
         multiplier: z.number().min(0.1).max(3.0).optional().describe('Price multiplier. If not provided, will be guessed (addon/standard: 1.0, hosted: 1.2, special: 0.9).'),
         features: z.array(z.string()).optional().describe('Array of key features/amenities. If not provided, will generate 4-5 relevant features based on category.'),
-        postId: z.string().optional().describe('The property (post) ID this package belongs to. If not provided, use the first available property.'),
+        postId: z.string().optional().describe('The property (post) ID. If omitted, uses the listing selected in Manage (sidebar).'),
         revenueCatId: z.string().optional().describe('RevenueCat product ID if known'),
       }),
       // @ts-expect-error - AI SDK type inference issue
@@ -204,16 +250,16 @@ export async function POST(request: NextRequest) {
           return descs[category] || 'A great package option for your stay.'
         })()
 
-        // Use provided postId or default to first available
-        const finalPostId = input.postId || postId || (posts.length > 0 ? posts[0].id : '')
+        const finalPostId =
+          (typeof input.postId === 'string' && input.postId.trim() ? input.postId.trim() : '') ||
+          selectedPostId ||
+          ''
 
-        // Validate postId exists
         if (!finalPostId) {
-          console.warn('⚠️ No postId available for package preview:', {
+          console.warn('⚠️ No postId for package preview (no sidebar selection). A draft listing will be created when the user confirms save.', {
             inputPostId: input.postId,
-            contextPostId: postId,
+            selectedPostId,
             postsAvailable: posts.length,
-            firstPostId: posts.length > 0 ? posts[0].id : null,
           })
         }
 
@@ -242,7 +288,8 @@ export async function POST(request: NextRequest) {
     // Create a tool for actually creating the package
     // @ts-ignore - AI SDK tool type inference issue
     const createPackageTool = tool({
-      description: '🚨 CREATE PACKAGE: Actually create the package in the database. Use this IMMEDIATELY when user confirms the preview (says "yes", "create", "confirm", "create it", "that looks good"). DO NOT respond with text first - call this tool immediately with the exact values from the preview. Only use this after previewPackageTool has been called and user confirmed.',
+      description:
+        '🚨 CREATE PACKAGE: Persist the package in the database. Use when the user confirms the preview. Prefer pageData.postId / tool input postId for the listing. If no property is selected, a draft property (post) is created first so the package always belongs to a listing.',
       parameters: z.object({
         name: z.string().describe('Package name'),
         description: z.string().describe('Package description'),
@@ -253,23 +300,74 @@ export async function POST(request: NextRequest) {
         baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR)'),
         multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
         features: z.array(z.string()).default([]).describe('Array of feature strings'),
-        postId: z.string().describe('The property (post) ID this package belongs to'),
+        postId: z
+          .string()
+          .optional()
+          .describe(
+            'Property (post) ID. If omitted, uses the selected listing from the manage UI; if none exists, creates a draft property then attaches the package.',
+          ),
         revenueCatId: z.string().optional().describe('Legacy RevenueCat product ID (deprecated, use yocoId instead)'),
         yocoId: z.string().optional().describe('Yoco product ID for payment processing (recommended)'),
       }),
       // @ts-expect-error - AI SDK type inference issue
       execute: async (input: any) => {
         const { name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId, yocoId } = input
-        
-        // Use postId from input, or fallback to the context postId
-        const finalPostId = postId || (pageData?.postId) || (posts.length > 0 ? posts[0].id : null)
-        
+
         try {
+          // Resolve listing: tool input → sidebar selection in Manage (pageData.postId). If none, create draft post below.
+          let resolvedPostId: string | null =
+            (typeof postId === 'string' && postId.trim() ? postId.trim() : null) ||
+            selectedPostId
+
+          let createdNewPost = false
+
+          if (resolvedPostId) {
+            try {
+              await payload.findByID({
+                collection: 'posts',
+                id: resolvedPostId,
+                depth: 0,
+              })
+            } catch {
+              console.warn('⚠️ Resolved postId not found, will create draft property:', resolvedPostId)
+              resolvedPostId = null
+            }
+          }
+
+          if (!resolvedPostId) {
+            const titleBase = (name || 'New property').trim().slice(0, 120) || 'New property'
+            const bodyText = (
+              description?.trim() ||
+              `Property listing created for package “${name || 'package'}”. Edit title, content, and publish when ready.`
+            ).slice(0, 8000)
+
+            const draftPost = await payload.create({
+              collection: 'posts',
+              data: {
+                title: titleBase,
+                content: buildMinimalPostContent(bodyText) as any,
+                _status: 'draft',
+                baseRate:
+                  typeof baseRate === 'number' && baseRate > 0
+                    ? baseRate
+                    : undefined,
+              },
+              user,
+            })
+
+            resolvedPostId = draftPost.id
+            createdNewPost = true
+            console.log('✅ Draft property created for package:', { postId: resolvedPostId, title: titleBase })
+          }
+
+          const finalPostId = resolvedPostId
+
           console.log('📦 Creating package with data:', {
             inputPostId: postId,
             contextPostId: pageData?.postId,
             firstPostId: posts.length > 0 ? posts[0].id : null,
             finalPostId,
+            createdNewPost,
             name,
             description,
             category,
@@ -282,40 +380,6 @@ export async function POST(request: NextRequest) {
             revenueCatId,
             yocoId,
           })
-
-          // Validate postId exists
-          if (!finalPostId) {
-            console.error('❌ Package creation failed: postId is required', {
-              inputPostId: postId,
-              contextPostId: pageData?.postId,
-              postsAvailable: posts.length,
-              firstPostId: posts.length > 0 ? posts[0].id : null,
-            })
-            return {
-              success: false,
-              error: 'postId is required',
-              message: 'Failed to create package: postId is required. Please ensure a property (post) is selected.',
-            }
-          }
-
-          // Verify the post exists before creating the package
-          let postExists = false
-          try {
-            const postCheck = await payload.findByID({
-              collection: 'posts',
-              id: finalPostId,
-              depth: 0,
-            })
-            postExists = !!postCheck
-            console.log('✅ Post exists:', { postId: finalPostId, title: postCheck?.title })
-          } catch (postError) {
-            console.error('❌ Post not found:', { postId: finalPostId, error: postError })
-            return {
-              success: false,
-              error: 'Post not found',
-              message: `Failed to create package: Property with ID "${finalPostId}" not found.`,
-            }
-          }
 
           const packageData = {
             post: finalPostId,
@@ -362,7 +426,9 @@ export async function POST(request: NextRequest) {
             : ''
 
           const createdPayload = {
-            success: true,
+            success: true as const,
+            postId: finalPostId,
+            createdNewPost,
             package: {
               id: created.id,
               name: created.name,
@@ -378,7 +444,11 @@ export async function POST(request: NextRequest) {
               postId: typeof created.post === 'string' ? created.post : created.post?.id,
             },
             packageId: created.id, // Also include at top level for easy access
-            message: `${categoryEmoji} Package "${name}" has been created successfully!${categoryMessage} You can view and manage all your packages at /manage/packages/${finalPostId}.`,
+            message: `${categoryEmoji} Package "${name}" has been created successfully!${categoryMessage}${
+              createdNewPost
+                ? ` A draft property listing was created and linked to this package — open /admin/collections/posts/${finalPostId} or /manage/packages/${finalPostId} to finish editing.`
+                : ''
+            } You can view and manage packages at /manage/packages/${finalPostId}.`,
           }
 
           // Validate the JSON we stream back to the client
@@ -406,6 +476,15 @@ export async function POST(request: NextRequest) {
       // @ts-expect-error - AI SDK type inference issue
       execute: async ({ postId, category, isEnabled }: any) => {
         try {
+          if (!postId && posts.length === 0) {
+            return {
+              success: true,
+              packages: [],
+              count: 0,
+              message: 'No properties yet — create a listing first, or ask the assistant to create a package (a draft property can be created automatically).',
+            }
+          }
+
           const where: any = {}
           
           if (postId) {
@@ -708,9 +787,8 @@ PROPERTY CREATION:
    - THEN use previewPackageTool to show them the package preview
    - FINALLY use createPackageTool to create and assign the package to the new property
 2. If user wants to create a package but doesn't specify a property:
-   - Check if they have existing properties
-   - If they have properties, ask which one to use or use the first one
-   - If they have NO properties, use createPostTool first to create a property, then create the package
+   - Prefer the listing selected in Manage (sidebar). If none is selected, createPackageTool will create a draft property automatically and attach the package.
+   - Hosts can also use createPostTool explicitly if they want to name/configure a listing before packages.
 
 PACKAGE MANAGEMENT:
 1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents, R300 = 30000 cents
@@ -748,7 +826,16 @@ PACKAGE MANAGEMENT:
 11. SPECIAL PACKAGES: These are very popular with customers! When appropriate, suggest creating special packages for promotions, seasonal offers, or unique experiences. After creating a package, mention that special packages tend to attract more bookings.
 12. PACKAGE MANAGEMENT: After creating a package, remind the host they can view and manage all packages at /manage/packages/[postId]. They can enable/disable packages, update pricing, and see which packages are performing well.
 
-When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.`
+When user asks to create a package from a property they offer, create the property first, then create the package and assign it to that property.${
+      existingPackageIdFromContext
+        ? `
+
+🎯 PACKAGE ONBOARDING — EDIT EXISTING PACKAGE:
+- The client is editing package ID: ${existingPackageIdFromContext} (property post: ${selectedPostId || 'use tool input / message'}).
+- When the user describes changes or the message asks to CALL updatePackageTool, use updatePackageTool IMMEDIATELY with packageId="${existingPackageIdFromContext}" and merge in inferred fields (name, description, category, minNights, maxNights, baseRate in cents, multiplier, features, entitlement, isEnabled) from their text.
+- Do NOT call previewPackage or createPackage for this onboarding session unless the user explicitly asks to create a duplicate/new package.`
+        : ''
+    }`
 
     const lastUserMessage = [...messages]
       .reverse()

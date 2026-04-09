@@ -55,6 +55,8 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  /** When set, onboarding calls updatePackageTool for this package; otherwise create flow */
+  const [onboardingExistingPackageId, setOnboardingExistingPackageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -353,6 +355,16 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
     </div>
   );
 
+  const openCreatePackageOnboarding = () => {
+    setOnboardingExistingPackageId(null);
+    setShowOnboarding(true);
+  };
+
+  const openRefinePackageOnboarding = (packageId: string) => {
+    setOnboardingExistingPackageId(packageId);
+    setShowOnboarding(true);
+  };
+
   if (loading) return (
     <div className="flex items-center gap-2 py-10">
       <Loader2 className="h-5 w-5 animate-spin" />
@@ -365,15 +377,25 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
       <div className="container py-10 max-w-7xl">
         <PackageOnboarding
           postId={postId}
+          existingPackageId={onboardingExistingPackageId ?? undefined}
           onComplete={async (packageData) => {
-            setShowOnboarding(false)
-            // Reload packages to show the new one
-            await loadPackages()
-            setSuccess(`Package "${packageData.name || packageData.package?.name || 'New Package'}" created successfully!`)
-            // Clear success message after 5 seconds
-            setTimeout(() => setSuccess(null), 5000)
+            const wasUpdate = Boolean(onboardingExistingPackageId);
+            setShowOnboarding(false);
+            setOnboardingExistingPackageId(null);
+            await loadPackages();
+            const displayName =
+              packageData.name || packageData.package?.name || "Package";
+            setSuccess(
+              wasUpdate
+                ? `Package "${displayName}" updated successfully!`
+                : `Package "${displayName}" created successfully!`,
+            );
+            setTimeout(() => setSuccess(null), 5000);
           }}
-          onCancel={() => setShowOnboarding(false)}
+          onCancel={() => {
+            setShowOnboarding(false);
+            setOnboardingExistingPackageId(null);
+          }}
         />
       </div>
     );
@@ -395,7 +417,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
-              onClick={() => setShowOnboarding(true)}
+              onClick={openCreatePackageOnboarding}
               className="border-slate-300 shadow-sm text-slate-700 bg-white hover:bg-slate-50"
             >
               <Sparkles className="w-4 h-4 mr-2" />
@@ -551,6 +573,17 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
                         <span className="capitalize">{pkg.entitlement || 'standard'}</span>
                       </div>
                     </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-3 text-slate-700 border-teal-200 hover:bg-teal-50"
+                      onClick={() => openRefinePackageOnboarding(pkg.id)}
+                    >
+                      <Sparkles className="w-4 h-4 mr-2 text-teal-600" />
+                      Refine with AI
+                    </Button>
 
                     {/* Footer Price */}
                     <div className="mt-4 pt-4 border-t border-slate-100">
@@ -756,7 +789,7 @@ export default function PackageDashboard({ postId }: PackageDashboardProps) {
 
               {/* Add New Card Placeholder */}
               <button
-                onClick={() => setShowOnboarding(true)}
+                onClick={openCreatePackageOnboarding}
                 className="group border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-slate-400 hover:bg-slate-50 transition-all duration-300 min-h-[300px]"
               >
                 <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-4 group-hover:bg-white group-hover:shadow-sm transition-all">

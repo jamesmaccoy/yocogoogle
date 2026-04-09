@@ -1,16 +1,19 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
-import { Loader2, Sparkles, ArrowRight, X, Package, ExternalLink, Edit, Eye } from 'lucide-react'
+import { Loader2, Sparkles, ArrowRight, X, Package, ExternalLink, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { PackagePreview } from '@/components/PackagePreview'
 
 interface PackageOnboardingProps {
   postId: string
+  /** When set, user is enriching an existing package (updatePackageTool) instead of creating new */
+  existingPackageId?: string
   onComplete?: (packageData: any) => void
   onCancel?: () => void
   className?: string
@@ -18,11 +21,17 @@ interface PackageOnboardingProps {
 
 type Step = 'describe' | 'details'
 
-export function PackageOnboarding({ 
-  postId, 
-  onComplete, 
+function getToolName(part: { type?: string }): string {
+  const type = typeof part?.type === 'string' ? part.type : ''
+  return type.startsWith('tool-') ? type.replace('tool-', '') : ''
+}
+
+export function PackageOnboarding({
+  postId,
+  existingPackageId,
+  onComplete,
   onCancel,
-  className 
+  className,
 }: PackageOnboardingProps) {
   const [step, setStep] = useState<Step>('describe')
   const [packageName, setPackageName] = useState('')
@@ -31,171 +40,148 @@ export function PackageOnboarding({
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
   const [isSavingPackage, setIsSavingPackage] = useState(false)
   const [createdPackageId, setCreatedPackageId] = useState<string | null>(null)
+  const [lastSuccessWasUpdate, setLastSuccessWasUpdate] = useState(false)
 
-  // Use AI SDK's useChat hook for generative UI
+  const isUpdateMode = Boolean(existingPackageId?.trim())
+
+  const manageTransport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: '/api/chat/manage',
+        body: {
+          pageData: {
+            posts: [{ id: postId }],
+            postId,
+            ...(existingPackageId?.trim() ? { existingPackageId: existingPackageId.trim() } : {}),
+          },
+        },
+      }),
+    [postId, existingPackageId],
+  )
+
   const chatHook = useChat({
-    api: '/api/chat/manage',
-    body: {
-      pageData: {
-        posts: [{ id: postId }],
-        postId,
-      },
-    },
+    transport: manageTransport,
     onFinish: (result: any) => {
-      // onFinish receives an object with a 'message' property, not the message directly
       const message = result?.message || result
-      
-      // Check if the finished message has a package preview tool call
-      if (message?.role === 'assistant' && message.parts) {
-        const previewPart = message.parts.find((part: any) => 
-          part.type === 'tool-previewPackage' && part.state === 'output-available'
-        )
-        if (previewPart?.output) {
-          setPendingPackagePreview({
-            ...previewPart.output,
-            name: packageName || previewPart.output.name,
-            description: packageDescription || previewPart.output.description,
-          })
-          setIsGenerating(false)
-          setStep('details')
-        }
 
-        // Check if package was created successfully
-        const createPart = message.parts.find((part: any) => 
-          part.type === 'tool-createPackage' && part.state === 'output-available'
-        )
-        if (createPart?.output?.success) {
-          setIsSavingPackage(false)
-          // Extract package ID from the tool output structure
-          // createPackageTool returns: { success: true, package: { id, ... }, packageId: "...", message: "..." }
-          const createdPackage = createPart.output.package || createPart.output
-          // Try multiple paths to get the package ID
-          const packageId = createPart.output.packageId || 
-                           createPart.output.package?.id || 
-                           createdPackage.id ||
-                           createPart.output.id
-          
-          console.log('✅ Package created successfully:', { 
-            packageId, 
-            output: createPart.output,
-            createdPackage,
-            availablePaths: {
-              topLevelPackageId: createPart.output.packageId,
-              nestedPackageId: createPart.output.package?.id,
-              createdPackageId: createdPackage.id,
-              outputId: createPart.output.id,
-            }
+      if (message?.role !== 'assistant' || !message.parts) return
+
+      const parts = message.parts as any[]
+
+      const previewPart = parts.find(
+        (p: any) =>
+          getToolName(p) === 'previewPackage' && p.state === 'output-available',
+      )
+      if (previewPart?.output && !isUpdateMode) {
+        setPendingPackagePreview({
+          ...previewPart.output,
+          name: packageName || previewPart.output.name,
+          description: packageDescription || previewPart.output.description,
+        })
+        setIsGenerating(false)
+        setStep('details')
+      }
+
+      const updatePart = parts.find(
+        (p: any) => getToolName(p) === 'updatePackage' && p.state === 'output-available',
+      )
+      if (updatePart?.output?.success) {
+        setIsGenerating(false)
+        setIsSavingPackage(false)
+        const id =
+          updatePart.output.package?.id || existingPackageId || null
+        if (id) setCreatedPackageId(id)
+        setLastSuccessWasUpdate(true)
+        setStep('details')
+        if (onComplete) {
+          onComplete({
+            ...updatePart.output.package,
+            id,
+            ...pendingPackagePreview,
           })
-          
-          if (packageId) {
-            setCreatedPackageId(packageId)
-          } else {
-            console.error('❌ Package created but ID not found in response:', createPart.output)
-            // Still try to proceed - maybe the ID will be available later
-          }
-          
-          if (onComplete) {
-            // Pass the full created package data including ID
-            onComplete({
-              ...createdPackage,
-              id: packageId || createdPackage.id,
-              ...pendingPackagePreview, // Merge preview data for any missing fields
-            })
-          }
-        } else if (createPart?.output?.success === false) {
-          // Handle creation failure
-          setIsSavingPackage(false)
-          const errorMessage = createPart.output.error || createPart.output.message || 'Unknown error'
-          console.error('❌ Package creation failed:', {
-            error: errorMessage,
-            output: createPart.output
-          })
-          // TODO: Show error message to user in UI
         }
+        return
+      }
+      if (updatePart?.output && updatePart.output.success === false) {
+        setIsGenerating(false)
+        setIsSavingPackage(false)
+        console.error('Package update failed:', updatePart.output)
+      }
+
+      const createPart = parts.find(
+        (p: any) => getToolName(p) === 'createPackage' && p.state === 'output-available',
+      )
+      if (createPart?.output?.success) {
+        setIsSavingPackage(false)
+        setLastSuccessWasUpdate(false)
+        const createdPackage = createPart.output.package || createPart.output
+        const packageId =
+          createPart.output.packageId ||
+          createPart.output.package?.id ||
+          createdPackage.id ||
+          createPart.output.id
+
+        if (packageId) setCreatedPackageId(packageId)
+
+        if (onComplete) {
+          onComplete({
+            ...createdPackage,
+            id: packageId || createdPackage.id,
+            ...pendingPackagePreview,
+          })
+        }
+      } else if (createPart?.output && createPart.output.success === false) {
+        setIsSavingPackage(false)
+        console.error('Package creation failed:', createPart.output)
       }
     },
   } as any)
 
-  // Extract values from chat hook with fallbacks (using type assertion to handle AI SDK types)
-  const { 
-    messages = [], 
-    input: chatInput = '', 
-    handleInputChange: handleChatInputChange, 
-    handleSubmit, 
-    isLoading = false,
-    append
-  } = (chatHook || {}) as any
+  const { messages = [], sendMessage, status } = (chatHook || {}) as any
+  const chatIsLoading = status === 'submitted' || status === 'streaming'
 
   const handleDescribeSubmit = async () => {
     if (!packageDescription.trim()) return
+    if (!sendMessage) {
+      console.error('sendMessage is not available on useChat')
+      return
+    }
 
     setIsGenerating(true)
     setStep('details')
 
-    // Create a message that asks the AI to generate package details
-    // Use direct command format to trigger immediate tool call
-    // Make it extremely explicit to force tool execution
-    const prompt = `CALL previewPackageTool NOW with name="${packageName || 'New Package'}", description="${packageDescription}", postId="${postId}". DO NOT respond with text - call the tool immediately.`
+    const name = packageName.trim() || 'New Package'
+    const desc = packageDescription.trim()
 
-    // Use append method if available, otherwise use handleInputChange + handleSubmit
-    if (append && typeof append === 'function') {
-      await append({ role: 'user', content: prompt })
-    } else if (handleChatInputChange && handleSubmit) {
-      // Create synthetic event to set input
-      const syntheticChangeEvent = {
-        target: { value: prompt }
-      } as React.ChangeEvent<HTMLTextAreaElement>
-      handleChatInputChange(syntheticChangeEvent)
-      
-      // Wait a tick for input to update, then submit
-      setTimeout(() => {
-        const syntheticSubmitEvent = {
-          preventDefault: () => {},
-        } as React.FormEvent<HTMLFormElement>
-        handleSubmit(syntheticSubmitEvent)
-      }, 100)
+    const prompt = isUpdateMode
+      ? `CALL updatePackageTool NOW with packageId="${existingPackageId!.trim()}", property postId="${postId}", name="${name}", description="${desc}". Infer category, minNights, maxNights, baseRate (ZAR cents), multiplier, features, entitlement from the description. Do not respond with text first — call the tool immediately.`
+      : `CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". DO NOT respond with text — call the tool immediately.`
+
+    try {
+      await sendMessage({ role: 'user', content: prompt })
+    } catch (e) {
+      console.error(e)
+      setIsGenerating(false)
     }
   }
 
   const handleConfirmPackage = async () => {
-    if (!pendingPackagePreview) return
-    
+    if (!pendingPackagePreview || isUpdateMode) return
+    if (!sendMessage) {
+      setIsSavingPackage(false)
+      return
+    }
+
     setIsSavingPackage(true)
     const previewData = { ...pendingPackagePreview }
-    
-    // Create a message that explicitly asks the AI to use createPackageTool
-    // Use direct command format to trigger immediate tool call
-    // Ensure postId is included - use previewData.postId if available, otherwise use prop postId
     const packagePostId = previewData.postId || postId
+
     const createMessage = `Create this package now using createPackageTool. Package details: name="${previewData.name}", description="${previewData.description}", category="${previewData.category}", minNights=${previewData.minNights}, maxNights=${previewData.maxNights}, baseRate=${previewData.baseRate || 0}, multiplier=${previewData.multiplier || 1}, entitlement="${previewData.entitlement || 'standard'}", postId="${packagePostId}", features=${JSON.stringify(previewData.features || [])}${previewData.revenueCatId ? `, revenueCatId="${previewData.revenueCatId}"` : ''}${previewData.yocoId ? `, yocoId="${previewData.yocoId}"` : ''}.`
-    
-    console.log('📦 Creating package with postId:', { 
-      packagePostId, 
-      previewPostId: previewData.postId, 
-      propPostId: postId,
-      previewData 
-    })
-    
-    // Use append method if available, otherwise use handleInputChange + handleSubmit
-    if (append && typeof append === 'function') {
-      await append({ role: 'user', content: createMessage })
-      // Don't call onComplete here - wait for onFinish callback to handle it
-    } else if (handleChatInputChange && handleSubmit) {
-      // Create synthetic event to set input
-      const syntheticChangeEvent = {
-        target: { value: createMessage }
-      } as React.ChangeEvent<HTMLTextAreaElement>
-      handleChatInputChange(syntheticChangeEvent)
-      
-      // Wait a tick for input to update, then submit
-      setTimeout(() => {
-        const syntheticSubmitEvent = {
-          preventDefault: () => {},
-        } as React.FormEvent<HTMLFormElement>
-        handleSubmit(syntheticSubmitEvent)
-        // Don't call onComplete here - wait for onFinish callback to handle it
-      }, 100)
-    } else {
+
+    try {
+      await sendMessage({ role: 'user', content: createMessage })
+    } catch (e) {
+      console.error(e)
       setIsSavingPackage(false)
     }
   }
@@ -211,17 +197,122 @@ export function PackageOnboarding({
     }
   }
 
-  // Render messages for generative UI
+  const renderToolPart = (part: any, index: number) => {
+    const tool = getToolName(part)
+
+    if (tool === 'previewPackage') {
+      switch (part.state) {
+        case 'input-available':
+          return (
+            <div key={index} className="text-sm text-slate-500 italic">
+              Generating package details...
+            </div>
+          )
+        case 'output-available':
+          return (
+            <div key={index} className="my-4">
+              <PackagePreview
+                {...part.output}
+                name={packageName || part.output.name}
+                description={packageDescription || part.output.description}
+                onConfirm={handleConfirmPackage}
+                onCancel={handleCancelPackage}
+                isSaving={isSavingPackage}
+              />
+            </div>
+          )
+        case 'output-error':
+          return (
+            <div key={index} className="text-sm text-red-600">
+              Error: {part.errorText || 'Failed to generate package details'}
+            </div>
+          )
+        default:
+          return null
+      }
+    }
+
+    if (tool === 'updatePackage') {
+      switch (part.state) {
+        case 'input-available':
+          return (
+            <div key={index} className="text-sm text-slate-500 italic">
+              Updating package...
+            </div>
+          )
+        case 'output-available':
+          return (
+            <div
+              key={index}
+              className={cn(
+                'text-sm p-3 rounded-lg',
+                part.output.success
+                  ? 'bg-green-50 text-green-800 border border-green-200'
+                  : 'bg-red-50 text-red-800 border border-red-200',
+              )}
+            >
+              {part.output.message || (part.output.success ? 'Package updated.' : 'Update failed.')}
+            </div>
+          )
+        case 'output-error':
+          return (
+            <div key={index} className="text-sm text-red-600">
+              Error: {part.errorText || 'Failed to update package'}
+            </div>
+          )
+        default:
+          return null
+      }
+    }
+
+    if (tool === 'createPackage') {
+      switch (part.state) {
+        case 'input-available':
+          return (
+            <div key={index} className="text-sm text-slate-500 italic">
+              Creating package...
+            </div>
+          )
+        case 'output-available':
+          return (
+            <div
+              key={index}
+              className={cn(
+                'text-sm p-3 rounded-lg',
+                part.output.success
+                  ? 'bg-green-50 text-green-800 border border-green-200'
+                  : 'bg-red-50 text-red-800 border border-red-200',
+              )}
+            >
+              {part.output.message}
+            </div>
+          )
+        case 'output-error':
+          return (
+            <div key={index} className="text-sm text-red-600">
+              Error: {part.errorText || 'Failed to create package'}
+            </div>
+          )
+        default:
+          return null
+      }
+    }
+
+    return null
+  }
+
   const renderMessages = () => {
     return (
       <div className="space-y-4">
         {messages.map((message: any) => (
           <div key={message.id} className="flex gap-3">
             <div className="flex-shrink-0">
-              <div className={cn(
-                "h-8 w-8 rounded-full flex items-center justify-center shadow-sm",
-                message.role === 'user' ? "bg-slate-200" : "bg-primary"
-              )}>
+              <div
+                className={cn(
+                  'h-8 w-8 rounded-full flex items-center justify-center shadow-sm',
+                  message.role === 'user' ? 'bg-slate-200' : 'bg-primary',
+                )}
+              >
                 {message.role === 'user' ? (
                   <span className="text-xs font-semibold text-slate-600">You</span>
                 ) : (
@@ -238,69 +329,10 @@ export function PackageOnboarding({
                     </p>
                   )
                 }
-                
-                if (part.type === 'tool-previewPackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Generating package details...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className="my-4">
-                          <PackagePreview
-                            {...part.output}
-                            name={packageName || part.output.name}
-                            description={packageDescription || part.output.description}
-                            onConfirm={handleConfirmPackage}
-                            onCancel={handleCancelPackage}
-                            isSaving={isSavingPackage}
-                          />
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to generate package details'}
-                        </div>
-                      )
-                    default:
-                      return null
-                  }
+                if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
+                  const rendered = renderToolPart(part, index)
+                  if (rendered) return rendered
                 }
-
-                if (part.type === 'tool-createPackage') {
-                  switch (part.state) {
-                    case 'input-available':
-                      return (
-                        <div key={index} className="text-sm text-slate-500 italic">
-                          Creating package...
-                        </div>
-                      )
-                    case 'output-available':
-                      return (
-                        <div key={index} className={cn(
-                          "text-sm p-3 rounded-lg",
-                          part.output.success 
-                            ? "bg-green-50 text-green-800 border border-green-200"
-                            : "bg-red-50 text-red-800 border border-red-200"
-                        )}>
-                          {part.output.message}
-                        </div>
-                      )
-                    case 'output-error':
-                      return (
-                        <div key={index} className="text-sm text-red-600">
-                          Error: {part.errorText || 'Failed to create package'}
-                        </div>
-                      )
-                    default:
-                      return null
-                  }
-                }
-
                 return null
               })}
             </div>
@@ -310,23 +342,25 @@ export function PackageOnboarding({
     )
   }
 
-  // Step 1: Describe Package (Instagram AI Studio style)
+  const showLoadingCard =
+    (isGenerating || chatIsLoading) && !pendingPackagePreview && !createdPackageId
+
   if (step === 'describe') {
     return (
-      <div className={cn("w-full max-w-2xl mx-auto", className)}>
+      <div className={cn('w-full max-w-2xl mx-auto', className)}>
         <Card className="border-2 border-slate-200 shadow-lg">
           <div className="p-8">
-            {/* Header */}
             <div className="text-center mb-8">
               <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                Create a Package
+                {isUpdateMode ? 'Update package' : 'Create a Package'}
               </h2>
               <p className="text-slate-500">
-                Start by describing your package
+                {isUpdateMode
+                  ? 'Describe how you want this package to read and price. We will apply it to your existing listing.'
+                  : 'Start by describing your package'}
               </p>
             </div>
 
-            {/* Custom Package Card (Instagram style) */}
             <div className="mb-8">
               <div className="relative w-full aspect-square max-w-[200px] mx-auto mb-4">
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-teal-100 via-pink-100 to-blue-100 flex items-center justify-center">
@@ -336,11 +370,15 @@ export function PackageOnboarding({
                 </div>
               </div>
               <div className="text-center">
-                <h3 className="text-lg font-semibold text-slate-900">Custom Package</h3>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {isUpdateMode ? 'Existing package' : 'Custom Package'}
+                </h3>
+                {isUpdateMode && (
+                  <p className="text-xs text-slate-500 mt-1 font-mono">{existingPackageId}</p>
+                )}
               </div>
             </div>
 
-            {/* Name Input */}
             <div className="mb-4">
               <label htmlFor="package-name" className="block text-sm font-medium text-slate-700 mb-2">
                 Package Name (optional)
@@ -355,7 +393,6 @@ export function PackageOnboarding({
               />
             </div>
 
-            {/* Description Input */}
             <div className="mb-6">
               <label htmlFor="package-description" className="block text-sm font-medium text-slate-700 mb-2">
                 Description
@@ -364,35 +401,34 @@ export function PackageOnboarding({
                 id="package-description"
                 value={packageDescription}
                 onChange={(e) => setPackageDescription(e.target.value)}
-                placeholder="Package that creates packages in the real world. Survive..."
+                placeholder={
+                  isUpdateMode
+                    ? 'e.g., Winter special, 3-night min, R4500 base...'
+                    : 'Describe what guests get, pricing hints, and duration...'
+                }
                 className="min-h-[120px] resize-none border-slate-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               />
             </div>
 
-            {/* Actions */}
             <div className="flex items-center justify-between gap-4">
               {onCancel && (
-                <Button
-                  variant="outline"
-                  onClick={onCancel}
-                  className="flex-1"
-                >
+                <Button variant="outline" onClick={onCancel} className="flex-1">
                   Cancel
                 </Button>
               )}
               <Button
                 onClick={handleDescribeSubmit}
-                disabled={!packageDescription.trim() || isGenerating}
+                disabled={!packageDescription.trim() || isGenerating || chatIsLoading}
                 className="flex-1 bg-slate-900 hover:bg-slate-800 text-white"
               >
-                {isGenerating ? (
+                {isGenerating || chatIsLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating...
+                    {isUpdateMode ? 'Applying...' : 'Generating...'}
                   </>
                 ) : (
                   <>
-                    Next
+                    {isUpdateMode ? 'Apply' : 'Next'}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </>
                 )}
@@ -404,17 +440,17 @@ export function PackageOnboarding({
     )
   }
 
-  // Step 2: Package Details (Generative UI)
   return (
-    <div className={cn("w-full max-w-3xl mx-auto space-y-6", className)}>
-      {/* Header */}
+    <div className={cn('w-full max-w-3xl mx-auto space-y-6', className)}>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">
-            Package Details
+            {isUpdateMode ? 'Package update' : 'Package Details'}
           </h2>
           <p className="text-slate-500 mt-1">
-            Review and customize your package settings
+            {isUpdateMode
+              ? 'Review the assistant result below'
+              : 'Review and customize your package settings'}
           </p>
         </div>
         <Button
@@ -423,17 +459,16 @@ export function PackageOnboarding({
           onClick={() => {
             setStep('describe')
             setPendingPackagePreview(null)
+            setCreatedPackageId(null)
           }}
         >
           <X className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Generative UI Messages */}
       {renderMessages()}
 
-      {/* Pending Package Preview */}
-      {pendingPackagePreview && !createdPackageId && (
+      {pendingPackagePreview && !createdPackageId && !isUpdateMode && (
         <div className="my-4">
           <PackagePreview
             {...pendingPackagePreview}
@@ -446,7 +481,6 @@ export function PackageOnboarding({
         </div>
       )}
 
-      {/* Success State with Quick Actions */}
       {createdPackageId && (
         <Card className="p-6 border-green-200 bg-green-50">
           <div className="space-y-4">
@@ -456,15 +490,16 @@ export function PackageOnboarding({
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-green-900 mb-1">
-                  Package Created Successfully!
+                  {lastSuccessWasUpdate ? 'Package updated!' : 'Package created successfully!'}
                 </h3>
                 <p className="text-sm text-green-700">
-                  Your package has been created and is ready to use.
+                  {lastSuccessWasUpdate
+                    ? 'Changes are saved; you can keep editing in the dashboard.'
+                    : 'Your package is saved and ready to use.'}
                 </p>
               </div>
             </div>
-            
-            {/* Quick Actions */}
+
             <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
               <Button
                 variant="outline"
@@ -481,7 +516,7 @@ export function PackageOnboarding({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  window.open(`/manage/packages?postId=${postId}`, '_blank')
+                  window.open(`/manage/packages/${postId}`, '_blank')
                 }}
                 className="bg-white hover:bg-green-50 border-green-300"
               >
@@ -494,6 +529,7 @@ export function PackageOnboarding({
                 onClick={() => {
                   setCreatedPackageId(null)
                   setPendingPackagePreview(null)
+                  setLastSuccessWasUpdate(false)
                   setStep('describe')
                   setPackageName('')
                   setPackageDescription('')
@@ -501,30 +537,23 @@ export function PackageOnboarding({
                 className="bg-white hover:bg-green-50 border-green-300"
               >
                 <Package className="h-4 w-4 mr-2" />
-                Create Another
+                {isUpdateMode ? 'Another update' : 'Create Another'}
               </Button>
             </div>
           </div>
         </Card>
       )}
 
-      {/* Loading State */}
-      {(isGenerating || isLoading) && !pendingPackagePreview && !createdPackageId && (
+      {showLoadingCard && (
         <Card className="p-8">
           <div className="flex flex-col items-center justify-center space-y-4">
             <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
             <p className="text-sm text-slate-500">
-              Generating package details...
+              {isUpdateMode ? 'Applying your package changes...' : 'Generating package details...'}
             </p>
-            {(isGenerating || isLoading) && (
-              <p className="text-xs text-slate-400 mt-2">
-                This may take a few seconds. The AI is analyzing your request...
-              </p>
-            )}
           </div>
         </Card>
       )}
     </div>
   )
 }
-

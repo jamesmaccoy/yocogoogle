@@ -60,7 +60,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
       baseRate: raw.baseRate ?? 0,
       multiplier: raw.multiplier ?? 1,
       features: Array.isArray(raw.features) ? raw.features : [],
-      postId: raw.postId || context?.data?.postId || context?.data?.posts?.[0]?.id || '',
+      postId: raw.postId || context?.data?.postId || '',
       revenueCatId: raw.revenueCatId,
       yocoId: raw.yocoId,
       isPreview: true,
@@ -271,11 +271,14 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
           setCreatedPackageId(packageId)
           setPendingPackagePreview(null) // Clear preview after successful creation
 
-          // Trigger package list refresh event for parent components
-          const postId = context?.data?.postId || context?.data?.posts?.[0]?.id
-          if (postId) {
+          // Trigger package list refresh event for parent components (prefer server postId, e.g. new draft listing)
+          const eventPostId =
+            createPart.output.postId ||
+            createPart.output.package?.postId ||
+            context?.data?.postId
+          if (eventPostId) {
             window.dispatchEvent(new CustomEvent('packageCreated', {
-              detail: { packageId, postId, package: createPart.output.package }
+              detail: { packageId, postId: eventPostId, package: createPart.output.package, createdNewPost: createPart.output.createdNewPost }
             }))
           }
         }
@@ -963,7 +966,8 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                         )
                       case 'output-available':
                         const packageId = part.output.packageId || part.output.package?.id
-                        const postId = context?.data?.postId || context?.data?.posts?.[0]?.id
+                        const postId =
+                          part.output.postId || part.output.package?.postId || context?.data?.postId
                         return (
                           <div key={index} className={cn(
                             "text-sm p-4 rounded-lg space-y-3",

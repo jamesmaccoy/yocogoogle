@@ -147,7 +147,15 @@ Rules:
 				}
 			].filter(r => knownIds.has(r.revenueCatId))
 
-		return NextResponse.json({ recommendations: finalRecommendations })
+		return NextResponse.json({
+			recommendations: finalRecommendations,
+			...(postId ? { postId: String(postId) } : {}),
+			...(hostContext && !postId
+				? {
+						hint: 'No property was selected. Choose a listing in Manage (sidebar) so new packages can be saved against that post, or use the AI assistant to create a package (a draft listing is created if needed).',
+					}
+				: {}),
+		})
 	} catch (error) {
 		console.error('Suggest API error:', error)
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error'
