@@ -43,6 +43,8 @@ export function PackageOnboarding({
   const [isSavingPackage, setIsSavingPackage] = useState(false)
   const [createdPackageId, setCreatedPackageId] = useState<string | null>(null)
   const [lastSuccessWasUpdate, setLastSuccessWasUpdate] = useState(false)
+  const [isSuggestingCopy, setIsSuggestingCopy] = useState(false)
+  const [copySuggestionError, setCopySuggestionError] = useState<string | null>(null)
 
   const isUpdateMode = Boolean(existingPackageId?.trim())
 
@@ -118,6 +120,41 @@ export function PackageOnboarding({
 
       const parts = message.parts as any[]
 
+      // If we're asking the model to suggest copy (name/description), parse JSON from text.
+      if (isSuggestingCopy) {
+        try {
+          const text = parts
+            .filter((p: any) => p?.type === 'text' && typeof p?.text === 'string')
+            .map((p: any) => p.text)
+            .join('\n')
+            .trim()
+
+          const jsonStart = text.indexOf('{')
+          const jsonEnd = text.lastIndexOf('}')
+          const jsonSlice =
+            jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text
+
+          const parsed = JSON.parse(jsonSlice)
+          const suggestedName =
+            typeof parsed?.name === 'string' ? parsed.name.trim() : ''
+          const suggestedDescription =
+            typeof parsed?.description === 'string' ? parsed.description.trim() : ''
+
+          if (!suggestedName || !suggestedDescription) {
+            throw new Error('Missing name/description')
+          }
+
+          setPackageName((prev) => (prev.trim() ? prev : suggestedName))
+          setPackageDescription((prev) => (prev.trim() ? prev : suggestedDescription))
+          setCopySuggestionError(null)
+        } catch (e) {
+          setCopySuggestionError('Could not parse AI suggestion. Try again.')
+        } finally {
+          setIsSuggestingCopy(false)
+        }
+        return
+      }
+
       const previewPart = parts.find(
         (p: any) =>
           getToolName(p) === 'previewPackage' && p.state === 'output-available',
@@ -189,6 +226,25 @@ export function PackageOnboarding({
 
   const { messages = [], sendMessage, status } = (chatHook || {}) as any
   const chatIsLoading = status === 'submitted' || status === 'streaming'
+
+  const handleSuggestCopyFromProperty = async () => {
+    if (!sendMessage) return
+    setIsSuggestingCopy(true)
+    setCopySuggestionError(null)
+
+    const title = propertyTitle?.trim() || '(untitled property)'
+    const desc = propertyDescription?.trim() || '(no property description)'
+
+    const prompt = `You are helping create a package for a property.\n\nProperty title: "${title}"\nProperty description: "${desc}"\n\nReturn ONLY valid JSON with keys: { "name": string, "description": string }.\n- name: short, guest-friendly package title (optionally with one emoji)\n- description: 1-2 sentences, clear and specific\nDo not include any extra text. Do not call tools.`
+
+    try {
+      await sendMessage({ role: 'user', content: prompt })
+    } catch (e) {
+      console.error(e)
+      setIsSuggestingCopy(false)
+      setCopySuggestionError('Failed to request AI suggestion.')
+    }
+  }
 
   const handleDescribeSubmit = async () => {
     if (!packageDescription.trim()) return
@@ -458,6 +514,33 @@ export function PackageOnboarding({
                 }
                 className="min-h-[120px] resize-none border-slate-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
               />
+              {!isUpdateMode && (
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSuggestCopyFromProperty}
+                    disabled={!propertyTitle || isSuggestingCopy || chatIsLoading}
+                    className="border-teal-200 hover:bg-teal-50"
+                  >
+                    {isSuggestingCopy ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Suggesting…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4 mr-2 text-teal-600" />
+                        Suggest from property
+                      </>
+                    )}
+                  </Button>
+                  {copySuggestionError && (
+                    <p className="text-xs text-red-600">{copySuggestionError}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between gap-4">
