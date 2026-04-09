@@ -36,6 +36,8 @@ export function PackageOnboarding({
   const [step, setStep] = useState<Step>('describe')
   const [packageName, setPackageName] = useState('')
   const [packageDescription, setPackageDescription] = useState('')
+  const [nameTouched, setNameTouched] = useState(false)
+  const [descriptionTouched, setDescriptionTouched] = useState(false)
   const [propertyTitle, setPropertyTitle] = useState<string | null>(null)
   const [propertyDescription, setPropertyDescription] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -100,16 +102,21 @@ export function PackageOnboarding({
   useEffect(() => {
     if (!propertyTitle) return
 
-    if (!packageName.trim()) {
+    if (!packageName.trim() && !nameTouched) {
       setPackageName(propertyTitle)
     }
-    if (!packageDescription.trim()) {
+    if (!packageDescription.trim() && !descriptionTouched) {
       const desc = propertyDescription?.trim()
       setPackageDescription(desc ? desc : `Packages for ${propertyTitle}.`)
     }
     // Only run when property data arrives; do not re-run as user types.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyTitle, propertyDescription])
+  }, [propertyTitle, propertyDescription, nameTouched, descriptionTouched])
+
+  const derivedDefaultName = propertyTitle?.trim() || ''
+  const derivedDefaultDescription = propertyTitle
+    ? (propertyDescription?.trim() ? propertyDescription.trim() : `Packages for ${propertyTitle}.`)
+    : ''
 
   const chatHook = useChat({
     transport: manageTransport,
@@ -119,41 +126,6 @@ export function PackageOnboarding({
       if (message?.role !== 'assistant' || !message.parts) return
 
       const parts = message.parts as any[]
-
-      // If we're asking the model to suggest copy (name/description), parse JSON from text.
-      if (isSuggestingCopy) {
-        try {
-          const text = parts
-            .filter((p: any) => p?.type === 'text' && typeof p?.text === 'string')
-            .map((p: any) => p.text)
-            .join('\n')
-            .trim()
-
-          const jsonStart = text.indexOf('{')
-          const jsonEnd = text.lastIndexOf('}')
-          const jsonSlice =
-            jsonStart >= 0 && jsonEnd > jsonStart ? text.slice(jsonStart, jsonEnd + 1) : text
-
-          const parsed = JSON.parse(jsonSlice)
-          const suggestedName =
-            typeof parsed?.name === 'string' ? parsed.name.trim() : ''
-          const suggestedDescription =
-            typeof parsed?.description === 'string' ? parsed.description.trim() : ''
-
-          if (!suggestedName || !suggestedDescription) {
-            throw new Error('Missing name/description')
-          }
-
-          setPackageName((prev) => (prev.trim() ? prev : suggestedName))
-          setPackageDescription((prev) => (prev.trim() ? prev : suggestedDescription))
-          setCopySuggestionError(null)
-        } catch (e) {
-          setCopySuggestionError('Could not parse AI suggestion. Try again.')
-        } finally {
-          setIsSuggestingCopy(false)
-        }
-        return
-      }
 
       const previewPart = parts.find(
         (p: any) =>
@@ -228,21 +200,33 @@ export function PackageOnboarding({
   const chatIsLoading = status === 'submitted' || status === 'streaming'
 
   const handleSuggestCopyFromProperty = async () => {
-    if (!sendMessage) return
     setIsSuggestingCopy(true)
     setCopySuggestionError(null)
 
-    const title = propertyTitle?.trim() || '(untitled property)'
-    const desc = propertyDescription?.trim() || '(no property description)'
-
-    const prompt = `You are helping create a package for a property.\n\nProperty title: "${title}"\nProperty description: "${desc}"\n\nReturn ONLY valid JSON with keys: { "name": string, "description": string }.\n- name: short, guest-friendly package title (optionally with one emoji)\n- description: 1-2 sentences, clear and specific\nDo not include any extra text. Do not call tools.`
-
     try {
-      await sendMessage({ role: 'user', content: prompt })
+      const res = await fetch('/api/packages/suggest-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Failed to suggest copy')
+
+      const suggestedName = typeof data?.name === 'string' ? data.name.trim() : ''
+      const suggestedDescription = typeof data?.description === 'string' ? data.description.trim() : ''
+      if (!suggestedName || !suggestedDescription) throw new Error('Missing suggestion')
+
+      setPackageName((prev) =>
+        !nameTouched || prev.trim() === derivedDefaultName ? suggestedName : prev,
+      )
+      setPackageDescription((prev) =>
+        !descriptionTouched || prev.trim() === derivedDefaultDescription ? suggestedDescription : prev,
+      )
     } catch (e) {
       console.error(e)
+      setCopySuggestionError('Could not generate suggestion. Try again.')
+    } finally {
       setIsSuggestingCopy(false)
-      setCopySuggestionError('Failed to request AI suggestion.')
     }
   }
 
@@ -258,10 +242,12 @@ export function PackageOnboarding({
 
     const name = packageName.trim() || propertyTitle?.trim() || 'New Package'
     const desc = packageDescription.trim()
+    const propertyContextTitle = propertyTitle?.trim() || ''
+    const propertyContextDescription = propertyDescription?.trim() || ''
 
     const prompt = isUpdateMode
       ? `CALL updatePackageTool NOW with packageId="${existingPackageId!.trim()}", property postId="${postId}", name="${name}", description="${desc}". Infer category, minNights, maxNights, baseRate (ZAR cents), multiplier, features, entitlement from the description. Do not respond with text first — call the tool immediately.`
-      : `CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". DO NOT respond with text — call the tool immediately.`
+      : `You are creating a package for a specific property. Use the property context to make the package title and description specific (not generic).\n\nProperty title: "${propertyContextTitle}"\nProperty description: "${propertyContextDescription}"\n\nNow CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". If the provided name/description are vague, improve them using the property context before calling the tool. DO NOT respond with text — call the tool immediately.`
 
     try {
       await sendMessage({ role: 'user', content: prompt })
@@ -493,7 +479,10 @@ export function PackageOnboarding({
                 id="package-name"
                 type="text"
                 value={packageName}
-                onChange={(e) => setPackageName(e.target.value)}
+                onChange={(e) => {
+                  setNameTouched(true)
+                  setPackageName(e.target.value)
+                }}
                 placeholder="e.g., Weekend Getaway"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
               />
@@ -506,7 +495,10 @@ export function PackageOnboarding({
               <Textarea
                 id="package-description"
                 value={packageDescription}
-                onChange={(e) => setPackageDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescriptionTouched(true)
+                  setPackageDescription(e.target.value)
+                }}
                 placeholder={
                   isUpdateMode
                     ? 'e.g., Winter special, 3-night min, R4500 base...'
