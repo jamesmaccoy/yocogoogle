@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
@@ -36,6 +36,8 @@ export function PackageOnboarding({
   const [step, setStep] = useState<Step>('describe')
   const [packageName, setPackageName] = useState('')
   const [packageDescription, setPackageDescription] = useState('')
+  const [propertyTitle, setPropertyTitle] = useState<string | null>(null)
+  const [propertyDescription, setPropertyDescription] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pendingPackagePreview, setPendingPackagePreview] = useState<any>(null)
   const [isSavingPackage, setIsSavingPackage] = useState(false)
@@ -58,6 +60,54 @@ export function PackageOnboarding({
       }),
     [postId, existingPackageId],
   )
+
+  // Derive defaults from the selected property so "new property → packages" and
+  // "create new package" feel like one consistent flow.
+  useEffect(() => {
+    let cancelled = false
+    async function loadProperty() {
+      if (!postId?.trim()) return
+      try {
+        const res = await fetch(`/api/posts/${postId}`)
+        const data = await res.json()
+        if (!res.ok) return
+
+        const doc = data?.doc || data
+        const title = typeof doc?.title === 'string' ? doc.title.trim() : ''
+        // Content is Lexical; best-effort extract first text as a description hint.
+        const lexicalText =
+          doc?.content?.root?.children?.[0]?.children?.[0]?.text &&
+          typeof doc.content.root.children[0].children[0].text === 'string'
+            ? (doc.content.root.children[0].children[0].text as string).trim()
+            : ''
+
+        if (cancelled) return
+        setPropertyTitle(title || null)
+        setPropertyDescription(lexicalText || null)
+      } catch {
+        // best-effort only
+      }
+    }
+    loadProperty()
+    return () => {
+      cancelled = true
+    }
+  }, [postId])
+
+  // Apply derived defaults once, without clobbering user edits.
+  useEffect(() => {
+    if (!propertyTitle) return
+
+    if (!packageName.trim()) {
+      setPackageName(propertyTitle)
+    }
+    if (!packageDescription.trim()) {
+      const desc = propertyDescription?.trim()
+      setPackageDescription(desc ? desc : `Packages for ${propertyTitle}.`)
+    }
+    // Only run when property data arrives; do not re-run as user types.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyTitle, propertyDescription])
 
   const chatHook = useChat({
     transport: manageTransport,
@@ -150,7 +200,7 @@ export function PackageOnboarding({
     setIsGenerating(true)
     setStep('details')
 
-    const name = packageName.trim() || 'New Package'
+    const name = packageName.trim() || propertyTitle?.trim() || 'New Package'
     const desc = packageDescription.trim()
 
     const prompt = isUpdateMode
