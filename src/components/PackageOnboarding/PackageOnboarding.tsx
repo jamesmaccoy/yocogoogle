@@ -300,19 +300,53 @@ export function PackageOnboarding({
 
   const handleConfirmPackage = async () => {
     if (!pendingPackagePreview || isUpdateMode) return
-    if (!sendMessage) {
-      setIsSavingPackage(false)
-      return
-    }
-
     setIsSavingPackage(true)
     const previewData = { ...pendingPackagePreview }
     const packagePostId = previewData.postId || postId
 
-    const createMessage = `Create this package now using createPackageTool. Package details: name="${previewData.name}", description="${previewData.description}", category="${previewData.category}", minNights=${previewData.minNights}, maxNights=${previewData.maxNights}, baseRate=${previewData.baseRate || 0}, multiplier=${previewData.multiplier || 1}, entitlement="${previewData.entitlement || 'standard'}", postId="${packagePostId}", features=${JSON.stringify(previewData.features || [])}${previewData.revenueCatId ? `, revenueCatId="${previewData.revenueCatId}"` : ''}${previewData.yocoId ? `, yocoId="${previewData.yocoId}"` : ''}.`
-
     try {
-      await sendMessage({ role: 'user', content: createMessage })
+      // Persist directly to the DB (do not rely on the model to call createPackageTool).
+      const res = await fetch(`/api/packages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post: packagePostId,
+          name: previewData.name,
+          description: previewData.description,
+          category: previewData.category,
+          entitlement: previewData.entitlement || 'standard',
+          minNights: previewData.minNights,
+          maxNights: previewData.maxNights,
+          baseRate: previewData.baseRate || undefined,
+          multiplier: previewData.multiplier || 1,
+          features: Array.isArray(previewData.features)
+            ? previewData.features.map((f: string) => ({ feature: f }))
+            : [],
+          revenueCatId: previewData.revenueCatId || undefined,
+          yocoId: previewData.yocoId || undefined,
+          isEnabled: true,
+        }),
+      })
+
+      const created = await res.json()
+      if (!res.ok) {
+        throw new Error(created?.error || 'Failed to create package')
+      }
+
+      const createdId = created?.id
+      if (typeof createdId === 'string' && createdId.trim()) {
+        setCreatedPackageId(createdId.trim())
+      }
+      setIsSavingPackage(false)
+      setLastSuccessWasUpdate(false)
+
+      if (onComplete) {
+        onComplete({
+          ...created,
+          id: createdId,
+          ...pendingPackagePreview,
+        })
+      }
     } catch (e) {
       console.error(e)
       setIsSavingPackage(false)
