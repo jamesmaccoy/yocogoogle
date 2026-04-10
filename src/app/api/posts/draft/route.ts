@@ -56,6 +56,9 @@ export async function POST(req: NextRequest) {
 
   const title = typeof body?.title === 'string' ? body.title.trim() : ''
   const description = typeof body?.description === 'string' ? body.description.trim() : ''
+  const heroImageRaw = body?.heroImage
+  const heroImage =
+    typeof heroImageRaw === 'string' && heroImageRaw.trim().length > 0 ? heroImageRaw.trim() : undefined
 
   if (!title) {
     return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest) {
         (description || 'Draft property created from Manage. Add details and publish when ready.').slice(0, 8000),
       ) as any,
       _status: 'draft',
+      ...(heroImage ? { heroImage } : {}),
     },
     user,
   })

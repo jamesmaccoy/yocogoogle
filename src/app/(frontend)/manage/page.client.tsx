@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
 import { Sidebar } from './components/Sidebar'
+import { PropertyHeroEditor } from './components/PropertyHeroEditor'
 import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 import PackageDashboard from '@/app/(frontend)/manage/packages/PackageDashboard'
 import AnnualStatementClient from '@/app/(frontend)/bookings/annual-statement/page.client'
@@ -112,7 +113,10 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
                         </Link>
                       </div>
                     ) : selectedPostId ? (
-                      <PackageDashboard postId={selectedPostId} startOnboarding={shouldStartOnboarding} />
+                      <>
+                        <PropertyHeroEditor postId={selectedPostId} />
+                        <PackageDashboard postId={selectedPostId} startOnboarding={shouldStartOnboarding} />
+                      </>
                     ) : (
                       <div className="text-center py-16 bg-white rounded-xl border border-slate-200 p-8">
                         <div className="text-gray-500 text-lg mb-4">

@@ -409,6 +409,37 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       )
     }
 
+    const role = (user as any).role
+    const roleArray = Array.isArray(role) ? role : role ? [role] : []
+    const isHostOrAdmin = roleArray.includes('host') || roleArray.includes('admin')
+    if (!isHostOrAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Best-effort cleanup: delete packages tied to this post to avoid orphaned docs.
+    try {
+      const pkgs = await payload.find({
+        collection: 'packages',
+        where: { post: { equals: id } } as any,
+        limit: 200,
+        depth: 0,
+        user,
+      })
+
+      const docs = Array.isArray((pkgs as any)?.docs) ? (pkgs as any).docs : []
+      await Promise.all(
+        docs.map((p: any) =>
+          payload.delete({
+            collection: 'packages',
+            id: p.id,
+            user,
+          }),
+        ),
+      )
+    } catch (e) {
+      console.warn('Failed to cleanup packages for deleted post:', e)
+    }
+
     await payload.delete({
       collection: 'posts',
       id,

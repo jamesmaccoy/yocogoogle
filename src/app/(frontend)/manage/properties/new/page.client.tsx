@@ -1,22 +1,67 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, ArrowRight } from 'lucide-react'
+import { Loader2, ArrowRight, ImagePlus, X } from 'lucide-react'
+
+async function uploadHeroMedia(file: File, alt: string): Promise<string> {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append(
+    '_payload',
+    JSON.stringify({
+      alt: alt.slice(0, 200) || 'Property listing hero',
+    }),
+  )
+  const res = await fetch('/api/media', {
+    method: 'POST',
+    body: fd,
+    credentials: 'include',
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg =
+      (typeof data?.message === 'string' && data.message) ||
+      data?.errors?.[0]?.message ||
+      data?.error ||
+      'Image upload failed'
+    throw new Error(msg)
+  }
+  const id = data?.doc?.id ?? data?.id
+  if (!id || typeof id !== 'string') {
+    throw new Error('Upload succeeded but media id was not returned')
+  }
+  return id
+}
 
 export default function NewPropertyOnboardingClient() {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [heroFile, setHeroFile] = useState<File | null>(null)
+  const [heroPreviewUrl, setHeroPreviewUrl] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!heroFile) {
+      setHeroPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(heroFile)
+    setHeroPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [heroFile])
+
   const canSubmit = title.trim().length > 0
+
+  const clearHero = () => setHeroFile(null)
 
   const handleCreate = async () => {
     if (!canSubmit || submitting) return
@@ -24,12 +69,18 @@ export default function NewPropertyOnboardingClient() {
     setError(null)
 
     try {
+      let heroImageId: string | undefined
+      if (heroFile) {
+        heroImageId = await uploadHeroMedia(heroFile, title.trim())
+      }
+
       const res = await fetch('/api/posts/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),
+          ...(heroImageId ? { heroImage: heroImageId } : {}),
         }),
       })
 
@@ -81,6 +132,55 @@ export default function NewPropertyOnboardingClient() {
               placeholder="A short description guests will see. You can edit later."
               className="min-h-[140px]"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Hero image (optional)</label>
+            <p className="text-sm text-slate-500 mb-3">
+              Main photo for the listing header. You can change it later in the editor.
+            </p>
+            {!heroFile ? (
+              <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer bg-slate-50/80 hover:bg-slate-50 transition-colors">
+                <ImagePlus className="h-8 w-8 text-slate-400 mb-2" />
+                <span className="text-sm text-slate-600">Click to upload an image</span>
+                <span className="text-xs text-slate-400 mt-1">JPEG, PNG, or WebP</span>
+                <Input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    setHeroFile(f ?? null)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            ) : (
+              <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-[21/9] max-h-48">
+                {heroPreviewUrl ? (
+                  <Image
+                    src={heroPreviewUrl}
+                    alt=""
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : null}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="absolute top-2 right-2 h-9 w-9 rounded-full shadow-md"
+                  onClick={clearHero}
+                  aria-label="Remove hero image"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <p className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-xs px-3 py-1.5 truncate">
+                  {heroFile.name}
+                </p>
+              </div>
+            )}
           </div>
 
           {error && (
