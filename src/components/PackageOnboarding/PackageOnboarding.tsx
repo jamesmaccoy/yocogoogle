@@ -66,6 +66,31 @@ export function PackageOnboarding({
     setPackageDescription('')
   }, [postId])
 
+  // If we're editing an existing package, prefill from it (so the user can edit immediately).
+  useEffect(() => {
+    let cancelled = false
+    async function loadExistingPackage() {
+      const id = existingPackageId?.trim()
+      if (!id) return
+      try {
+        const res = await fetch(`/api/packages/${id}?depth=0`)
+        const data = await res.json()
+        if (!res.ok) return
+        const name = typeof data?.name === 'string' ? data.name.trim() : ''
+        const description = typeof data?.description === 'string' ? data.description.trim() : ''
+        if (cancelled) return
+        if (name && !nameTouched) setPackageName(name)
+        if (description && !descriptionTouched) setPackageDescription(description)
+      } catch {
+        // best-effort only
+      }
+    }
+    loadExistingPackage()
+    return () => {
+      cancelled = true
+    }
+  }, [existingPackageId, nameTouched, descriptionTouched])
+
   const manageTransport = useMemo(
     () =>
       new DefaultChatTransport({

@@ -125,9 +125,37 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
   // Auto-open onboarding when the parent asks for it (e.g. after creating a new property)
   useEffect(() => {
     if (!startOnboarding) return;
-    // Always start in "create package" mode
-    setOnboardingExistingPackageId(null);
-    setShowOnboarding(true);
+    let cancelled = false;
+    async function seedAndOpen() {
+      try {
+        // Create a real draft package immediately so returning to the dashboard shows it.
+        const res = await fetch('/api/packages/seed-from-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ postId }),
+        });
+        const data = await res.json();
+        const packageId = data?.packageId;
+        if (cancelled) return;
+
+        if (res.ok && typeof packageId === 'string' && packageId.trim()) {
+          setOnboardingExistingPackageId(packageId.trim());
+        } else {
+          // Fallback: allow normal create flow if seeding fails
+          setOnboardingExistingPackageId(null);
+        }
+      } catch {
+        if (cancelled) return;
+        setOnboardingExistingPackageId(null);
+      } finally {
+        if (cancelled) return;
+        setShowOnboarding(true);
+      }
+    }
+    seedAndOpen();
+    return () => {
+      cancelled = true;
+    };
   }, [startOnboarding]);
 
   const loadAvailableProducts = async () => {
