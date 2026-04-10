@@ -50,6 +50,22 @@ export function PackageOnboarding({
 
   const isUpdateMode = Boolean(existingPackageId?.trim())
 
+  // When switching properties, always bring user back to the editable step.
+  useEffect(() => {
+    setStep('describe')
+    setPendingPackagePreview(null)
+    setCreatedPackageId(null)
+    setIsGenerating(false)
+    setIsSavingPackage(false)
+    setIsSuggestingCopy(false)
+    setCopySuggestionError(null)
+    setNameTouched(false)
+    setDescriptionTouched(false)
+    // Let derived defaults re-apply for the new property
+    setPackageName('')
+    setPackageDescription('')
+  }, [postId])
+
   const manageTransport = useMemo(
     () =>
       new DefaultChatTransport({

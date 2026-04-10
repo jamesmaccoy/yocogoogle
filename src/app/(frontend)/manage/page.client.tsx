@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
 import { Sidebar } from './components/Sidebar'
@@ -9,7 +9,7 @@ import PackageDashboard from '@/app/(frontend)/manage/packages/PackageDashboard'
 import AnnualStatementClient from '@/app/(frontend)/bookings/annual-statement/page.client'
 import { useUserContext } from '@/context/UserContext'
 import { LayoutDashboard, MessageSquare } from 'lucide-react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type ManagePageClientProps = {
   posts: Post[]
@@ -19,6 +19,7 @@ type ManagePageClientProps = {
 export default function ManagePageClient({ posts, latestEstimatePostId }: ManagePageClientProps) {
   const { currentUser } = useUserContext()
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   const requestedPostId = useMemo(() => {
     const q = searchParams?.get('postId')
@@ -34,6 +35,15 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
   )
   const [activeTab, setActiveTab] = useState<'packages' | 'statement'>('packages')
   const [mobileView, setMobileView] = useState<'dashboard' | 'assistant'>('dashboard')
+
+  // Consume ?onboard=1 once so selecting properties doesn't keep re-opening onboarding.
+  useEffect(() => {
+    if (!shouldStartOnboarding) return
+    const postId = requestedPostId || selectedPostId
+    if (!postId) return
+    router.replace(`/manage?postId=${encodeURIComponent(postId)}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldStartOnboarding])
 
   return (
     <div className="h-screen flex flex-col bg-[rgba(248,250,252,0.5)]">
