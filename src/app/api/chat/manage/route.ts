@@ -1,10 +1,11 @@
-import { streamText, tool, UIMessage } from 'ai'
+import { generateObject, streamText, tool, UIMessage } from 'ai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { NextRequest, NextResponse } from 'next/server'
 import { getMeUser } from '@/utilities/getMeUser'
 import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { z } from 'zod'
+import { BASE_PACKAGE_TEMPLATES, getDefaultPackageTitle } from '@/lib/package-types'
 
 // Zod schemas to validate structured JSON that is streamed to the UI
 const packagePreviewSchema = z.object({
@@ -53,6 +54,11 @@ const googleAI = createGoogleGenerativeAI({
 })
 
 /** Minimal Lexical root for draft posts (matches createPostTool in this file) */
+function extractLexicalFirstParagraph(content: any): string {
+  const t = content?.root?.children?.[0]?.children?.[0]?.text
+  return typeof t === 'string' ? t.trim() : ''
+}
+
 function buildMinimalPostContent(text: string) {
   return {
     root: {
@@ -685,12 +691,12 @@ export async function POST(request: NextRequest) {
             featured: featured || false,
           }
 
-          // Add meta fields if provided
-          if (metaTitle || metaDescription) {
-            postData.meta = {}
-            if (metaTitle) postData.meta.title = metaTitle
-            if (metaDescription) postData.meta.description = metaDescription
-          }
+          // Meta helps /api/packages/suggest-copy and catalog suggestions use property context
+          postData.meta = {}
+          if (metaTitle) postData.meta.title = metaTitle
+          else postData.meta.title = title.slice(0, 60)
+          if (metaDescription) postData.meta.description = metaDescription
+          else postData.meta.description = postDescription.slice(0, 160)
 
           const created = await payload.create({
             collection: 'posts',
@@ -722,6 +728,93 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    const catalogSuggestionSchema = z.object({
+      recommendations: z
+        .array(
+          z.object({
+            revenueCatId: z.string(),
+            suggestedName: z.string(),
+            description: z.string(),
+            features: z.array(z.string()),
+            baseRate: z.number().optional(),
+          }),
+        )
+        .min(1)
+        .max(4),
+    })
+
+    // @ts-ignore - AI SDK tool type inference issue
+    const suggestCatalogPackagesForPostTool = tool({
+      description:
+        'Suggest 1–4 packages from the fixed catalog (revenueCatId) for a property, using listing title, description, and optional user hint. Use after createPostTool when the user wants ideas, or any time they ask what packages fit a listing.',
+      parameters: z.object({
+        postId: z.string().describe('Property (post) ID'),
+        hint: z.string().optional().describe('Extra context from the user message'),
+      }),
+      // @ts-expect-error - AI SDK type inference issue
+      execute: async ({ postId: pid, hint }: any) => {
+        try {
+          const post = await payload.findByID({
+            collection: 'posts',
+            id: String(pid).trim(),
+            depth: 1,
+            user,
+          })
+          const title = typeof post?.title === 'string' ? post.title.trim() : ''
+          const metaDesc =
+            typeof (post as any)?.meta?.description === 'string'
+              ? (post as any).meta.description.trim()
+              : ''
+          const body = extractLexicalFirstParagraph((post as any)?.content)
+
+          const knownTemplates = BASE_PACKAGE_TEMPLATES.map((t) => ({
+            revenueCatId: t.revenueCatId,
+            defaultName: getDefaultPackageTitle(t),
+            category: t.category,
+            minNights: t.minNights,
+            maxNights: t.maxNights,
+            features: t.features.map((f) => f.label).join(', '),
+          }))
+
+          const knownIds = new Set(BASE_PACKAGE_TEMPLATES.map((t) => t.revenueCatId))
+          const modelName = process.env.GEMINI_STREAMING_MODEL || 'models/gemini-2.5-flash'
+
+          const result = await generateObject({
+            model: googleAI(modelName),
+            schema: catalogSuggestionSchema,
+            prompt: `Pick packages from this catalog only (use exact revenueCatId values).
+
+Catalog:
+${knownTemplates.map((t) => `- ${t.revenueCatId}: ${t.defaultName} [${t.category}, ${t.minNights}-${t.maxNights} nights, features: ${t.features}]`).join('\n')}
+
+Property title: "${title || 'Untitled'}"
+Property meta description: "${metaDesc || 'N/A'}"
+Property body (first paragraph): "${body || 'N/A'}"
+User hint: "${hint || 'N/A'}"
+
+Return 1–4 recommendations. suggestedName/description/features must be specific to this property, not generic.`,
+          })
+
+          const filtered = result.object.recommendations.filter((r) => knownIds.has(r.revenueCatId))
+          return {
+            success: true,
+            postId: String(pid).trim(),
+            recommendations: filtered.length ? filtered : result.object.recommendations,
+            message:
+              filtered.length > 0
+                ? `Here are ${filtered.length} catalog package idea(s) tailored to this listing.`
+                : 'Suggestions generated; verify revenueCatId values match the catalog.',
+          }
+        } catch (error: any) {
+          return {
+            success: false,
+            message: error?.message || 'Failed to suggest catalog packages',
+            recommendations: [],
+          }
+        }
+      },
+    })
+
     // Keep model configurable because availability varies by Google project/API rollout.
     const streamingModelName = process.env.GEMINI_STREAMING_MODEL || 'models/gemini-2.5-flash'
     const model = googleAI(streamingModelName)
@@ -742,8 +835,17 @@ export async function POST(request: NextRequest) {
 
     const systemPrompt = `You are an AI assistant helping a host manage their properties and packages.
 
+🏠 NEW LISTING / PROPERTY FIRST (overrides generic “jump straight to package preview”):
+- If the user wants a **new** property/listing/post (e.g. add/list/register a place, “I have a cottage…”, “new Airbnb”, “create a listing”), call **createPostTool** first:
+  - **title** = a short headline you extract from their message (required).
+  - **description** = their full message or a faithful summary (body text for the draft).
+- Right after **createPostTool** succeeds, use the returned **post.id** as **postId** for next steps:
+  - Call **suggestCatalogPackages** with that postId and hint = the user’s message to propose catalog-based packages from generated copy, **and/or**
+  - Call **previewPackageTool** with that same postId and name/description aligned with the property story (not generic “Standard Package”).
+- Only skip createPostTool if they are clearly working with an **existing** listing already in context.
+
 🚨 CRITICAL TOOL CALLING RULES - FOLLOW THESE EXACTLY:
-1. When a user says "CALL previewPackageTool NOW" or asks to create a package (ANY variation: "create", "make", "new package", mentions price like "R300", "package for R500", "make a package called X"), you MUST IMMEDIATELY call previewPackageTool WITHOUT any text response first.
+1. When a user says "CALL previewPackageTool NOW" or asks to create a package (ANY variation: "create", "make", "new package", mentions price like "R300", "package for R500", "make a package called X"), you MUST IMMEDIATELY call previewPackageTool WITHOUT any text response first — **unless** the message is primarily about creating a **new property/listing** (then follow NEW LISTING FIRST above).
 2. DO NOT ask clarifying questions - use the tool with intelligent guesses based on the user's input
 3. DO NOT respond with text explaining what you'll do - just call the tool IMMEDIATELY
 4. DO NOT say "I'll create..." or "Let me..." - just call previewPackageTool right away
@@ -851,7 +953,13 @@ When user asks to create a package from a property they offer, create the proper
               .join(' ')
           : ''
 
+    const looksLikeNewProperty =
+      /(new\s+(property|listing|post)|add\s+(a\s+)?(property|listing|post)|create\s+(a\s+)?(property|listing|post)|draft\s+(property|listing)|list\s+my\s+(place|home|property|house|apartment)|I\s+('m|'ve|am)\s+list|I\s+have\s+(a\s+)?(new\s+)?(place|property|listing|house|cottage|cabin|apartment|studio|villa|flat)|register\s+(my\s+)?(property|listing)|listing\s+called|property\s+called|airbnb|guesthouse|guest house)/i.test(
+        lastUserText,
+      )
+
     const shouldForcePreviewTool =
+      !looksLikeNewProperty &&
       /(create|make|new package|build package|package for|suggest|winter package|special|bundle|deal|offer)/i.test(
         lastUserText,
       )
@@ -894,6 +1002,7 @@ When user asks to create a package from a property they offer, create the proper
       ...(shouldForcePreviewTool ? { toolChoice: { type: 'tool' as const, toolName: 'previewPackage' } } : {}),
       tools: {
         createPost: createPostTool,
+        suggestCatalogPackages: suggestCatalogPackagesForPostTool,
         previewPackage: previewPackageTool,
         createPackage: createPackageTool,
         findPackages: findPackagesTool,

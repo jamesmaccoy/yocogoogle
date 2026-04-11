@@ -81,6 +81,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
   const [createdPackageId, setCreatedPackageId] = useState<string | null>(null)
   const [restoredEstimate, setRestoredEstimate] = useState<any>(null)
   const estimateRestoredRef = useRef(false)
+  const postCreatedDispatchedRef = useRef<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
 
@@ -281,6 +282,24 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
               detail: { packageId, postId: eventPostId, package: createPart.output.package, createdNewPost: createPart.output.createdNewPost }
             }))
           }
+        }
+      }
+
+      const createPostPart = lastMessage.parts.find(
+        (part: any) => getToolName(part) === 'createPost' && part.state === 'output-available',
+      )
+      if (createPostPart?.output?.success && createPostPart.output.post?.id) {
+        const newPostId = createPostPart.output.post.id as string
+        if (postCreatedDispatchedRef.current !== newPostId) {
+          postCreatedDispatchedRef.current = newPostId
+          window.dispatchEvent(
+            new CustomEvent('postCreated', {
+              detail: {
+                postId: newPostId,
+                post: createPostPart.output.post,
+              },
+            }),
+          )
         }
       }
     }
@@ -879,6 +898,55 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                           return (
                             <div key={index} className="text-sm text-red-600">
                               Error: {part.errorText || 'Failed to preview package'}
+                            </div>
+                          )
+                        default:
+                          return null
+                      }
+                    }
+
+                    if (toolName === 'suggestCatalogPackages') {
+                      switch (part.state) {
+                        case 'input-available':
+                          return (
+                            <div key={index} className="text-sm text-slate-500 italic">
+                              Suggesting catalog packages for this listing…
+                            </div>
+                          )
+                        case 'output-available': {
+                          const recs = Array.isArray(part.output?.recommendations)
+                            ? part.output.recommendations
+                            : []
+                          return (
+                            <div
+                              key={index}
+                              className="my-4 rounded-lg border border-teal-200 bg-teal-50/60 p-4 text-sm"
+                            >
+                              <p className="font-medium text-teal-900 mb-3">
+                                {part.output?.message || 'Catalog package ideas'}
+                              </p>
+                              {recs.length === 0 ? (
+                                <p className="text-xs text-slate-600">No recommendations returned.</p>
+                              ) : (
+                                <ul className="space-y-3">
+                                  {recs.map((r: any, i: number) => (
+                                    <li key={i} className="rounded-md border bg-white p-3 shadow-sm">
+                                      <div className="font-semibold text-slate-900">{r.suggestedName}</div>
+                                      <div className="text-xs text-slate-500 font-mono mt-0.5">
+                                        {r.revenueCatId}
+                                      </div>
+                                      <p className="text-xs text-slate-600 mt-2">{r.description}</p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )
+                        }
+                        case 'output-error':
+                          return (
+                            <div key={index} className="text-sm text-red-600">
+                              Error: {part.errorText || 'Failed to suggest packages'}
                             </div>
                           )
                         default:

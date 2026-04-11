@@ -94,30 +94,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         );
       }
       
-      // Deduplicate and ensure only package IDs are saved
-      let packageSettings = Array.isArray(body.packageSettings) ? body.packageSettings : [];
-      const deduped: Record<string, any> = {};
-      for (const setting of packageSettings) {
-        const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package;
-        deduped[pkgId] = {
-          ...setting,
-          package: pkgId,
-        };
+      // Only touch packageSettings when the client sent it (avoid wiping on partial PATCH)
+      const cleanData = { ...body }
+      delete cleanData.packageSettings
+
+      if ('packageSettings' in body && Array.isArray(body.packageSettings)) {
+        const packageSettings = body.packageSettings
+        const deduped: Record<string, any> = {}
+        for (const setting of packageSettings) {
+          const pkgId = typeof setting.package === 'object' ? setting.package.id : setting.package
+          deduped[pkgId] = {
+            ...setting,
+            package: pkgId,
+          }
+        }
+        cleanData.packageSettings = Object.values(deduped)
+        console.log('Saving package settings:', cleanData.packageSettings)
       }
-      const cleanData = { ...body };
-      delete cleanData.packageSettings;
-      console.log('Saving package settings:', Object.values(deduped));
+
       const updated = await payload.update({
         collection: 'posts',
         id,
-        data: {
-          ...cleanData,
-          packageSettings: Object.values(deduped),
-        },
+        data: cleanData,
         user,
         depth: 1, // Ensure relationships are populated
-      });
-      console.log('Updated post with package settings:', updated.packageSettings);
+      })
+      if ('packageSettings' in body) {
+        console.log('Updated post with package settings:', updated.packageSettings)
+      }
       return NextResponse.json({ message: 'Post updated successfully', doc: updated });
     }
 
@@ -263,9 +267,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       )
     }
 
-    // Handle hero image
-    if (body.heroImage !== undefined && typeof body.heroImage === 'string') {
-      cleanData.heroImage = body.heroImage
+    // Handle hero image (string id or clear with null / empty string)
+    if (body.heroImage !== undefined) {
+      if (body.heroImage === null || body.heroImage === '') {
+        cleanData.heroImage = null
+      } else if (typeof body.heroImage === 'string') {
+        cleanData.heroImage = body.heroImage
+      }
     }
 
     // Handle baseRate safely

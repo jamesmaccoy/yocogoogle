@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { User } from "@/payload-types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -78,7 +79,14 @@ interface EnhancedSuggestion {
   }
 }
 
-export default function ManagePackagesPage({ postId }: { postId: string }) {
+export default function ManagePackagesPage({
+  postId,
+  posts = [],
+}: {
+  postId: string
+  posts?: { id: string; title?: string | null; slug?: string | null }[]
+}) {
+  const router = useRouter()
   const { packages, loading, error, setPackages, reload } = useHostPackages(postId);
 
   // AI Assistant suggestions state
@@ -119,6 +127,21 @@ export default function ManagePackagesPage({ postId }: { postId: string }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId])
+
+  // New listing created from assistant → open that listing’s package page
+  useEffect(() => {
+    const handlePostCreated = (event: CustomEvent) => {
+      const newId = event.detail?.postId as string | undefined
+      if (!newId) return
+      if (newId === postId) {
+        router.refresh()
+        return
+      }
+      router.push(`/manage/packages/${newId}`)
+    }
+    window.addEventListener('postCreated', handlePostCreated as EventListener)
+    return () => window.removeEventListener('postCreated', handlePostCreated as EventListener)
+  }, [postId, router])
 
   // Self destruct state
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -525,7 +548,7 @@ export default function ManagePackagesPage({ postId }: { postId: string }) {
             context={{
               type: 'manage',
               data: {
-                posts: [{ id: postId }], // Pass postId in posts array for context
+                posts: posts.length > 0 ? posts : [{ id: postId }],
                 postId,
               },
             }}

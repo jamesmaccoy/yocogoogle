@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { ImagePlus, Loader2, X } from "lucide-react"
 import {
   Dialog,
@@ -55,12 +57,15 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [postTitle, setPostTitle] = useState("")
+  const [metaDescription, setMetaDescription] = useState("")
   const [heroMedia, setHeroMedia] = useState<Media | null>(null)
   const [heroPreviewUrl, setHeroPreviewUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const loadPost = useCallback(async () => {
@@ -72,6 +77,7 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Failed to load listing")
       setPostTitle(String(data?.doc?.title || ""))
+      setMetaDescription(String(data?.doc?.meta?.description || ""))
       const nextHero =
         data?.doc?.heroImage && typeof data.doc.heroImage === "object"
           ? (data.doc.heroImage as Media)
@@ -131,11 +137,65 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
     }
   }
 
+  const handleSaveMeta = async () => {
+    if (!postTitle.trim()) {
+      setError("Title is required")
+      return
+    }
+    setError(null)
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: postTitle.trim().slice(0, 120),
+          meta: {
+            description: metaDescription.trim() || null,
+          },
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Failed to save listing")
+      setEditOpen(false)
+      router.refresh()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to save listing")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const imageSrc =
     heroPreviewUrl ||
     (heroMedia?.sizes?.large?.url || heroMedia?.url
       ? (heroMedia.sizes?.large?.url || heroMedia.url) as string
       : null)
+
+  const clearHeroImage = async () => {
+    if (heroPreviewUrl) {
+      clearPreview()
+      return
+    }
+    if (!heroMedia) return
+    setError(null)
+    setUploading(true)
+    try {
+      const patchRes = await fetch(`/api/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ heroImage: null }),
+      })
+      const patchData = await patchRes.json().catch(() => ({}))
+      if (!patchRes.ok) throw new Error(patchData?.error || "Failed to remove hero image")
+      setHeroMedia(null)
+      router.refresh()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to remove hero image")
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const handleDelete = async () => {
     setError(null)
@@ -161,12 +221,9 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
   }
 
   return (
-    <section
-      className="sticky top-0 z-20 -mx-6 px-6 py-4 mb-6 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 shadow-sm"
-      aria-label="Listing hero image"
-    >
+    <section className="sticky top-0 z-20 -mx-6 px-6 py-3 mb-6 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 shadow-sm">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="relative h-24 w-40 sm:h-28 sm:w-44 flex-shrink-0 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+        <div className="relative h-14 w-24 sm:h-16 sm:w-28 flex-shrink-0 rounded-md overflow-hidden border border-slate-200 bg-slate-100">
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-xs">
               Loading…
@@ -188,58 +245,160 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-slate-900">Listing cover photo</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Shown as the main hero image on your property listing. Upload or replace anytime.
-          </p>
+          <p className="text-xs text-slate-500">Selected property</p>
+          <p className="text-sm font-semibold text-slate-900 truncate">{postTitle || "Untitled"}</p>
           {error ? <p className="text-xs text-red-600 mt-2">{error}</p> : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-          <Input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            className="sr-only"
-            onChange={onFileChange}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-slate-300"
-            disabled={uploading || loading}
-            onClick={() => fileRef.current?.click()}
-          >
-            {uploading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Uploading…
-              </>
-            ) : (
-              <>
-                <ImagePlus className="h-4 w-4 mr-2" />
-                {heroMedia ? "Change photo" : "Upload photo"}
-              </>
-            )}
-          </Button>
-          {heroPreviewUrl ? (
-            <Button type="button" variant="ghost" size="sm" onClick={clearPreview}>
-              <X className="h-4 w-4 mr-1" />
-              Cancel preview
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={uploading || deleting || loading}
-            onClick={() => setConfirmDeleteOpen(true)}
-          >
-            Delete listing
+          <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)} disabled={loading}>
+            Edit / Delete
           </Button>
         </div>
       </div>
+
+      {/* Main edit modal */}
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open)
+          if (!open) {
+            clearPreview()
+            setError(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl p-0 gap-0 overflow-y-auto max-h-[90vh]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Edit property</DialogTitle>
+            <DialogDescription>Edit listing title, description, and hero image.</DialogDescription>
+          </DialogHeader>
+
+          <div className="container max-w-3xl mx-auto py-8 px-6 sm:px-8">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-bold text-slate-900">Edit property</h2>
+                <p className="text-slate-500 mt-1">
+                  Add a title and description first. Next, we’ll generate and assign packages.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditOpen(false)}
+                className="text-sm text-slate-600 hover:text-slate-900 whitespace-nowrap shrink-0"
+              >
+                Back to manage
+              </button>
+            </div>
+
+            <Card className="border-2 border-slate-200 shadow-lg">
+              <div className="p-8 space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Title</label>
+                  <Input
+                    value={postTitle}
+                    onChange={(e) => setPostTitle(e.target.value)}
+                    placeholder="e.g., Seaside Cottage in Paternoster"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Description (optional)</label>
+                  <Textarea
+                    value={metaDescription}
+                    onChange={(e) => setMetaDescription(e.target.value)}
+                    placeholder="A short description guests will see. You can edit later."
+                    className="min-h-[140px]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Hero image (optional)</label>
+                  <p className="text-sm text-slate-500 mb-3">
+                    Main photo for the listing header. You can change it later in the editor.
+                  </p>
+                  {!imageSrc ? (
+                    <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer bg-slate-50/80 hover:bg-slate-50 transition-colors">
+                      <ImagePlus className="h-8 w-8 text-slate-400 mb-2" />
+                      <span className="text-sm text-slate-600">Click to upload an image</span>
+                      <span className="text-xs text-slate-400 mt-1">JPEG, PNG, or WebP</span>
+                      <Input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="sr-only"
+                        onChange={onFileChange}
+                      />
+                    </label>
+                  ) : (
+                    <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-[21/9] max-h-48">
+                      <Image src={imageSrc} alt="" fill className="object-cover" unoptimized />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="icon"
+                        className="absolute top-2 right-2 h-9 w-9 rounded-full shadow-md"
+                        onClick={() => void clearHeroImage()}
+                        disabled={uploading}
+                        aria-label="Remove hero image"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                      <p className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-xs px-3 py-1.5 truncate">
+                        {heroPreviewUrl
+                          ? "Preview"
+                          : heroMedia?.filename || "Current image"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {error ? (
+                  <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
+                ) : null}
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => setConfirmDeleteOpen(true)}
+                    disabled={deleting || saving || uploading || loading}
+                    className="w-full sm:w-auto"
+                  >
+                    Delete listing
+                  </Button>
+                  <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setEditOpen(false)}
+                      disabled={saving}
+                      className="border-slate-300"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void handleSaveMeta()}
+                      disabled={saving || loading || !postTitle.trim()}
+                      className="bg-slate-900 hover:bg-slate-800 text-white"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving…
+                        </>
+                      ) : (
+                        "Save changes"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <DialogContent>
