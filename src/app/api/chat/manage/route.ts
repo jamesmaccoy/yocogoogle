@@ -59,6 +59,96 @@ function extractLexicalFirstParagraph(content: any): string {
   return typeof t === 'string' ? t.trim() : ''
 }
 
+const catalogSuggestionSchema = z.object({
+  recommendations: z
+    .array(
+      z.object({
+        revenueCatId: z.string(),
+        suggestedName: z.string(),
+        description: z.string(),
+        features: z.array(z.string()),
+        baseRate: z.number().optional(),
+      }),
+    )
+    .min(1)
+    .max(4),
+})
+
+async function runCatalogPackageSuggestions(
+  payload: any,
+  user: any,
+  postId: string,
+  hint?: string,
+): Promise<{
+  success: boolean
+  postId: string
+  recommendations: z.infer<typeof catalogSuggestionSchema>['recommendations']
+  message: string
+}> {
+  const pid = String(postId).trim()
+  try {
+    const post = await payload.findByID({
+      collection: 'posts',
+      id: pid,
+      depth: 1,
+      user,
+    })
+    const title = typeof post?.title === 'string' ? post.title.trim() : ''
+    const metaDesc =
+      typeof (post as any)?.meta?.description === 'string'
+        ? (post as any).meta.description.trim()
+        : ''
+    const body = extractLexicalFirstParagraph((post as any)?.content)
+
+    const knownTemplates = BASE_PACKAGE_TEMPLATES.map((t) => ({
+      revenueCatId: t.revenueCatId,
+      defaultName: getDefaultPackageTitle(t),
+      category: t.category,
+      minNights: t.minNights,
+      maxNights: t.maxNights,
+      features: t.features.map((f) => f.label).join(', '),
+    }))
+
+    const knownIds = new Set(BASE_PACKAGE_TEMPLATES.map((t) => t.revenueCatId))
+    const modelName = process.env.GEMINI_STREAMING_MODEL || 'models/gemini-2.5-flash'
+
+    const result = await generateObject({
+      model: googleAI(modelName),
+      schema: catalogSuggestionSchema,
+      prompt: `Pick packages from this catalog only (use exact revenueCatId values).
+
+Catalog:
+${knownTemplates.map((t) => `- ${t.revenueCatId}: ${t.defaultName} [${t.category}, ${t.minNights}-${t.maxNights} nights, features: ${t.features}]`).join('\n')}
+
+Property title: "${title || 'Untitled'}"
+Property meta description: "${metaDesc || 'N/A'}"
+Property body (first paragraph): "${body || 'N/A'}"
+User hint: "${hint || 'N/A'}"
+
+Return 1–4 recommendations. suggestedName/description/features must be specific to this property, not generic.`,
+    })
+
+    const filtered = result.object.recommendations.filter((r) => knownIds.has(r.revenueCatId))
+    const recommendations = filtered.length ? filtered : result.object.recommendations
+    return {
+      success: true,
+      postId: pid,
+      recommendations,
+      message:
+        recommendations.length > 0
+          ? `Here are ${recommendations.length} catalog package idea(s) tailored to this listing.`
+          : 'Suggestions generated; verify revenueCatId values match the catalog.',
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      postId: pid,
+      recommendations: [],
+      message: error?.message || 'Failed to suggest catalog packages',
+    }
+  }
+}
+
 function buildMinimalPostContent(text: string) {
   return {
     root: {
@@ -636,7 +726,8 @@ export async function POST(request: NextRequest) {
     // Tool for creating posts (properties)
     // @ts-ignore - AI SDK tool type inference issue
     const createPostTool = tool({
-      description: 'Create a new property (post) for the host. Use this when user wants to create a property listing. After creating the post, you can then create packages for it.',
+      description:
+        'Create a new property (post) for the host. After success, catalog package ideas are generated from the listing copy (recommendations in the tool output). Use those in your reply and move straight to previewPackage or ask which package to build first.',
       parameters: z.object({
         title: z.string().describe('Property title/name (e.g., "Beachfront Studio", "Mountain Cabin")'),
         description: z.string().optional().describe('Property description. If not provided, will generate based on title.'),
@@ -706,6 +797,13 @@ export async function POST(request: NextRequest) {
 
           console.log('Post created successfully:', created.id)
 
+          const hint = `${title}\n${postDescription}`.slice(0, 2000)
+          const catalog = await runCatalogPackageSuggestions(payload, user, String(created.id), hint)
+          const hasRecs = catalog.success && catalog.recommendations.length > 0
+          const message = hasRecs
+            ? `"${title}" is saved as a draft. Below are starter packages matched to this listing — say which one to preview first, or describe the stay or add-on you want to sell next.`
+            : `"${title}" is saved as a draft. What kinds of packages would you like? (For example: nightly stay, weekly deal, cleaning or experience add-ons — I can draft a preview.)`
+
           return {
             success: true,
             post: {
@@ -715,7 +813,8 @@ export async function POST(request: NextRequest) {
               baseRate: created.baseRate,
               status: created._status,
             },
-            message: `Property "${title}" has been created successfully! You can now create packages for this property.`,
+            recommendations: hasRecs ? catalog.recommendations : [],
+            message,
           }
         } catch (error: any) {
           console.error('Error creating post:', error)
@@ -728,89 +827,30 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const catalogSuggestionSchema = z.object({
-      recommendations: z
-        .array(
-          z.object({
-            revenueCatId: z.string(),
-            suggestedName: z.string(),
-            description: z.string(),
-            features: z.array(z.string()),
-            baseRate: z.number().optional(),
-          }),
-        )
-        .min(1)
-        .max(4),
-    })
-
     // @ts-ignore - AI SDK tool type inference issue
     const suggestCatalogPackagesForPostTool = tool({
       description:
-        'Suggest 1–4 packages from the fixed catalog (revenueCatId) for a property, using listing title, description, and optional user hint. Use after createPostTool when the user wants ideas, or any time they ask what packages fit a listing.',
+        'Suggest 1–4 packages from the fixed catalog (revenueCatId) for a property, using listing title, description, and optional user hint. Use when the user wants fresh ideas; createPostTool already runs this once after a new listing.',
       parameters: z.object({
         postId: z.string().describe('Property (post) ID'),
         hint: z.string().optional().describe('Extra context from the user message'),
       }),
       // @ts-expect-error - AI SDK type inference issue
       execute: async ({ postId: pid, hint }: any) => {
-        try {
-          const post = await payload.findByID({
-            collection: 'posts',
-            id: String(pid).trim(),
-            depth: 1,
-            user,
-          })
-          const title = typeof post?.title === 'string' ? post.title.trim() : ''
-          const metaDesc =
-            typeof (post as any)?.meta?.description === 'string'
-              ? (post as any).meta.description.trim()
-              : ''
-          const body = extractLexicalFirstParagraph((post as any)?.content)
-
-          const knownTemplates = BASE_PACKAGE_TEMPLATES.map((t) => ({
-            revenueCatId: t.revenueCatId,
-            defaultName: getDefaultPackageTitle(t),
-            category: t.category,
-            minNights: t.minNights,
-            maxNights: t.maxNights,
-            features: t.features.map((f) => f.label).join(', '),
-          }))
-
-          const knownIds = new Set(BASE_PACKAGE_TEMPLATES.map((t) => t.revenueCatId))
-          const modelName = process.env.GEMINI_STREAMING_MODEL || 'models/gemini-2.5-flash'
-
-          const result = await generateObject({
-            model: googleAI(modelName),
-            schema: catalogSuggestionSchema,
-            prompt: `Pick packages from this catalog only (use exact revenueCatId values).
-
-Catalog:
-${knownTemplates.map((t) => `- ${t.revenueCatId}: ${t.defaultName} [${t.category}, ${t.minNights}-${t.maxNights} nights, features: ${t.features}]`).join('\n')}
-
-Property title: "${title || 'Untitled'}"
-Property meta description: "${metaDesc || 'N/A'}"
-Property body (first paragraph): "${body || 'N/A'}"
-User hint: "${hint || 'N/A'}"
-
-Return 1–4 recommendations. suggestedName/description/features must be specific to this property, not generic.`,
-          })
-
-          const filtered = result.object.recommendations.filter((r) => knownIds.has(r.revenueCatId))
-          return {
-            success: true,
-            postId: String(pid).trim(),
-            recommendations: filtered.length ? filtered : result.object.recommendations,
-            message:
-              filtered.length > 0
-                ? `Here are ${filtered.length} catalog package idea(s) tailored to this listing.`
-                : 'Suggestions generated; verify revenueCatId values match the catalog.',
-          }
-        } catch (error: any) {
+        const out = await runCatalogPackageSuggestions(payload, user, String(pid).trim(), hint)
+        if (!out.success) {
           return {
             success: false,
-            message: error?.message || 'Failed to suggest catalog packages',
+            message: out.message,
             recommendations: [],
+            postId: String(pid).trim(),
           }
+        }
+        return {
+          success: true,
+          postId: out.postId,
+          recommendations: out.recommendations,
+          message: out.message,
         }
       },
     })
@@ -839,9 +879,10 @@ Return 1–4 recommendations. suggestedName/description/features must be specifi
 - If the user wants a **new** property/listing/post (e.g. add/list/register a place, “I have a cottage…”, “new Airbnb”, “create a listing”), call **createPostTool** first:
   - **title** = a short headline you extract from their message (required).
   - **description** = their full message or a faithful summary (body text for the draft).
-- Right after **createPostTool** succeeds, use the returned **post.id** as **postId** for next steps:
-  - Call **suggestCatalogPackages** with that postId and hint = the user’s message to propose catalog-based packages from generated copy, **and/or**
-  - Call **previewPackageTool** with that same postId and name/description aligned with the property story (not generic “Standard Package”).
+- **createPostTool** already generates **recommendations** (catalog ideas) from that listing. Do **not** stop at “listing created” — in the same assistant turn when possible:
+  - Summarize the ideas briefly and **ask which package they want to preview or save first**, **or**
+  - If they already described a package (weekend stay, weekly rate, add-on, price), **immediately** call **previewPackageTool** with **postId** = the new **post.id** and copy aligned to the property (not generic “Standard Package”).
+- Call **suggestCatalogPackages** only if they want **different** ideas than what **createPostTool** returned.
 - Only skip createPostTool if they are clearly working with an **existing** listing already in context.
 
 🚨 CRITICAL TOOL CALLING RULES - FOLLOW THESE EXACTLY:

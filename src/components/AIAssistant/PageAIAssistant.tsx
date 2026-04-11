@@ -997,22 +997,48 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                             Creating property...
                           </div>
                         )
-                      case 'output-available':
+                      case 'output-available': {
+                        const recs = Array.isArray(part.output?.recommendations)
+                          ? part.output.recommendations
+                          : []
                         return (
-                          <div key={index} className={cn(
-                            "text-sm p-3 rounded-lg",
-                            part.output.success
-                              ? "bg-green-50 text-green-800 border border-green-200"
-                              : "bg-red-50 text-red-800 border border-red-200"
-                          )}>
-                            <div className="font-medium mb-1">{part.output.message}</div>
-                            {part.output.post && (
-                              <div className="text-xs mt-2 text-slate-600">
-                                Property: {part.output.post.title} (ID: {part.output.post.id})
+                          <div key={index} className="space-y-3">
+                            <div
+                              className={cn(
+                                'text-sm p-3 rounded-lg',
+                                part.output.success
+                                  ? 'bg-green-50 text-green-800 border border-green-200'
+                                  : 'bg-red-50 text-red-800 border border-red-200',
+                              )}
+                            >
+                              <div className="font-medium mb-1 whitespace-pre-wrap">
+                                {part.output.message}
+                              </div>
+                              {part.output.post && (
+                                <div className="text-xs mt-2 text-slate-600">
+                                  Property: {part.output.post.title} (ID: {part.output.post.id})
+                                </div>
+                              )}
+                            </div>
+                            {part.output.success && recs.length > 0 && (
+                              <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-4 text-sm">
+                                <p className="font-medium text-teal-900 mb-3">Starter package ideas</p>
+                                <ul className="space-y-3">
+                                  {recs.map((r: any, i: number) => (
+                                    <li key={i} className="rounded-md border bg-white p-3 shadow-sm">
+                                      <div className="font-semibold text-slate-900">{r.suggestedName}</div>
+                                      <div className="text-xs text-slate-500 font-mono mt-0.5">
+                                        {r.revenueCatId}
+                                      </div>
+                                      <p className="text-xs text-slate-600 mt-2">{r.description}</p>
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                           </div>
                         )
+                      }
                       case 'output-error':
                         return (
                           <div key={index} className="text-sm text-red-600">
