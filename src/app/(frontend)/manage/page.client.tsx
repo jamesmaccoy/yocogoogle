@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { Post } from '@/payload-types'
-import { Sidebar } from './components/Sidebar'
+import { Sidebar, SidebarMenuButton } from './components/Sidebar'
 import { PropertyHeroEditor } from './components/PropertyHeroEditor'
 import { PageAIAssistant } from '@/components/AIAssistant/PageAIAssistant'
 import PackageDashboard from '@/app/(frontend)/manage/packages/PackageDashboard'
@@ -36,6 +36,7 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
   )
   const [activeTab, setActiveTab] = useState<'packages' | 'statement'>('packages')
   const [mobileView, setMobileView] = useState<'dashboard' | 'assistant'>('dashboard')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Consume ?onboard=1 once so selecting properties doesn't keep re-opening onboarding.
   useEffect(() => {
@@ -49,8 +50,9 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
   return (
     <div className="h-screen flex flex-col bg-[rgba(248,250,252,0.5)]">
       {/* Mobile Toggle */}
-      <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-[#e2e8f0] px-4 py-3">
-        <div className="flex gap-2 bg-[#f1f5f9] rounded-lg p-1">
+      <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-[#e2e8f0] px-4 py-3 flex items-center gap-2">
+        <SidebarMenuButton open={sidebarOpen} onOpen={() => setSidebarOpen(true)} />
+        <div className="flex-1 flex gap-2 bg-[#f1f5f9] rounded-lg p-1 min-w-0">
           <button 
             onClick={() => setMobileView('dashboard')} 
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
@@ -86,6 +88,8 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
             properties={posts}
             activeTab={activeTab}
             onSelectTab={setActiveTab}
+            mobileOpen={sidebarOpen}
+            onMobileOpenChange={setSidebarOpen}
             currentUser={{
               name: currentUser?.name || null,
               email: currentUser?.email || null,
