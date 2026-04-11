@@ -19,6 +19,14 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { PackagePreview } from '@/components/PackagePreview'
 
+/** Editable template — matches manage chat “new listing” routing; user should edit title/description then click Generate. */
+const MANAGE_NEW_LISTING_PROMPT = `Create a new listing for my property.
+
+Title: My guest stay (edit this title)
+Description: Brief guest-facing summary — space, location, amenities, and who it is for. (edit this paragraph)
+
+Please use createPostTool with the title and description above, then help me choose packages for this listing.`
+
 interface PageAIAssistantProps {
   context?: {
     type: 'account' | 'manage' | 'bookings'
@@ -452,7 +460,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
 
       try {
         if (sendMessage && typeof sendMessage === 'function') {
-          await sendMessage({ role: 'user', content: messageToSend })
+          await sendMessage({ text: messageToSend })
         } else {
           console.warn('⚠️ sendMessage not available, falling back to /api/chat')
           await sendSimpleMessage(messageToSend)
@@ -492,7 +500,7 @@ ${previewData.revenueCatId ? `- revenueCatId: "${previewData.revenueCatId}"` : '
 ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
     try {
-      await sendMessage({ role: 'user', content: createMessage })
+      await sendMessage({ text: createMessage })
     } catch (error) {
       console.error('Error confirming package:', error)
       setPendingPackagePreview(previewData)
@@ -646,6 +654,19 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
     }
   }
 
+  const applyManageQuickPrompt = useCallback((text: string) => {
+    setManageInput(text)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      try {
+        const len = text.length
+        textareaRef.current?.setSelectionRange(0, Math.min(80, len))
+      } catch {
+        /* selection may fail on some browsers */
+      }
+    })
+  }, [])
+
   const handleActionClick = async (action: string) => {
     if (process.env.NODE_ENV === 'development') {
       console.log('🔘 Action button clicked:', { action, isManageContext, hasSendMessage: !!sendMessage, status })
@@ -658,12 +679,22 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
       }
 
       try {
-        await sendMessage({ role: 'user', content: action })
+        await sendMessage({ text: action })
       } catch (error) {
         console.error('Error sending action:', error)
       }
     } else {
       await sendSimpleMessage(action)
+    }
+  }
+
+  /** Sends a canned new-listing message immediately (still editable flow preferred via applyManageQuickPrompt). */
+  const handleSendNewListingTemplate = async () => {
+    if (!isManageContext || !sendMessage) return
+    try {
+      await sendMessage({ text: MANAGE_NEW_LISTING_PROMPT })
+    } catch (error) {
+      console.error('Error sending new listing template:', error)
     }
   }
 
@@ -790,6 +821,26 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
     } else if (context.type === 'manage') {
       return (
         <div className="flex flex-wrap gap-2 mb-4">
+          <Button
+            variant="default"
+            size="sm"
+            className="text-xs"
+            disabled={chatIsLoading}
+            onClick={() => applyManageQuickPrompt(MANAGE_NEW_LISTING_PROMPT)}
+          >
+            <Home className="h-3 w-3 mr-1.5" />
+            New property (edit)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            disabled={chatIsLoading}
+            onClick={() => void handleSendNewListingTemplate()}
+          >
+            <Sparkles className="h-3 w-3 mr-1.5" />
+            New property (send)
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1344,10 +1395,42 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               ? "Ask about your upcoming trips, view booking details, or get recommendations."
               : "Generate packages, analyze pricing, or draft statements instantly."}
           </p>
+          {isManageContext && (
+            <div className="flex flex-wrap justify-center gap-2 mt-6">
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="rounded-full bg-[#0f172a] hover:bg-[#1e293b]"
+                onClick={() => applyManageQuickPrompt(MANAGE_NEW_LISTING_PROMPT)}
+              >
+                <Home className="h-3.5 w-3.5 mr-1.5" />
+                New property — fill prompt
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                disabled={chatIsLoading}
+                onClick={() => void handleSendNewListingTemplate()}
+              >
+                New property — send now
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Messages Area */}
         <div>
+          {isManageContext && chatError && (
+            <div
+              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+              role="alert"
+            >
+              {chatError.message || 'Something went wrong. Try again.'}
+            </div>
+          )}
           {/* Render manage context messages with generative UI */}
           {isManageContext && renderManageMessages()}
 
@@ -1592,8 +1675,28 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
         {isManageContext ? (
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
+              type="button"
+              onClick={() => applyManageQuickPrompt(MANAGE_NEW_LISTING_PROMPT)}
+              disabled={chatIsLoading}
+              className="text-sm font-medium leading-5 text-white bg-[#0f172a] cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#0f172a] rounded-full px-4 py-2 hover:bg-[#1e293b] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Home className="h-4 w-4" />
+              New property (edit & send)
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSendNewListingTemplate()}
+              disabled={chatIsLoading}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Sparkles className="h-4 w-4" />
+              New property (send now)
+            </button>
+            <button
+              type="button"
               onClick={() => handleActionClick('Create a new package for my property')}
-              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
+              disabled={chatIsLoading}
+              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Package className="h-4 w-4" />
               Generate Packages
@@ -1655,6 +1758,15 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
   return (
     <div className={cn("space-y-4", className)}>
       {getActionButtons()}
+
+      {isManageContext && chatError && (
+        <div
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          role="alert"
+        >
+          {chatError.message || 'Something went wrong. Try again.'}
+        </div>
+      )}
 
       {/* Render manage context messages with generative UI */}
       {isManageContext && renderManageMessages()}

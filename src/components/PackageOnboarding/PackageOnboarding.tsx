@@ -291,7 +291,7 @@ export function PackageOnboarding({
       : `You are creating a package for a specific property. Use the property context to make the package title and description specific (not generic).\n\nProperty title: "${propertyContextTitle}"\nProperty description: "${propertyContextDescription}"\n\nNow CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". If the provided name/description are vague, improve them using the property context before calling the tool. DO NOT respond with text — call the tool immediately.`
 
     try {
-      await sendMessage({ role: 'user', content: prompt })
+      await sendMessage({ text: prompt })
     } catch (e) {
       console.error(e)
       setIsGenerating(false)
