@@ -798,8 +798,16 @@ export async function POST(request: NextRequest) {
           console.log('Post created successfully:', created.id)
 
           const hint = `${title}\n${postDescription}`.slice(0, 2000)
-          const catalog = await runCatalogPackageSuggestions(payload, user, String(created.id), hint)
-          const hasRecs = catalog.success && catalog.recommendations.length > 0
+          let hasRecs = false
+          let recommendations: z.infer<typeof catalogSuggestionSchema>['recommendations'] = []
+          try {
+            const catalog = await runCatalogPackageSuggestions(payload, user, String(created.id), hint)
+            hasRecs = catalog.success && catalog.recommendations.length > 0
+            recommendations = hasRecs ? catalog.recommendations : []
+          } catch (catalogErr) {
+            console.error('Catalog suggestions after createPost (non-fatal):', catalogErr)
+          }
+
           const message = hasRecs
             ? `"${title}" is saved as a draft. Below are starter packages matched to this listing — say which one to preview first, or describe the stay or add-on you want to sell next.`
             : `"${title}" is saved as a draft. What kinds of packages would you like? (For example: nightly stay, weekly deal, cleaning or experience add-ons — I can draft a preview.)`
@@ -813,7 +821,7 @@ export async function POST(request: NextRequest) {
               baseRate: created.baseRate,
               status: created._status,
             },
-            recommendations: hasRecs ? catalog.recommendations : [],
+            recommendations,
             message,
           }
         } catch (error: any) {
@@ -994,16 +1002,28 @@ When user asks to create a package from a property they offer, create the proper
               .join(' ')
           : ''
 
+    // Must catch phrases like "create a new property" (word "new" between verb and noun).
     const looksLikeNewProperty =
-      /(new\s+(property|listing|post)|add\s+(a\s+)?(property|listing|post)|create\s+(a\s+)?(property|listing|post)|draft\s+(property|listing)|list\s+my\s+(place|home|property|house|apartment)|I\s+('m|'ve|am)\s+list|I\s+have\s+(a\s+)?(new\s+)?(place|property|listing|house|cottage|cabin|apartment|studio|villa|flat)|register\s+(my\s+)?(property|listing)|listing\s+called|property\s+called|airbnb|guesthouse|guest house)/i.test(
+      /\b(new\s+(property|listing|post|place|airbnb))\b/i.test(lastUserText) ||
+      /\b(another|second|additional)\s+(property|listing|post)\b/i.test(lastUserText) ||
+      /(add\s+(a\s+)?(property|listing|post)|draft\s+(property|listing)|list\s+my\s+(place|home|property|house|apartment)|I\s+('m|'ve|am)\s+list|I\s+have\s+(a\s+)?(new\s+)?(place|property|listing|house|cottage|cabin|apartment|studio|villa|flat)|register\s+(my\s+)?(property|listing)|listing\s+called|property\s+called|airbnb|guesthouse|guest house)/i.test(
         lastUserText,
-      )
+      ) ||
+      /\b(create|add|start|open|register|set\s+up)\b[\s\S]{0,40}\b(property|listing|post)\b/i.test(
+        lastUserText,
+      ) &&
+      !/\bpackage(s)?\b/i.test(lastUserText)
+
+    // Do NOT use bare "create" / "make" — they match "create a new property" and wrongly force previewPackage.
+    const looksLikePackagePreviewIntent =
+      /(new\s+package|create\s+(a\s+)?package|make\s+(a\s+)?package|build\s+package|package\s+for|packages?\s+for|package\s+called|package\s+named|preview\s+(the\s+)?package|suggest\s+.{0,48}packag|winter\s+package|special\s+package|addon\s+package|add-?on)/i.test(
+        lastUserText,
+      ) ||
+      (/\bpackage\b/i.test(lastUserText) &&
+        /\b(R\s?\d{2,}|rand|\bzar\b|price|rate|per\s+night|nightly|weekly)\b/i.test(lastUserText))
 
     const shouldForcePreviewTool =
-      !looksLikeNewProperty &&
-      /(create|make|new package|build package|package for|suggest|winter package|special|bundle|deal|offer)/i.test(
-        lastUserText,
-      )
+      !looksLikeNewProperty && looksLikePackagePreviewIntent
 
     const normalizedModelMessages = messages
       .map((msg: any) => {
