@@ -20,6 +20,8 @@ import type { Media } from "@/payload-types"
 
 type PropertyHeroEditorProps = {
   postId: string
+  /** Called after the listing is deleted on the server so the parent can update lists/selection without waiting for refresh. */
+  onListingDeleted?: (postId: string) => void
 }
 
 async function uploadMedia(file: File, alt: string): Promise<string> {
@@ -53,7 +55,7 @@ async function uploadMedia(file: File, alt: string): Promise<string> {
   return id
 }
 
-export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
+export function PropertyHeroEditor({ postId, onListingDeleted }: PropertyHeroEditorProps) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [postTitle, setPostTitle] = useState("")
@@ -210,7 +212,9 @@ export function PropertyHeroEditor({ postId }: PropertyHeroEditorProps) {
         throw new Error(data?.error || "Failed to delete listing")
       }
 
+      onListingDeleted?.(postId)
       setConfirmDeleteOpen(false)
+      setEditOpen(false)
       router.push("/manage")
       router.refresh()
     } catch (e: unknown) {

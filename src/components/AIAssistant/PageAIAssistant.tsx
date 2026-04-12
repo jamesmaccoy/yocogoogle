@@ -163,34 +163,15 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         })
       }
 
-      // Check if the finished message has a package preview tool call
-      if (message?.role === 'assistant' && message.parts) {
-        const previewPart = message.parts.find((part: any) => {
-          const toolName = getToolName(part)
-          return (
-            ['previewPackage', 'suggestPackage', 'buildPackageDraft'].includes(toolName) &&
-            part.state === 'output-available'
-          )
-        })
-
-        const previewOutput = previewPart
-          ? normalizePackagePreviewOutput(getToolName(previewPart), previewPart.output)
-          : null
-
-        if (previewOutput) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('📦 Package preview received:', previewOutput)
-          }
-          setPendingPackagePreview(previewOutput)
-        } else {
-          // Check for other tool calls to debug
-          const toolParts = message.parts.filter((p: any) => p.type?.startsWith('tool-'))
-          if (toolParts.length > 0 && process.env.NODE_ENV === 'development') {
-            console.log('🔧 Tool calls found (but no previewPackage):', toolParts.map((p: any) => ({
-              type: p.type,
-              state: p.state
-            })))
-          }
+      // Package previews render inline from message tool parts only — do not mirror into
+      // pendingPackagePreview or a second card appears below the thread.
+      if (process.env.NODE_ENV === 'development' && message?.role === 'assistant' && message.parts) {
+        const toolParts = message.parts.filter((p: any) => p.type?.startsWith('tool-'))
+        if (toolParts.length > 0) {
+          console.log('🔧 Finished message tool parts:', toolParts.map((p: any) => ({
+            type: p.type,
+            state: p.state,
+          })))
         }
       }
     },
@@ -244,24 +225,6 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     // Check the last message for tool calls
     const lastMessage = messages[messages.length - 1]
     if (lastMessage?.role === 'assistant' && lastMessage.parts) {
-      // Check for package preview
-      const previewPart = lastMessage.parts.find((part: any) => {
-        const toolName = getToolName(part)
-        return (
-          ['previewPackage', 'suggestPackage', 'buildPackageDraft'].includes(toolName) &&
-          part.state === 'output-available'
-        )
-      })
-      const previewOutput = previewPart
-        ? normalizePackagePreviewOutput(getToolName(previewPart), previewPart.output)
-        : null
-      if (previewOutput && !pendingPackagePreview) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📦 Package preview detected in messages:', previewOutput)
-        }
-        setPendingPackagePreview(previewOutput)
-      }
-
       // Check for package creation success
       const createPart = lastMessage.parts.find((part: any) =>
         getToolName(part) === 'createPackage' && part.state === 'output-available'
@@ -311,7 +274,7 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
         }
       }
     }
-  }, [messages, isManageContext, pendingPackagePreview, createdPackageId, context])
+  }, [messages, isManageContext, createdPackageId, context])
 
   // Input change handler for manage context (manual state management)
   const handleManageInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -478,11 +441,13 @@ export function PageAIAssistant({ context, placeholder, className, showActions =
     }
   }
 
-  const handleConfirmPackage = async () => {
-    if (!pendingPackagePreview || !isManageContext || !sendMessage) return
+  /** Pass preview from the inline tool UI so confirm works without duplicating state into a second card. */
+  const handleConfirmPackage = async (previewFromUi?: any) => {
+    const source = previewFromUi ?? pendingPackagePreview
+    if (!source || !isManageContext || !sendMessage) return
 
     setIsSavingPackage(true)
-    const previewData = { ...pendingPackagePreview }
+    const previewData = { ...source }
     setPendingPackagePreview(null)
 
     const createMessage = `Please create the package using createPackageTool with these details:
@@ -938,7 +903,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                               <div className="max-w-2xl mx-auto">
                                 <PackagePreview
                                   {...normalizedOutput}
-                                  onConfirm={handleConfirmPackage}
+                                  onConfirm={() => void handleConfirmPackage(normalizedOutput)}
                                   onCancel={handleCancelPackage}
                                   isSaving={isSavingPackage}
                                 />
@@ -1003,40 +968,6 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                         default:
                           return null
                       }
-                    }
-                  }
-
-                  if (part.type === 'tool-previewPackage') {
-                    switch (part.state) {
-                      case 'input-available':
-                        return (
-                          <div key={index} className="text-sm text-slate-500 italic">
-                            Preparing package preview...
-                          </div>
-                        )
-                      case 'output-available':
-                        // PackagePreview component shows immediately when previewPackage tool completes
-                        // Collection: 'packages' (from src/collections/Packages/index.ts)
-                        return (
-                          <div key={index} className="my-6 border-t border-slate-200 pt-6">
-                            <div className="max-w-2xl mx-auto">
-                              <PackagePreview
-                                {...part.output}
-                                onConfirm={handleConfirmPackage}
-                                onCancel={handleCancelPackage}
-                                isSaving={isSavingPackage}
-                              />
-                            </div>
-                          </div>
-                        )
-                      case 'output-error':
-                        return (
-                          <div key={index} className="text-sm text-red-600">
-                            Error: {part.errorText || 'Failed to preview package'}
-                          </div>
-                        )
-                      default:
-                        return null
                     }
                   }
 
@@ -1453,7 +1384,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           )}
 
           {/* Empty state placeholder */}
-          {isManageContext && (!messages || messages.length === 0) && !pendingPackagePreview && (
+          {isManageContext && (!messages || messages.length === 0) && (
             <div className="py-4 text-center text-sm leading-5 text-[#64748b]">
               Start a conversation to see messages here...
             </div>
@@ -1500,21 +1431,6 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             </div>
           )}
         </div>
-
-        {/* Pending package preview - shown prominently when available */}
-        {/* Collection: 'packages' (from src/collections/Packages/index.ts) */}
-        {pendingPackagePreview && !createdPackageId && (
-          <div className="my-6 border-t border-slate-200 pt-6">
-            <div className="max-w-2xl mx-auto">
-              <PackagePreview
-                {...pendingPackagePreview}
-                onConfirm={handleConfirmPackage}
-                onCancel={handleCancelPackage}
-                isSaving={isSavingPackage}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Success message after package creation */}
         {createdPackageId && (
@@ -1785,20 +1701,6 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
                 {lastResponse}
               </p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pending package preview (shown prominently when available) */}
-      {pendingPackagePreview && (
-        <div className="my-6 border-t border-slate-200 pt-6">
-          <div className="max-w-2xl mx-auto">
-            <PackagePreview
-              {...pendingPackagePreview}
-              onConfirm={handleConfirmPackage}
-              onCancel={handleCancelPackage}
-              isSaving={isSavingPackage}
-            />
           </div>
         </div>
       )}

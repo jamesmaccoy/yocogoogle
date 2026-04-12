@@ -22,6 +22,8 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
   const searchParams = useSearchParams()
   const router = useRouter()
 
+  const [postsState, setPostsState] = useState(posts)
+
   const requestedPostId = useMemo(() => {
     const q = searchParams?.get('postId')
     return typeof q === 'string' && q.trim() ? q.trim() : null
@@ -34,6 +36,18 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
   const [selectedPostId, setSelectedPostId] = useState<string | null>(
     requestedPostId || (posts.length > 0 && posts[0] ? posts[0].id : null)
   )
+
+  useEffect(() => {
+    setPostsState(posts)
+  }, [posts])
+
+  useEffect(() => {
+    setSelectedPostId((sel) => {
+      if (!sel) return postsState[0]?.id ?? null
+      if (postsState.some((p) => p.id === sel)) return sel
+      return postsState[0]?.id ?? null
+    })
+  }, [postsState])
   const [activeTab, setActiveTab] = useState<'packages' | 'statement'>('packages')
   const [mobileView, setMobileView] = useState<'dashboard' | 'assistant'>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -85,7 +99,7 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
           <Sidebar
             activeProperty={selectedPostId}
             onSelectProperty={setSelectedPostId}
-            properties={posts}
+            properties={postsState}
             activeTab={activeTab}
             onSelectTab={setActiveTab}
             mobileOpen={sidebarOpen}
@@ -104,7 +118,7 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
                 {/* Content based on active tab */}
                 {activeTab === 'packages' && (
                   <>
-                    {posts.length === 0 ? (
+                    {postsState.length === 0 ? (
                       <div className="text-center py-16 bg-white rounded-xl border border-slate-200 p-8">
                         <div className="text-gray-500 text-lg mb-4">
                           You have no properties yet.
@@ -118,7 +132,12 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
                       </div>
                     ) : selectedPostId ? (
                       <>
-                        <PropertyHeroEditor postId={selectedPostId} />
+                        <PropertyHeroEditor
+                          postId={selectedPostId}
+                          onListingDeleted={(id) => {
+                            setPostsState((prev) => prev.filter((p) => p.id !== id))
+                          }}
+                        />
                         <PackageDashboard postId={selectedPostId} startOnboarding={shouldStartOnboarding} />
                       </>
                     ) : (
@@ -148,7 +167,7 @@ export default function ManagePageClient({ posts, latestEstimatePostId }: Manage
                     context={{
                       type: 'manage',
                       data: {
-                        posts,
+                        posts: postsState,
                         latestEstimatePostId,
                         postId: selectedPostId,
                       },
