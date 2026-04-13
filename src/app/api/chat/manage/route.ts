@@ -15,7 +15,7 @@ const packagePreviewSchema = z.object({
   entitlement: z.enum(['standard', 'pro']),
   minNights: z.number().int().min(1),
   maxNights: z.number().int().min(1),
-  baseRate: z.number().int().min(0),
+  baseRate: z.number().min(0),
   multiplier: z.number().min(0.1).max(3.0),
   features: z.array(z.string()).min(1),
   postId: z.string().optional(),
@@ -240,32 +240,39 @@ export async function POST(request: NextRequest) {
           })
         : { docs: [] as any[] }
 
+    const normalizeBaseRateToRands = (value: any): number | undefined => {
+      if (value === null || value === undefined || value === '') return undefined
+      const n = typeof value === 'number' ? value : Number(value)
+      if (!Number.isFinite(n) || n < 0) return undefined
+      return Math.round(n * 100) / 100
+    }
+
     // Helper function to guess missing package values
     const guessPackageDefaults = (category: string, userInput: any) => {
       const defaults: any = {
         addon: {
-          baseRate: 30000, // R300
+          baseRate: 300, // R300 (Rands)
           minNights: 1,
           maxNights: 1,
           multiplier: 1,
           features: ['Professional service', 'One-time fee', 'Quick setup', 'Quality guaranteed'],
         },
         standard: {
-          baseRate: 20000, // R200
+          baseRate: 200, // R200 (Rands)
           minNights: 2,
           maxNights: 7,
           multiplier: 1,
           features: ['Comfortable accommodation', 'Essential amenities', 'Flexible check-in', 'Free WiFi', 'Self-service'],
         },
         hosted: {
-          baseRate: 45000, // R450
+          baseRate: 450, // R450 (Rands)
           minNights: 3,
           maxNights: 14,
           multiplier: 1.2,
           features: ['Concierge service', 'Premium amenities', 'Personalized experience', '24/7 support', 'Luxury touches'],
         },
         special: {
-          baseRate: 35000, // R350
+          baseRate: 350, // R350 (Rands)
           minNights: 1,
           maxNights: 7,
           multiplier: 0.9,
@@ -298,7 +305,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement level'),
         minNights: z.number().int().min(1).optional().describe('Minimum number of nights. If not provided, will be guessed based on category.'),
         maxNights: z.number().int().min(1).optional().describe('Maximum number of nights. If not provided, will be guessed based on category.'),
-        baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR). If not provided, will be guessed based on category (addon: R300, standard: R200, hosted: R450, special: R350).'),
+        baseRate: z.number().min(0).optional().describe('Base rate in Rands (ZAR). Example: 300 means R300.00.'),
         multiplier: z.number().min(0.1).max(3.0).optional().describe('Price multiplier. If not provided, will be guessed (addon/standard: 1.0, hosted: 1.2, special: 0.9).'),
         features: z.array(z.string()).optional().describe('Array of key features/amenities. If not provided, will generate 4-5 relevant features based on category.'),
         postId: z.string().optional().describe('The property (post) ID. If omitted, uses the listing selected in Manage (sidebar).'),
@@ -360,6 +367,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Build preview data with ALL values filled in and validate with Zod
+        const baseRateRands = normalizeBaseRateToRands(input.baseRate ?? defaults.baseRate)
         const preview = {
           name,
           description,
@@ -367,7 +375,7 @@ export async function POST(request: NextRequest) {
           entitlement: input.entitlement || 'standard',
           minNights: input.minNights || defaults.minNights,
           maxNights: input.maxNights || defaults.maxNights,
-          baseRate: input.baseRate || defaults.baseRate,
+          baseRate: typeof baseRateRands === 'number' ? baseRateRands : 0,
           multiplier: input.multiplier || defaults.multiplier,
           features: input.features && input.features.length > 0 ? input.features : defaults.features,
           postId: finalPostId, // CRITICAL: Always include postId in preview
@@ -393,7 +401,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement'),
         minNights: z.number().min(0.5).describe('Minimum nights (can be 0.5 for half-day packages)'),
         maxNights: z.number().min(0.5).describe('Maximum nights'),
-        baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR)'),
+        baseRate: z.number().min(0).optional().describe('Base rate in Rands (ZAR). Example: 300 means R300.00.'),
         multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
         features: z.array(z.string()).default([]).describe('Array of feature strings'),
         postId: z
@@ -410,6 +418,7 @@ export async function POST(request: NextRequest) {
         const { name, description, category, entitlement, minNights, maxNights, baseRate, multiplier, features, postId, revenueCatId, yocoId } = input
 
         try {
+          const baseRateRands = normalizeBaseRateToRands(baseRate)
           // Resolve listing: tool input → sidebar selection in Manage (pageData.postId). If none, create draft post below.
           let resolvedPostId: string | null =
             (typeof postId === 'string' && postId.trim() ? postId.trim() : null) ||
@@ -485,7 +494,7 @@ export async function POST(request: NextRequest) {
             entitlement: entitlement || 'standard',
             minNights: minNights || 1,
             maxNights: maxNights || 1,
-            baseRate: baseRate && baseRate > 0 ? baseRate : undefined,
+            baseRate: typeof baseRateRands === 'number' && baseRateRands > 0 ? baseRateRands : undefined,
             multiplier: multiplier || 1,
             features: Array.isArray(features) ? features.map(f => ({ feature: f })) : [],
             revenueCatId: revenueCatId || undefined,
@@ -644,7 +653,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).optional(),
         minNights: z.number().int().min(1).optional(),
         maxNights: z.number().int().min(1).optional(),
-        baseRate: z.number().int().min(0).optional(),
+        baseRate: z.number().min(0).optional(),
         multiplier: z.number().min(0.1).max(3.0).optional(),
         features: z.array(z.string()).optional(),
         isEnabled: z.boolean().optional(),
@@ -731,7 +740,7 @@ export async function POST(request: NextRequest) {
       parameters: z.object({
         title: z.string().describe('Property title/name (e.g., "Beachfront Studio", "Mountain Cabin")'),
         description: z.string().optional().describe('Property description. If not provided, will generate based on title.'),
-        baseRate: z.number().int().min(0).optional().describe('Base rate per night in cents (ZAR). If not provided, will default to 0.'),
+        baseRate: z.number().min(0).optional().describe('Base rate per night in Rands (ZAR). If not provided, will default to 0.'),
         featured: z.boolean().optional().default(false).describe('Feature this property on the home page'),
         metaTitle: z.string().optional().describe('SEO meta title'),
         metaDescription: z.string().optional().describe('SEO meta description'),
@@ -942,7 +951,7 @@ PROPERTY CREATION:
    - Hosts can also use createPostTool explicitly if they want to name/configure a listing before packages.
 
 PACKAGE MANAGEMENT:
-1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents, R300 = 30000 cents
+1. Base rates are entered and stored in Rands (ZAR) (e.g., 300 means R300.00).
 2. Categories: 
    - standard: Regular accommodation packages (most common)
    - hosted: Packages with concierge services and premium amenities
@@ -951,7 +960,7 @@ PACKAGE MANAGEMENT:
 3. Entitlements: standard (all customers), pro (premium customers only)
 4. When user wants to create a package (e.g., "create a package", "make a package", "new package", "package for R300"):
    - IMMEDIATELY call previewPackageTool - DO NOT respond with text first
-   - Extract package name, price (convert R to cents), and any other details from the request
+   - Extract package name and price in Rands (e.g., R300), and any other details from the request
    - Fill in ALL missing values with reasonable guesses based on category defaults
    - The preview should show complete package details including guessed baseRate, features, nights, etc.
    - Wait for user confirmation
@@ -959,10 +968,10 @@ PACKAGE MANAGEMENT:
    - IMPORTANT: When user explicitly says "create", "confirm", "yes", or "create this package", you MUST call createPackageTool immediately with the exact values from the preview
    - CRITICAL: Never say "I can't create" - always use previewPackageTool first, then createPackageTool after confirmation
 5. Guess reasonable defaults if user doesn't specify:
-   - For addon packages: baseRate 20000-50000 cents (R200-R500), minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
-   - For standard packages: baseRate 15000-30000 cents (R150-R300), minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]
-   - For hosted packages: baseRate 30000-60000 cents (R300-R600), minNights: 3, maxNights: 14, features: ["Concierge service", "Premium amenities", "Personalized experience"]
-   - For special packages: baseRate 25000-50000 cents (R250-R500), minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience", "Best value"]
+   - For addon packages: baseRate R200-R500, minNights: 1, maxNights: 1, features: ["Professional service", "One-time fee", "Quick setup"]
+   - For standard packages: baseRate R150-R300, minNights: 2, maxNights: 7, features: ["Comfortable accommodation", "Essential amenities", "Flexible check-in"]
+   - For hosted packages: baseRate R300-R600, minNights: 3, maxNights: 14, features: ["Concierge service", "Premium amenities", "Personalized experience"]
+   - For special packages: baseRate R250-R500, minNights: 1, maxNights: 7, features: ["Special offer", "Limited availability", "Unique experience", "Best value"]
    - Always generate 3-5 relevant features based on category and package type
 6. CRUD Operations:
    - CREATE PROPERTY: Use createPostTool when user wants to create a new property
@@ -983,7 +992,7 @@ When user asks to create a package from a property they offer, create the proper
 
 🎯 PACKAGE ONBOARDING — EDIT EXISTING PACKAGE:
 - The client is editing package ID: ${existingPackageIdFromContext} (property post: ${selectedPostId || 'use tool input / message'}).
-- When the user describes changes or the message asks to CALL updatePackageTool, use updatePackageTool IMMEDIATELY with packageId="${existingPackageIdFromContext}" and merge in inferred fields (name, description, category, minNights, maxNights, baseRate in cents, multiplier, features, entitlement, isEnabled) from their text.
+- When the user describes changes or the message asks to CALL updatePackageTool, use updatePackageTool IMMEDIATELY with packageId="${existingPackageIdFromContext}" and merge in inferred fields (name, description, category, minNights, maxNights, baseRate in Rands, multiplier, features, entitlement, isEnabled) from their text.
 - Do NOT call previewPackage or createPackage for this onboarding session unless the user explicitly asks to create a duplicate/new package.`
         : ''
     }`

@@ -287,7 +287,7 @@ export function PackageOnboarding({
     const propertyContextDescription = propertyDescription?.trim() || ''
 
     const prompt = isUpdateMode
-      ? `CALL updatePackageTool NOW with packageId="${existingPackageId!.trim()}", property postId="${postId}", name="${name}", description="${desc}". Infer category, minNights, maxNights, baseRate (ZAR cents), multiplier, features, entitlement from the description. Do not respond with text first — call the tool immediately.`
+      ? `CALL updatePackageTool NOW with packageId="${existingPackageId!.trim()}", property postId="${postId}", name="${name}", description="${desc}". Infer category, minNights, maxNights, baseRate (ZAR rands), multiplier, features, entitlement from the description. Do not respond with text first — call the tool immediately.`
       : `You are creating a package for a specific property. Use the property context to make the package title and description specific (not generic).\n\nProperty title: "${propertyContextTitle}"\nProperty description: "${propertyContextDescription}"\n\nNow CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". If the provided name/description are vague, improve them using the property context before calling the tool. DO NOT respond with text — call the tool immediately.`
 
     try {

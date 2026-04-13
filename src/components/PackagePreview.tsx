@@ -13,7 +13,7 @@ interface PackagePreviewProps {
   entitlement?: 'standard' | 'pro'
   minNights?: number
   maxNights?: number
-  baseRate?: number // in cents
+  baseRate?: number // in rands (ZAR)
   multiplier?: number
   features?: string[]
   isPreview?: boolean
@@ -116,7 +116,7 @@ export function PackagePreview({
           <div className="flex flex-col">
             <span className="text-xs text-slate-400 font-medium">Base Rate</span>
             <span className="text-lg font-bold text-slate-900">
-              {baseRate && baseRate > 0 ? formatAmountToZAR(baseRate / 100) : 'Not set'}
+              {baseRate && baseRate > 0 ? formatAmountToZAR(baseRate) : 'Not set'}
             </span>
             {multiplier !== 1 && (
               <span className="text-xs text-slate-400">Multiplier: {multiplier}x</span>

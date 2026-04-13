@@ -332,17 +332,16 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
     }
   };
 
-  const formatCurrency = (cents: number | undefined) => {
-    if (!cents || cents === 0) return formatAmountToZAR(0);
-    // baseRate is stored in cents, convert to Rands
-    return formatAmountToZAR(cents / 100);
+  const formatCurrency = (rands: number | undefined) => {
+    if (!rands || rands === 0) return formatAmountToZAR(0);
+    return formatAmountToZAR(rands);
   };
 
   // Calculate token value (placeholder - can be customized based on your token system)
   // Example: 1 token = R10, or based on package multiplier, etc.
-  const calculateTokenValue = (baseRateCents: number | undefined, multiplier: number = 1) => {
-    if (!baseRateCents || baseRateCents === 0) return 0;
-    const randsValue = baseRateCents / 100;
+  const calculateTokenValue = (baseRateRands: number | undefined, multiplier: number = 1) => {
+    if (!baseRateRands || baseRateRands === 0) return 0;
+    const randsValue = baseRateRands;
     // Example conversion: R10 = 1 token (adjust ratio as needed)
     const tokenRatio = 10; // R10 per token
     return Math.round((randsValue * multiplier) / tokenRatio);
@@ -756,13 +755,23 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-sm font-medium text-gray-600">Base Rate (cents)</label>
+                                  <label className="text-sm font-medium text-gray-600">Base Rate (R)</label>
                                   <Input
                                     type="number"
                                     min="0"
-                                    step="1"
-                                    value={editingPackage.baseRate ?? ''}
-                                    onChange={e => setEditingPackage({ ...editingPackage, baseRate: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                    step="0.01"
+                                    value={
+                                      typeof editingPackage.baseRate === 'number'
+                                        ? editingPackage.baseRate.toFixed(2)
+                                        : ''
+                                    }
+                                    onChange={e => {
+                                      const rands = e.target.value ? parseFloat(e.target.value) : undefined
+                                      setEditingPackage({
+                                        ...editingPackage,
+                                        baseRate: typeof rands === 'number' && !isNaN(rands) ? rands : undefined,
+                                      })
+                                    }}
                                     className="mt-1"
                                     placeholder="Optional"
                                   />

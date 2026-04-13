@@ -34,7 +34,7 @@ const packageDraftSchema = z.object({
   entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement'),
   minNights: z.number().min(0.5).describe('Minimum nights'),
   maxNights: z.number().min(0.5).describe('Maximum nights'),
-  baseRate: z.number().int().min(0).optional().describe('Base rate in cents (ZAR)'),
+  baseRate: z.number().min(0).optional().describe('Base rate in Rands (ZAR)'),
   multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
   features: z.array(z.string()).default([]).describe('Feature list'),
   postId: z.string().optional().describe('Property (post) ID'),
@@ -1073,11 +1073,11 @@ HOST'S PROPERTIES:
 ${posts.map((post: any) => `- ${post.title} (ID: ${post.id}, Slug: ${post.slug})`).join('\n') || 'No properties yet'}
 
 PACKAGE MANAGEMENT GUIDELINES:
-1. Base rates are stored in cents (ZAR). For example, R150.00 = 15000 cents
+1. Base rates are stored in Rands (ZAR). For example, R150.00 = 150
 2. Categories: standard, hosted, addon, special
 3. Entitlements: standard, pro
 4. Always confirm which property (post) the package should be associated with
-5. When creating packages, include: name, description, category, minNights, maxNights, baseRate (in cents), multiplier, entitlement, and isEnabled status
+5. When creating packages, include: name, description, category, minNights, maxNights, baseRate (in Rands), multiplier, entitlement, and isEnabled status
 6. When updating packages, you can modify any field
 7. Be helpful and guide the host through package management decisions
 
