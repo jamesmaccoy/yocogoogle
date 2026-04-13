@@ -799,30 +799,11 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           <Button
             variant="outline"
             size="sm"
-            className="text-xs"
-            disabled={chatIsLoading}
-            onClick={() => void handleSendNewListingTemplate()}
-          >
-            <Sparkles className="h-3 w-3 mr-1.5" />
-            New property (send)
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             onClick={() => handleActionClick('Show my packages')}
             className="text-xs"
           >
             <Package className="h-3 w-3 mr-1.5" />
             My Packages
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleActionClick('Show booking statement')}
-            className="text-xs"
-          >
-            <Calendar className="h-3 w-3 mr-1.5" />
-            Statement
           </Button>
         </div>
       )
@@ -1324,7 +1305,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
           <p className="text-base sm:text-lg leading-6 sm:leading-7 text-[#64748b] m-0">
             {isBookingsContext
               ? "Ask about your upcoming trips, view booking details, or get recommendations."
-              : "Generate packages, analyze pricing, or draft statements instantly."}
+              : "Generate packages, analyze pricing, or get insights instantly."}
           </p>
           {isManageContext && (
             <div className="flex flex-wrap justify-center gap-2 mt-6">
@@ -1337,16 +1318,6 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               >
                 <Home className="h-3.5 w-3.5 mr-1.5" />
                 New property — fill prompt
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                disabled={chatIsLoading}
-                onClick={() => void handleSendNewListingTemplate()}
-              >
-                New property — send now
               </Button>
             </div>
           )}
@@ -1597,16 +1568,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               className="text-sm font-medium leading-5 text-white bg-[#0f172a] cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#0f172a] rounded-full px-4 py-2 hover:bg-[#1e293b] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Home className="h-4 w-4" />
-              New property (edit & send)
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSendNewListingTemplate()}
-              disabled={chatIsLoading}
-              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Sparkles className="h-4 w-4" />
-              New property (send now)
+              Draft a new plek
             </button>
             <button
               type="button"
@@ -1618,18 +1580,11 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
               Generate Packages
             </button>
             <button
-              onClick={() => handleActionClick('Show booking statement')}
-              className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
-            >
-              <FileText className="h-4 w-4" />
-              Draft Statement
-            </button>
-            <button
               onClick={() => handleActionClick('Show my packages')}
               className="text-sm font-medium leading-5 text-[#475569] bg-white cursor-pointer flex items-center gap-2 shadow-[0_0_0_0_transparent,0_0_0_0_transparent,0_1px_2px_0_rgba(0,0,0,0.05)] transition-all duration-200 border border-[#e2e8f0] rounded-full px-4 py-2 hover:bg-[#f8fafc] hover:border-[#cbd5e1]"
             >
               <BarChart2 className="h-4 w-4" />
-              View Analytics
+              Show me examples
             </button>
           </div>
         ) : isBookingsContext ? (
