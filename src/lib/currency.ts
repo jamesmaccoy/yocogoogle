@@ -13,6 +13,17 @@ export function formatAmountToZAR(amount: number | null | undefined): string {
   return `${sign}R ${withThousands.length > 0 ? withThousands : '0'}.${decimal}`
 }
 
+export function formatAmountToZARNoCents(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(Number(amount))) return 'N/A'
+
+  const numericAmount = Number(amount)
+  const sign = numericAmount < 0 ? '-' : ''
+  const absoluteWhole = Math.round(Math.abs(numericAmount))
+  const withThousands = String(absoluteWhole).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+
+  return `${sign}R ${withThousands.length > 0 ? withThousands : '0'}`
+}
+
 export function formatFormattedPriceToZAR(formattedPrice: string | null | undefined): string {
   if (!formattedPrice || typeof formattedPrice !== 'string') return 'N/A'
   // Replace any leading currency symbol(s) with R

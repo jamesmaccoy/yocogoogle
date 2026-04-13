@@ -126,7 +126,21 @@ const Packages: CollectionConfig = {
       },
     },
     { name: 'isEnabled', type: 'checkbox', defaultValue: true },
-    { name: 'baseRate', type: 'number', required: false },
+    {
+      name: 'baseRate',
+      type: 'number',
+      required: false,
+      min: 0,
+      validate: (val) => {
+        if (val === null || val === undefined || val === '') return true
+        const n = typeof val === 'number' ? val : Number(val)
+        if (!Number.isFinite(n)) return 'Base rate must be a number'
+        if (n < 0) return 'Base rate must be 0 or greater'
+        if (!Number.isInteger(n)) return 'Base rate must be a whole number of rands'
+        return true
+      },
+      admin: { step: 1 },
+    },
   ],
 }
 

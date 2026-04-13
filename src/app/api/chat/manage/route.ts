@@ -15,7 +15,7 @@ const packagePreviewSchema = z.object({
   entitlement: z.enum(['standard', 'pro']),
   minNights: z.number().int().min(1),
   maxNights: z.number().int().min(1),
-  baseRate: z.number().min(0),
+  baseRate: z.number().int().min(0),
   multiplier: z.number().min(0.1).max(3.0),
   features: z.array(z.string()).min(1),
   postId: z.string().optional(),
@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
       if (value === null || value === undefined || value === '') return undefined
       const n = typeof value === 'number' ? value : Number(value)
       if (!Number.isFinite(n) || n < 0) return undefined
-      return Math.round(n * 100) / 100
+      return Math.round(n)
     }
 
     // Helper function to guess missing package values
@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement level'),
         minNights: z.number().int().min(1).optional().describe('Minimum number of nights. If not provided, will be guessed based on category.'),
         maxNights: z.number().int().min(1).optional().describe('Maximum number of nights. If not provided, will be guessed based on category.'),
-        baseRate: z.number().min(0).optional().describe('Base rate in Rands (ZAR). Example: 300 means R300.00.'),
+        baseRate: z.number().min(0).optional().describe('Base rate in whole Rands (ZAR). Example: 300 means R300.'),
         multiplier: z.number().min(0.1).max(3.0).optional().describe('Price multiplier. If not provided, will be guessed (addon/standard: 1.0, hosted: 1.2, special: 0.9).'),
         features: z.array(z.string()).optional().describe('Array of key features/amenities. If not provided, will generate 4-5 relevant features based on category.'),
         postId: z.string().optional().describe('The property (post) ID. If omitted, uses the listing selected in Manage (sidebar).'),
@@ -401,7 +401,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).default('standard').describe('Required customer entitlement'),
         minNights: z.number().min(0.5).describe('Minimum nights (can be 0.5 for half-day packages)'),
         maxNights: z.number().min(0.5).describe('Maximum nights'),
-        baseRate: z.number().min(0).optional().describe('Base rate in Rands (ZAR). Example: 300 means R300.00.'),
+        baseRate: z.number().min(0).optional().describe('Base rate in whole Rands (ZAR). Example: 300 means R300.'),
         multiplier: z.number().min(0.1).max(3.0).default(1).describe('Price multiplier'),
         features: z.array(z.string()).default([]).describe('Array of feature strings'),
         postId: z
@@ -653,7 +653,7 @@ export async function POST(request: NextRequest) {
         entitlement: z.enum(['standard', 'pro']).optional(),
         minNights: z.number().int().min(1).optional(),
         maxNights: z.number().int().min(1).optional(),
-        baseRate: z.number().min(0).optional(),
+        baseRate: z.number().int().min(0).optional(),
         multiplier: z.number().min(0.1).max(3.0).optional(),
         features: z.array(z.string()).optional(),
         isEnabled: z.boolean().optional(),
@@ -740,7 +740,7 @@ export async function POST(request: NextRequest) {
       parameters: z.object({
         title: z.string().describe('Property title/name (e.g., "Beachfront Studio", "Mountain Cabin")'),
         description: z.string().optional().describe('Property description. If not provided, will generate based on title.'),
-        baseRate: z.number().min(0).optional().describe('Base rate per night in Rands (ZAR). If not provided, will default to 0.'),
+        baseRate: z.number().min(0).optional().describe('Base rate per night in whole Rands (ZAR). If not provided, will default to 0.'),
         featured: z.boolean().optional().default(false).describe('Feature this property on the home page'),
         metaTitle: z.string().optional().describe('SEO meta title'),
         metaDescription: z.string().optional().describe('SEO meta description'),

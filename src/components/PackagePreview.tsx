@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Clock, Users, CheckCircle, XCircle, Loader2 } from "lucide-react"
-import { formatAmountToZAR } from "@/lib/currency"
+import { formatAmountToZARNoCents } from "@/lib/currency"
 
 interface PackagePreviewProps {
   name: string
@@ -116,7 +116,7 @@ export function PackagePreview({
           <div className="flex flex-col">
             <span className="text-xs text-slate-400 font-medium">Base Rate</span>
             <span className="text-lg font-bold text-slate-900">
-              {baseRate && baseRate > 0 ? formatAmountToZAR(baseRate) : 'Not set'}
+              {baseRate && baseRate > 0 ? formatAmountToZARNoCents(baseRate) : 'Not set'}
             </span>
             {multiplier !== 1 && (
               <span className="text-xs text-slate-400">Multiplier: {multiplier}x</span>

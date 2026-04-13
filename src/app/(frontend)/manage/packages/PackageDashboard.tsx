@@ -11,7 +11,7 @@ import { PackageOnboarding } from "@/components/PackageOnboarding/PackageOnboard
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { formatAmountToZAR } from "@/lib/currency";
+import { formatAmountToZAR, formatAmountToZARNoCents } from "@/lib/currency";
 
 interface Package {
   id: string;
@@ -333,8 +333,8 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
   };
 
   const formatCurrency = (rands: number | undefined) => {
-    if (!rands || rands === 0) return formatAmountToZAR(0);
-    return formatAmountToZAR(rands);
+    if (!rands || rands === 0) return formatAmountToZARNoCents(0);
+    return formatAmountToZARNoCents(rands);
   };
 
   // Calculate token value (placeholder - can be customized based on your token system)
@@ -759,17 +759,20 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
                                   <Input
                                     type="number"
                                     min="0"
-                                    step="0.01"
+                                    step="1"
                                     value={
                                       typeof editingPackage.baseRate === 'number'
-                                        ? editingPackage.baseRate.toFixed(2)
+                                        ? String(Math.round(editingPackage.baseRate))
                                         : ''
                                     }
                                     onChange={e => {
                                       const rands = e.target.value ? parseFloat(e.target.value) : undefined
                                       setEditingPackage({
                                         ...editingPackage,
-                                        baseRate: typeof rands === 'number' && !isNaN(rands) ? rands : undefined,
+                                        baseRate:
+                                          typeof rands === 'number' && !isNaN(rands)
+                                            ? Math.round(rands)
+                                            : undefined,
                                       })
                                     }}
                                     className="mt-1"
