@@ -287,8 +287,8 @@ export function PackageOnboarding({
     const propertyContextDescription = propertyDescription?.trim() || ''
 
     const prompt = isUpdateMode
-      ? `CALL updatePackageTool NOW with packageId="${existingPackageId!.trim()}", property postId="${postId}", name="${name}", description="${desc}". Infer category, minNights, maxNights, baseRate (ZAR rands), multiplier, features, entitlement from the description. Do not respond with text first — call the tool immediately.`
-      : `You are creating a package for a specific property. Use the property context to make the package title and description specific (not generic).\n\nProperty title: "${propertyContextTitle}"\nProperty description: "${propertyContextDescription}"\n\nNow CALL previewPackageTool NOW with name="${name}", description="${desc}", postId="${postId}". If the provided name/description are vague, improve them using the property context before calling the tool. DO NOT respond with text — call the tool immediately.`
+      ? `Use the property context, then call updatePackageTool with packageId="${existingPackageId!.trim()}", postId="${postId}", name="${name}", description="${desc}". Set category, minNights, maxNights, baseRate (ZAR), multiplier, features, entitlement. Tool call only.`
+      : `Property context:\n- title: "${propertyContextTitle}"\n- description: "${propertyContextDescription}"\n\nCall previewPackageTool with name="${name}", description="${desc}", postId="${postId}". If name/description are vague, improve them using the property context. Tool call only.`
 
     try {
       await sendMessage({ text: prompt })
@@ -641,119 +641,152 @@ export function PackageOnboarding({
   }
 
   return (
-    <div className={cn('w-full max-w-3xl mx-auto space-y-6', className)}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">
-            {isUpdateMode ? 'Package update' : 'Package Details'}
-          </h2>
-          <p className="text-slate-500 mt-1">
-            {isUpdateMode
-              ? 'Review the assistant result below'
-              : 'Review and customize your package settings'}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => {
-            setStep('describe')
-            setPendingPackagePreview(null)
-            setCreatedPackageId(null)
-          }}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+    <div className={cn('w-full max-w-6xl mx-auto', className)}>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] gap-6">
+        {/* Package details (tool output only) */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">
+                {isUpdateMode ? 'Package update' : 'Package Details'}
+              </h2>
+              <p className="text-slate-500 mt-1">
+                {isUpdateMode
+                  ? 'Review the assistant result below'
+                  : 'Review and customize your package settings'}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setStep('describe')
+                setPendingPackagePreview(null)
+                setCreatedPackageId(null)
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
 
-      {renderMessages()}
+          {pendingPackagePreview && !createdPackageId && !isUpdateMode && (
+            <div className="my-4">
+              <PackagePreview
+                {...pendingPackagePreview}
+                name={packageName || pendingPackagePreview.name}
+                description={packageDescription || pendingPackagePreview.description}
+                onConfirm={handleConfirmPackage}
+                onCancel={handleCancelPackage}
+                isSaving={isSavingPackage}
+              />
+            </div>
+          )}
 
-      {pendingPackagePreview && !createdPackageId && !isUpdateMode && (
-        <div className="my-4">
-          <PackagePreview
-            {...pendingPackagePreview}
-            name={packageName || pendingPackagePreview.name}
-            description={packageDescription || pendingPackagePreview.description}
-            onConfirm={handleConfirmPackage}
-            onCancel={handleCancelPackage}
-            isSaving={isSavingPackage}
-          />
-        </div>
-      )}
+          {createdPackageId && (
+            <Card className="p-6 border-green-200 bg-green-50">
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-green-100 rounded-full">
+                    <Package className="h-5 w-5 text-green-700" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-green-900 mb-1">
+                      {lastSuccessWasUpdate ? 'Package updated!' : 'Package created successfully!'}
+                    </h3>
+                    <p className="text-sm text-green-700">
+                      {lastSuccessWasUpdate
+                        ? 'Changes are saved; you can keep editing in the dashboard.'
+                        : 'Your package is saved and ready to use.'}
+                    </p>
+                  </div>
+                </div>
 
-      {createdPackageId && (
-        <Card className="p-6 border-green-200 bg-green-50">
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="p-2 bg-green-100 rounded-full">
-                <Package className="h-5 w-5 text-green-700" />
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
+                    }}
+                    className="bg-white hover:bg-green-50 border-green-300"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Package API
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      window.open(`/manage/packages/${postId}`, '_blank')
+                    }}
+                    className="bg-white hover:bg-green-50 border-green-300"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Manage Packages
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setCreatedPackageId(null)
+                      setPendingPackagePreview(null)
+                      setLastSuccessWasUpdate(false)
+                      setStep('describe')
+                      setPackageName('')
+                      setPackageDescription('')
+                    }}
+                    className="bg-white hover:bg-green-50 border-green-300"
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    {isUpdateMode ? 'Another update' : 'Create Another'}
+                  </Button>
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-green-900 mb-1">
-                  {lastSuccessWasUpdate ? 'Package updated!' : 'Package created successfully!'}
-                </h3>
-                <p className="text-sm text-green-700">
-                  {lastSuccessWasUpdate
-                    ? 'Changes are saved; you can keep editing in the dashboard.'
-                    : 'Your package is saved and ready to use.'}
+            </Card>
+          )}
+
+          {showLoadingCard && (
+            <Card className="p-8">
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
+                <p className="text-sm text-slate-500">
+                  {isUpdateMode ? 'Applying your package changes...' : 'Generating package details...'}
                 </p>
               </div>
+            </Card>
+          )}
+        </div>
+
+        {/* Assistant chat (messages live here) */}
+        <aside className="lg:sticky lg:top-6 h-fit">
+          <Card className="border-2 border-slate-200 shadow-lg overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-white">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-full bg-teal-50 flex items-center justify-center">
+                  <Sparkles className="h-4 w-4 text-teal-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-slate-900">AI Assistant</div>
+                  <div className="text-xs text-slate-500">
+                    {propertyTitle?.trim()
+                      ? `Property: ${propertyTitle.trim()}`
+                      : 'Package generation'}
+                  </div>
+                </div>
+              </div>
+              {propertyTitle?.trim() && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  Tip: Mention the stay length, what’s included, and any farm-style highlights guests should expect.
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-green-200">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  window.open(`/api/packages/${createdPackageId}?depth=2`, '_blank')
-                }}
-                className="bg-white hover:bg-green-50 border-green-300"
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                View Package API
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  window.open(`/manage/packages/${postId}`, '_blank')
-                }}
-                className="bg-white hover:bg-green-50 border-green-300"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Manage Packages
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCreatedPackageId(null)
-                  setPendingPackagePreview(null)
-                  setLastSuccessWasUpdate(false)
-                  setStep('describe')
-                  setPackageName('')
-                  setPackageDescription('')
-                }}
-                className="bg-white hover:bg-green-50 border-green-300"
-              >
-                <Package className="h-4 w-4 mr-2" />
-                {isUpdateMode ? 'Another update' : 'Create Another'}
-              </Button>
+            <div className="p-4 max-h-[520px] overflow-y-auto bg-white">
+              {renderMessages()}
             </div>
-          </div>
-        </Card>
-      )}
-
-      {showLoadingCard && (
-        <Card className="p-8">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
-            <p className="text-sm text-slate-500">
-              {isUpdateMode ? 'Applying your package changes...' : 'Generating package details...'}
-            </p>
-          </div>
-        </Card>
-      )}
+          </Card>
+        </aside>
+      </div>
     </div>
   )
 }

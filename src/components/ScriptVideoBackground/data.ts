@@ -46,7 +46,7 @@ export const script: SceneData[] = [
         type: 'video',
         src: `${ASSET_PREFIX}/video2.mp4`,
         texts: [
-            "Rent to own\n with a membership"
+            "Keep reservation\n with a membership"
         ]
     },
     {
@@ -78,8 +78,8 @@ export const script: SceneData[] = [
         type: 'image',
         src: `${ASSET_PREFIX}/Img_2023_10_12_18_07_19~2 (1).png`,
         texts: [
-            "The statement\nreflects your\ntokens remaining.",
-            "Upgrade to Pro to\n Host your own \nshort term bookings"
+            "Film studio\ncreative licence\nby the hour.",
+            "Parking for surf\n Event space \nshort term bookings"
         ]
     },
     {
