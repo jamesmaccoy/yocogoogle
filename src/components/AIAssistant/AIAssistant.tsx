@@ -99,7 +99,9 @@ interface PackageSuggestion {
   details: any
 }
 
-export const AIAssistant = () => {
+type AIAssistantMode = 'floating' | 'embedded'
+
+export const AIAssistant = ({ mode = 'floating' }: { mode?: AIAssistantMode }) => {
   const { currentUser } = useUserContext()
   const { isSubscribed } = useSubscription()
   const router = useRouter()
@@ -131,6 +133,17 @@ export const AIAssistant = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const activeThreadRef = useRef(0)
   const historyKeyRef = useRef<string | null>(null)
+
+  // Only auto-open/close for floating mode.
+  useEffect(() => {
+    if (mode !== 'floating') return
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(min-width: 1024px)') // lg
+    const apply = () => setIsOpen(mq.matches)
+    apply()
+    mq.addEventListener?.('change', apply)
+    return () => mq.removeEventListener?.('change', apply)
+  }, [mode])
 
   // Helpers
   const normalizeTokenUsage = (usage: any): TokenUsageDetails | null => {
@@ -243,105 +256,141 @@ export const AIAssistant = () => {
     return <Sparkles className="h-4 w-4 text-muted-foreground" />
   }
 
-  return (
-    <div className="fixed bottom-4 right-4 z-50">
-      <Button
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          'rounded-full w-14 h-14 p-0 shadow-2xl transition-all duration-300 hover:scale-105',
-          isOpen ? 'bg-destructive rotate-90' : 'bg-primary',
-        )}
-      >
-        {isOpen ? <X className="h-6 w-6" /> : <Bot className="h-7 w-7" />}
-      </Button>
+  const panel = (
+    <Card className={cn(mode === 'embedded' ? 'w-full' : 'w-[420px] h-full', 'shadow-2xl border-primary/10 overflow-hidden flex flex-col')}>
+      {/* Marketplace Header */}
+      <div className="p-4 bg-primary/5 border-b flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-primary rounded-lg">
+            <Bot className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm leading-none flex items-center gap-2">
+              Marketplace Concierge
+              <TierBadge />
+            </h3>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1 font-medium">
+              {subscriptionPlan} Member • {lastUsage?.total || 0} tokens used
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <AIContextCard usage={lastUsage || undefined}>
+            <ContextTrigger />
+            <ContextContent />
+          </AIContextCard>
+          {mode === 'floating' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsOpen(false)}
+              className="hidden lg:inline-flex text-muted-foreground hover:text-foreground"
+              title="Close assistant"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
 
-      {isOpen && (
-        <Card className="absolute bottom-20 right-0 w-[420px] shadow-2xl border-primary/10 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4">
-          {/* Marketplace Header */}
-          <div className="p-4 bg-primary/5 border-b flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary rounded-lg">
-                <Bot className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm leading-none flex items-center gap-2">
-                  Marketplace Concierge
-                  <TierBadge />
-                </h3>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1 font-medium">
-                  {subscriptionPlan} Member • {lastUsage?.total || 0} tokens used
+      <Conversation className={cn(mode === 'embedded' ? 'h-[520px]' : 'flex-1', 'bg-background/50 backdrop-blur-sm')}>
+        <ConversationContent className="p-4 space-y-4">
+          {messages.length === 0 && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
+                <p className="text-sm font-medium text-primary mb-1">Welcome to the Marketplace</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  I'm your Simple assistant, optimized for your <strong>{subscriptionPlan}</strong> tier.
+                  I can help you find properties, manage bookings, or optimize schedules.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" size="sm" className="text-[11px] h-auto py-2 justify-start" onClick={() => handleSendMessage("Show me top properties")}>
+                  <MapPin className="h-3 w-3 mr-2" /> Top Properties
+                </Button>
+                <Button variant="outline" size="sm" className="text-[11px] h-auto py-2 justify-start" onClick={() => handleSendMessage("Check my availability")}>
+                  <CalendarDays className="h-3 w-3 mr-2" /> Availability
+                </Button>
+              </div>
             </div>
-            <AIContextCard usage={lastUsage || undefined}>
-              <ContextTrigger />
-              <ContextContent />
-            </AIContextCard>
-          </div>
+          )}
 
-          <Conversation className="h-[400px] bg-background/50 backdrop-blur-sm">
-            <ConversationContent className="p-4 space-y-4">
-              {messages.length === 0 && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                  <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
-                    <p className="text-sm font-medium text-primary mb-1">Welcome to the Marketplace</p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      I'm your Simple assistant, optimized for your <strong>{subscriptionPlan}</strong> tier.
-                      I can help you find properties, manage bookings, or optimize schedules.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" size="sm" className="text-[11px] h-auto py-2 justify-start" onClick={() => handleSendMessage("Show me top properties")}>
-                      <MapPin className="h-3 w-3 mr-2" /> Top Properties
-                    </Button>
-                    <Button variant="outline" size="sm" className="text-[11px] h-auto py-2 justify-start" onClick={() => handleSendMessage("Check my availability")}>
-                      <CalendarDays className="h-3 w-3 mr-2" /> Availability
-                    </Button>
-                  </div>
-                </div>
-              )}
+          {messages.map((msg, i) => (
+            <Message key={i} from={msg.role}>
+              <MessageContent>
+                <MessageResponse>{msg.content}</MessageResponse>
+              </MessageContent>
+            </Message>
+          ))}
 
-              {messages.map((msg, i) => (
-                <Message key={i} from={msg.role}>
-                  <MessageContent>
-                    <MessageResponse>{msg.content}</MessageResponse>
-                  </MessageContent>
-                </Message>
-              ))}
+          {isLoading && (
+            <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+              <Loader size={14} />
+              <span className="text-[10px] font-medium uppercase tracking-widest">Analyzing Context...</span>
+            </div>
+          )}
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
 
-              {isLoading && (
-                <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-                  <Loader size={14} />
-                  <span className="text-[10px] font-medium uppercase tracking-widest">Analyzing Context...</span>
-                </div>
-              )}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
+      <div className="p-4 border-t bg-background">
+        <PromptInput onSubmit={handlePromptSubmit}>
+          <PromptInputBody>
+            <PromptInputTextarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask anything about the marketplace..."
+              className="min-h-[80px] text-sm resize-none border-none focus-visible:ring-0 p-0"
+            />
+          </PromptInputBody>
+          <PromptInputFooter className="pt-2">
+            <PromptInputTools>
+              <PromptInputSpeechButton
+                textareaRef={textareaRef}
+                onTranscriptionChange={(t) => setInput(t)}
+              />
+              <PromptInputSubmit status={isLoading ? 'streaming' : 'ready'} />
+            </PromptInputTools>
+          </PromptInputFooter>
+        </PromptInput>
+      </div>
+    </Card>
+  )
 
-          <div className="p-4 border-t bg-background">
-            <PromptInput onSubmit={handlePromptSubmit}>
-              <PromptInputBody>
-                <PromptInputTextarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask anything about the marketplace..."
-                  className="min-h-[80px] text-sm resize-none border-none focus-visible:ring-0 p-0"
-                />
-              </PromptInputBody>
-              <PromptInputFooter className="pt-2">
-                <PromptInputTools>
-                  <PromptInputSpeechButton
-                    textareaRef={textareaRef}
-                    onTranscriptionChange={(t) => setInput(t)}
-                  />
-                  <PromptInputSubmit status={isLoading ? 'streaming' : 'ready'} />
-                </PromptInputTools>
-              </PromptInputFooter>
-            </PromptInput>
-          </div>
+  if (mode === 'embedded') {
+    return panel
+  }
+
+  return (
+    <div className="fixed right-4 bottom-4 z-50 lg:top-6 lg:bottom-6 lg:right-6">
+      {/* Mobile trigger (chat floats). Desktop is docked-right by default. */}
+      <div className="lg:hidden">
+        <Button
+          onClick={() => setIsOpen(!isOpen)}
+          className={cn(
+            'rounded-full w-14 h-14 p-0 shadow-2xl transition-all duration-300 hover:scale-105',
+            isOpen ? 'bg-destructive rotate-90' : 'bg-primary',
+          )}
+        >
+          {isOpen ? <X className="h-6 w-6" /> : <Bot className="h-7 w-7" />}
+        </Button>
+      </div>
+
+      {isOpen && (
+        <Card
+          className={cn(
+            // Mobile: modal-like panel above the button
+            'lg:hidden absolute bottom-20 right-0 w-[min(420px,calc(100vw-2rem))] shadow-2xl border-primary/10 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4',
+          )}
+        >
+          {panel}
         </Card>
       )}
+
+      {/* Desktop docked-right panel */}
+      <div className="hidden lg:block h-full">
+        {panel}
+      </div>
     </div>
   )
 }

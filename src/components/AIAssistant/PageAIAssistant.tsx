@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { PackagePreview } from '@/components/PackagePreview'
+import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 
 /** Editable template — matches manage chat “new listing” routing; user should edit title/description then click Generate. */
 const MANAGE_NEW_LISTING_PROMPT = `Create a new listing for my property.
@@ -1207,6 +1208,7 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
   // Primary variant for Magic Patterns design
   const isBookingsContext = context?.type === 'bookings'
+  const [mobileAssistantView, setMobileAssistantView] = useState<'manage' | 'marketplace'>('manage')
 
   // Handle estimate restoration for bookings context
   // Auto-restore if there's a latest estimate (either from URL param or latest estimate)
@@ -1325,6 +1327,37 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
 
         {/* Messages Area */}
         <div>
+          {isManageContext && (
+            <div className="mb-4 flex items-center justify-center lg:hidden">
+              <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setMobileAssistantView('manage')}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
+                    mobileAssistantView === 'manage'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:text-slate-900',
+                  )}
+                >
+                  Manage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileAssistantView('marketplace')}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
+                    mobileAssistantView === 'marketplace'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:text-slate-900',
+                  )}
+                >
+                  Marketplace
+                </button>
+              </div>
+            </div>
+          )}
+
           {isManageContext && chatError && (
             <div
               className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
@@ -1334,7 +1367,16 @@ ${previewData.yocoId ? `- yocoId: "${previewData.yocoId}"` : ''}`
             </div>
           )}
           {/* Render manage context messages with generative UI */}
-          {isManageContext && renderManageMessages()}
+          {isManageContext && (
+            <>
+              <div className={cn('lg:block', mobileAssistantView === 'manage' ? 'block' : 'hidden')}>
+                {renderManageMessages()}
+              </div>
+              <div className={cn('lg:hidden', mobileAssistantView === 'marketplace' ? 'block' : 'hidden')}>
+                <AIAssistant mode="embedded" />
+              </div>
+            </>
+          )}
 
           {/* Render simple response for bookings context */}
           {isBookingsContext && lastResponse && (
