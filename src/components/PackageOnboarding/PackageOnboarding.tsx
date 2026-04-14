@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
 import { PackagePreview } from '@/components/PackagePreview'
+import { toast } from '@payloadcms/ui'
 
 interface PackageOnboardingProps {
   postId: string
@@ -272,9 +273,13 @@ export function PackageOnboarding({
   }
 
   const handleDescribeSubmit = async () => {
-    if (!packageDescription.trim()) return
+    if (!packageDescription.trim()) {
+      toast.error('Please add a short package description.')
+      return
+    }
     if (!sendMessage) {
       console.error('sendMessage is not available on useChat')
+      toast.error('Assistant is not ready yet. Please try again.')
       return
     }
 
@@ -295,6 +300,7 @@ export function PackageOnboarding({
     } catch (e) {
       console.error(e)
       setIsGenerating(false)
+      toast.error('Could not generate a package preview. Please try again.')
     }
   }
 
@@ -642,7 +648,7 @@ export function PackageOnboarding({
 
   return (
     <div className={cn('w-full max-w-6xl mx-auto', className)}>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Package details (tool output only) */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -756,36 +762,6 @@ export function PackageOnboarding({
             </Card>
           )}
         </div>
-
-        {/* Assistant chat (messages live here) */}
-        <aside className="lg:sticky lg:top-6 h-fit">
-          <Card className="border-2 border-slate-200 shadow-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-200 bg-white">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-full bg-teal-50 flex items-center justify-center">
-                  <Sparkles className="h-4 w-4 text-teal-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-slate-900">AI Assistant</div>
-                  <div className="text-xs text-slate-500">
-                    {propertyTitle?.trim()
-                      ? `Property: ${propertyTitle.trim()}`
-                      : 'Package generation'}
-                  </div>
-                </div>
-              </div>
-              {propertyTitle?.trim() && (
-                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                  Tip: Mention the stay length, what’s included, and any farm-style highlights guests should expect.
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 max-h-[520px] overflow-y-auto bg-white">
-              {renderMessages()}
-            </div>
-          </Card>
-        </aside>
       </div>
     </div>
   )
