@@ -1,5 +1,4 @@
 'use client'
-import { AIAssistant } from '@/components/AIAssistant/AIAssistant'
 import { useHeaderTheme } from '@/providers/HeaderTheme'
 import React, { useEffect } from 'react'
 import { motion } from 'framer-motion'
@@ -64,8 +63,6 @@ const PageClient: React.FC<PageClientProps> = ({ post }) => {
 
   return (
     <>
-      <AIAssistant />
-      
       {/* Set context for AI Assistant */}
       {post && (
         <script
