@@ -116,7 +116,12 @@ export function PropertyHeroEditor({ postId, onListingDeleted }: PropertyHeroEdi
       const patchRes = await fetch(`/api/posts/${postId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ heroImage: mediaId }),
+        body: JSON.stringify({
+          heroImage: mediaId,
+          meta: {
+            image: mediaId,
+          },
+        }),
       })
       const patchData = await patchRes.json().catch(() => ({}))
       if (!patchRes.ok) {
@@ -186,7 +191,12 @@ export function PropertyHeroEditor({ postId, onListingDeleted }: PropertyHeroEdi
       const patchRes = await fetch(`/api/posts/${postId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ heroImage: null }),
+        body: JSON.stringify({
+          heroImage: null,
+          meta: {
+            image: null,
+          },
+        }),
       })
       const patchData = await patchRes.json().catch(() => ({}))
       if (!patchRes.ok) throw new Error(patchData?.error || "Failed to remove hero image")

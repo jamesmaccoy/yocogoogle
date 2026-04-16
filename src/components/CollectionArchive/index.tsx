@@ -3,6 +3,8 @@ import React from 'react'
 
 import { CardPostData } from '@/components/Card'
 import { LuxuryCard } from '@/components/ui/LuxuryCard'
+import { getMediaUrl } from '@/utilities/getMediaUrl'
+import type { Media } from '@/payload-types'
 
 export type Props = {
   posts: CardPostData[]
@@ -17,8 +19,18 @@ export const CollectionArchive: React.FC<Props> = (props) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
           {posts?.map((result, index) => {
             if (typeof result === 'object' && result !== null) {
-              const { slug, categories, meta, title } = result
+              const { slug, categories, meta, title, heroImage } = result
               const { description, image: metaImage } = meta || {}
+
+              const imageCandidate = heroImage || metaImage
+              let thumbnailUrl: string | null = null
+              if (typeof imageCandidate === 'string') {
+                thumbnailUrl = imageCandidate
+              } else if (imageCandidate && typeof imageCandidate === 'object') {
+                const m = imageCandidate as Media
+                const url = m.sizes?.thumbnail?.url || m.thumbnailURL || m.url
+                thumbnailUrl = url ? getMediaUrl(url, m.updatedAt) : null
+              }
               
               // Format categories for subtitle/tags
               const categoryTitles = categories
@@ -38,7 +50,7 @@ export const CollectionArchive: React.FC<Props> = (props) => {
               return (
                 <LuxuryCard
                   key={slug || index}
-                  image={metaImage}
+                  image={thumbnailUrl}
                   title={title || 'Untitled'}
                   subtitle={subtitle}
                   description={description || undefined}

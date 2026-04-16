@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
       title: title.slice(0, 120),
       meta: {
         description: description ? description.slice(0, 300) : null,
+        ...(heroImage ? { image: heroImage } : {}),
       },
       content: buildMinimalPostContent(
         (description || 'Draft property created from Manage. Add details and publish when ready.').slice(0, 8000),
