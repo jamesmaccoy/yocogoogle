@@ -6,6 +6,7 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { z } from 'zod'
 import { BASE_PACKAGE_TEMPLATES, getDefaultPackageTitle } from '@/lib/package-types'
+import { sendPackageActivityNotification } from '@/lib/emailNotifications'
 
 // Zod schemas to validate structured JSON that is streamed to the UI
 const packagePreviewSchema = z.object({
@@ -681,6 +682,29 @@ export async function POST(request: NextRequest) {
             user,
           })
 
+          try {
+            const actorEmail = typeof (user as any)?.email === 'string' ? ((user as any).email as string) : ''
+            const postId =
+              typeof (updated as any)?.post === 'string' ? (updated as any).post : (updated as any)?.post?.id
+            const propertyTitle =
+              typeof (updated as any)?.post === 'object' && typeof (updated as any)?.post?.title === 'string'
+                ? (updated as any).post.title
+                : undefined
+            if (actorEmail) {
+              await sendPackageActivityNotification({
+                actorEmail,
+                action: 'updated',
+                packageId: String((updated as any).id),
+                packageName: String((updated as any).name || 'Package'),
+                postId: postId ? String(postId) : undefined,
+                propertyTitle,
+                threadSubject: `Package activity: ${String((updated as any).name || 'Package')}${propertyTitle ? ` (${propertyTitle})` : ''}`,
+              })
+            }
+          } catch (emailErr) {
+            console.warn('Package activity email failed (non-fatal):', emailErr)
+          }
+
           return {
             success: true,
             package: {
@@ -717,6 +741,29 @@ export async function POST(request: NextRequest) {
             id: packageId,
             user,
           })
+
+          try {
+            const actorEmail = typeof (user as any)?.email === 'string' ? ((user as any).email as string) : ''
+            const postId =
+              typeof (deleted as any)?.post === 'string' ? (deleted as any).post : (deleted as any)?.post?.id
+            const propertyTitle =
+              typeof (deleted as any)?.post === 'object' && typeof (deleted as any)?.post?.title === 'string'
+                ? (deleted as any).post.title
+                : undefined
+            if (actorEmail) {
+              await sendPackageActivityNotification({
+                actorEmail,
+                action: 'deleted',
+                packageId: String((deleted as any).id || packageId),
+                packageName: String((deleted as any).name || 'Package'),
+                postId: postId ? String(postId) : undefined,
+                propertyTitle,
+                threadSubject: `Package activity: ${String((deleted as any).name || 'Package')}${propertyTitle ? ` (${propertyTitle})` : ''}`,
+              })
+            }
+          } catch (emailErr) {
+            console.warn('Package activity email failed (non-fatal):', emailErr)
+          }
 
           return {
             success: true,

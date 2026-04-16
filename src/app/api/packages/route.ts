@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
+import { sendPackageActivityNotification } from '@/lib/emailNotifications'
 
 export async function GET(request: NextRequest) {
   try {
@@ -94,6 +95,36 @@ export async function POST(request: NextRequest) {
       data: body,
       user,
     })
+
+    // Fire-and-forget confirmation email to actor + admin
+    try {
+      const actorEmail =
+        typeof (user as any)?.email === 'string' ? ((user as any).email as string) : ''
+      const postId =
+        typeof (packageDoc as any)?.post === 'string'
+          ? (packageDoc as any).post
+          : (packageDoc as any)?.post?.id
+      let propertyTitle: string | undefined
+      if (postId) {
+        try {
+          const post = await payload.findByID({ collection: 'posts', id: String(postId), depth: 0, user })
+          propertyTitle = typeof (post as any)?.title === 'string' ? (post as any).title : undefined
+        } catch {}
+      }
+      if (actorEmail) {
+        await sendPackageActivityNotification({
+          actorEmail,
+          action: 'created',
+          packageId: String((packageDoc as any).id),
+          packageName: String((packageDoc as any).name || 'Package'),
+          postId: postId ? String(postId) : undefined,
+          propertyTitle,
+          threadSubject: `Package activity: ${String((packageDoc as any).name || 'Package')}${propertyTitle ? ` (${propertyTitle})` : ''}`,
+        })
+      }
+    } catch (emailErr) {
+      console.warn('Package activity email failed (non-fatal):', emailErr)
+    }
     
     return NextResponse.json(packageDoc)
   } catch (error) {

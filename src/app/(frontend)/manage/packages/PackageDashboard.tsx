@@ -56,11 +56,35 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [isDeletingPackage, setIsDeletingPackage] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   /** When set, onboarding calls updatePackageTool for this package; otherwise create flow */
   const [onboardingExistingPackageId, setOnboardingExistingPackageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleDeletePackage = async (pkg: { id: string; name?: string }) => {
+    if (!pkg?.id) return
+    const ok = window.confirm(`Remove "${pkg.name || 'this package'}" permanently? This cannot be undone.`)
+    if (!ok) return
+
+    setIsDeletingPackage(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const res = await fetch(`/api/packages/${pkg.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error || `Failed to delete package (HTTP ${res.status})`)
+      }
+      setSuccess('Package removed.')
+      await loadPackages()
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete package')
+    } finally {
+      setIsDeletingPackage(false)
+    }
+  }
 
   const loadPackages = async () => {
     if (!postId) return;
@@ -804,6 +828,24 @@ export default function PackageDashboard({ postId, startOnboarding }: PackageDas
                             </div>
                           )}
                           <DialogFooter>
+                            <Button
+                              variant="destructive"
+                              onClick={async () => {
+                                if (!editingPackage) return
+                                await handleDeletePackage({ id: editingPackage.id, name: editingPackage.name })
+                                setEditingPackage(null)
+                              }}
+                              disabled={!editingPackage?.id || isDeletingPackage}
+                            >
+                              {isDeletingPackage ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Removing…
+                                </>
+                              ) : (
+                                'Remove'
+                              )}
+                            </Button>
                             <Button
                               variant="outline"
                               onClick={() => setEditingPackage(null)}

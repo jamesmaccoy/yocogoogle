@@ -36,6 +36,135 @@ export interface EstimateRequestNotification {
   estimateRequestId: string
 }
 
+export type PackageActivityAction = 'created' | 'updated' | 'deleted'
+
+export type PackageActivityNotification = {
+  /** Email of the acting user (customer/host) */
+  actorEmail: string
+  actorName?: string
+  /** Admin/operator recipient (defaults to info@simpleplek.co.za) */
+  adminEmail?: string
+  action: PackageActivityAction
+  packageId: string
+  packageName: string
+  propertyTitle?: string
+  postId?: string
+  /** Stable subject for threading */
+  threadSubject?: string
+  /** Freeform details (what changed, etc.) */
+  details?: string
+}
+
+function getAdminNotificationEmail(): string {
+  const candidate =
+    process.env.ADMIN_NOTIFICATION_EMAIL?.trim() ||
+    process.env.ADMIN_EMAIL?.trim() ||
+    process.env.EMAIL_ADMIN?.trim() ||
+    ''
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (candidate && emailRegex.test(candidate)) return candidate
+  return 'info@simpleplek.co.za'
+}
+
+function escapeHtmlInline(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function getActionLabel(action: PackageActivityAction) {
+  if (action === 'created') return 'Package created'
+  if (action === 'updated') return 'Package updated'
+  return 'Package deleted'
+}
+
+function buildPackageActivityEmailHTML(data: PackageActivityNotification): string {
+  const title = getActionLabel(data.action)
+  const property = data.propertyTitle ? escapeHtmlInline(data.propertyTitle) : 'Unknown property'
+  const pkgName = escapeHtmlInline(data.packageName)
+  const pkgId = escapeHtmlInline(data.packageId)
+  const details = data.details ? escapeHtmlInline(data.details) : ''
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${title}</title>
+  </head>
+  <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;background:#f8fafc;margin:0;padding:0;">
+    <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+      <div style="padding:20px 24px;background:#0f172a;color:#fff;">
+        <h1 style="margin:0;font-size:18px;font-weight:700;">${title}</h1>
+        <p style="margin:8px 0 0 0;opacity:0.85;font-size:14px;">${property}</p>
+      </div>
+      <div style="padding:22px 24px;">
+        <p style="margin:0 0 14px 0;font-size:14px;color:#0f172a;"><strong>Package:</strong> ${pkgName}</p>
+        <p style="margin:0 0 14px 0;font-size:14px;color:#0f172a;"><strong>Package ID:</strong> ${pkgId}</p>
+        ${details ? `<div style="margin-top:14px;padding:14px 16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+          <p style="margin:0;font-size:13px;color:#334155;white-space:pre-wrap;">${details}</p>
+        </div>` : ''}
+        <p style="margin:18px 0 0 0;font-size:12px;color:#64748b;">This is an automated confirmation from Simpleplek.</p>
+      </div>
+    </div>
+  </body>
+</html>`
+}
+
+function buildPackageActivityEmailText(data: PackageActivityNotification): string {
+  const title = getActionLabel(data.action)
+  const property = data.propertyTitle || 'Unknown property'
+  const lines = [
+    title,
+    '',
+    `Property: ${property}`,
+    `Package: ${data.packageName}`,
+    `Package ID: ${data.packageId}`,
+  ]
+  if (data.details) {
+    lines.push('', 'Details:', data.details)
+  }
+  return lines.join('\n')
+}
+
+export async function sendPackageActivityNotification(input: PackageActivityNotification): Promise<void> {
+  const actorEmail = input.actorEmail?.trim()
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!actorEmail || !emailRegex.test(actorEmail)) {
+    throw new Error(`Invalid actor email address: ${actorEmail}`)
+  }
+
+  const adminEmail = (input.adminEmail?.trim() && emailRegex.test(input.adminEmail.trim()))
+    ? input.adminEmail.trim()
+    : getAdminNotificationEmail()
+
+  const fromField = getFromField()
+  const subject =
+    input.threadSubject?.trim() ||
+    `Package activity: ${input.packageName}${input.propertyTitle ? ` (${input.propertyTitle})` : ''}`
+
+  const html = buildPackageActivityEmailHTML({ ...input, adminEmail })
+  const text = buildPackageActivityEmailText({ ...input, adminEmail })
+
+  // Send to both actor and admin. Using the same subject enables threading in many clients.
+  const recipients = Array.from(new Set([actorEmail, adminEmail].filter(Boolean)))
+
+  const { error } = await resend.emails.send({
+    from: fromField,
+    to: recipients,
+    subject,
+    html,
+    text,
+  })
+
+  if (error) {
+    throw new Error(`Failed to send package activity email: ${error.message}`)
+  }
+}
+
 export async function sendEstimateRequestNotification(data: EstimateRequestNotification): Promise<void> {
   try {
     console.log('📧 Sending estimate request notification via Resend API')

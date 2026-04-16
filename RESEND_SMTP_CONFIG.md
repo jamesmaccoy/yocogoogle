@@ -15,6 +15,7 @@ SMTP_USER=resend
 SMTP_PASS=your_resend_api_key_here
 EMAIL_FROM_ADDRESS=noreply@yourdomain.com
 EMAIL_FROM_NAME=Betaplek
+ADMIN_NOTIFICATION_EMAIL=info@yourdomain.com
 ```
 
 ## Resend Setup
@@ -36,6 +37,7 @@ EMAIL_FROM_NAME=Betaplek
    - Set `SMTP_PASS` to your Resend API key
    - Set `EMAIL_FROM_ADDRESS` to your verified domain email
    - Set `EMAIL_FROM_NAME` to your preferred sender name
+   - Set `ADMIN_NOTIFICATION_EMAIL` to the administrator inbox that should receive package activity confirmations (create/update/delete)
 
 ## Email Features
 
