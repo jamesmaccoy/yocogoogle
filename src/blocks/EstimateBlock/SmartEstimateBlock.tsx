@@ -475,23 +475,36 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     return filtered
   }, [customerEntitlement])
 
+  const computeSelectedDuration = useCallback(
+    (from: Date | null, to: Date | null, perHour: boolean): number | null => {
+      if (!from || !to) return null
+
+      // "Per hour" packages are modeled as half-day (0.5 nights)
+      if (perHour) return 0.5
+
+      // Normalize dates to midnight for accurate calculation
+      const normalizedStart = new Date(from)
+      normalizedStart.setHours(0, 0, 0, 0)
+      const normalizedEnd = new Date(to)
+      normalizedEnd.setHours(0, 0, 0, 0)
+
+      const diffDays =
+        (normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24)
+      if (!Number.isFinite(diffDays)) return null
+
+      // Ensure a minimum of 1 "night" for same-day selections
+      return Math.max(1, Math.ceil(diffDays))
+    },
+    [],
+  )
+
   // Recalculate duration when dates change
   useEffect(() => {
-    if (startDate && endDate) {
-      // Normalize dates to midnight for accurate calculation
-      const normalizedStart = new Date(startDate)
-      normalizedStart.setHours(0, 0, 0, 0)
-      const normalizedEnd = new Date(endDate)
-      normalizedEnd.setHours(0, 0, 0, 0)
-      
-      // Calculate nights (difference in days)
-      const calculatedDuration = Math.ceil((normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24))
-      
-      if (calculatedDuration > 0) {
-        setDuration(calculatedDuration)
-      }
+    const calculatedDuration = computeSelectedDuration(startDate, endDate, showPerHourPackages)
+    if (calculatedDuration != null) {
+      setDuration(calculatedDuration)
     }
-  }, [startDate, endDate])
+  }, [startDate, endDate, showPerHourPackages, computeSelectedDuration])
 
   // Helper function to normalize date to YYYY-MM-DD format for comparison
   const normalizeDateToString = (date: Date | string): string => {
@@ -1916,13 +1929,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       // Filter packages by duration if dates are selected
       let suitablePackages = filteredPackages
       if (startDate && endDate) {
-        // Normalize dates to midnight for accurate calculation
-        const normalizedStart = new Date(startDate)
-        normalizedStart.setHours(0, 0, 0, 0)
-        const normalizedEnd = new Date(endDate)
-        normalizedEnd.setHours(0, 0, 0, 0)
-        
-        const selectedDuration = Math.ceil((normalizedEnd.getTime() - normalizedStart.getTime()) / (1000 * 60 * 60 * 24))
+        const selectedDuration =
+          computeSelectedDuration(startDate, endDate, showPerHourPackages) ?? duration
         setDuration(selectedDuration)
         
         // Filter packages that match the duration
@@ -1971,13 +1979,29 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       const sortedPackages = suitablePackages.sort((a: any, b: any) => {
         
         // Prioritize packages that exactly match the duration
-        const aExactMatch = startDate && endDate ? 
-          (duration >= a.minNights && duration <= a.maxNights) : false
-        const bExactMatch = startDate && endDate ? 
-          (duration >= b.minNights && duration <= b.maxNights) : false
+        const selectedDuration =
+          startDate && endDate
+            ? computeSelectedDuration(startDate, endDate, showPerHourPackages) ?? duration
+            : duration
+
+        const aExactMatch = startDate && endDate ?
+          (selectedDuration >= a.minNights && selectedDuration <= a.maxNights) : false
+        const bExactMatch = startDate && endDate ?
+          (selectedDuration >= b.minNights && selectedDuration <= b.maxNights) : false
         
         if (aExactMatch && !bExactMatch) return -1
         if (!aExactMatch && bExactMatch) return 1
+
+        // Ensure Studio hire is visible for short stays / per-hour mode when it matches
+        const isStudioHire = (p: any) =>
+          p?.id === '68a58832420e4517de8d2bdb' || String(p?.name || '').includes('Studio hire')
+
+        if (selectedDuration <= 1) {
+          const aIsStudio = isStudioHire(a)
+          const bIsStudio = isStudioHire(b)
+          if (aIsStudio && !bIsStudio) return -1
+          if (!aIsStudio && bIsStudio) return 1
+        }
         
         // Then sort by category priority (special > hosted > standard)
         // Note: addon packages are filtered out earlier and should not appear here
@@ -3080,7 +3104,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
                     
                     setStartDate(newStartDate)
                     setEndDate(newEndDate)
-                    setDuration(1)
+                    setDuration(0.5)
                     // Reset to allow new package suggestions
                     packagesSuggestedRef.current = false
                   }
