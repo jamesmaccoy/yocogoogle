@@ -1924,10 +1924,14 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       return
     }
     
+    // Always derive from the full package list (never from top-3 suggestions)
+    const sourcePackages =
+      originalPackagesRef.current.length > 0 ? originalPackagesRef.current : packages
+
     // Use existing packages instead of making new API calls
-    if (packages.length > 0) {
+    if (sourcePackages.length > 0) {
       // Apply entitlement filtering first
-      const filteredPackages = filterPackagesByEntitlement(packages)
+      const filteredPackages = filterPackagesByEntitlement(sourcePackages)
       
       // Filter packages by duration if dates are selected
       let suitablePackages = filteredPackages
@@ -2045,6 +2049,8 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
         .then(data => {
           // Apply entitlement filtering first
           const allPackages = filterPackagesByEntitlement((data.packages || []).filter((pkg: Package) => pkg.isEnabled))
+          // Store originals for future re-filtering (do not overwrite the UI list with suggestions)
+          originalPackagesRef.current = data.packages || []
           
           // Filter packages by duration if dates are selected
           let suitablePackages = allPackages
@@ -2096,7 +2102,6 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
           
           // Take top 3 packages
           const suggestedPackages = sortedPackages.slice(0, 3)
-          setPackages(suggestedPackages)
           
           // Create personalized message based on duration
           let message = ''
