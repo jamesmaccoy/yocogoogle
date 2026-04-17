@@ -308,6 +308,9 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
   
   // Ref to prevent package suggestions from being triggered repeatedly
   const packagesSuggestedRef = useRef(false)
+
+  // Ref to prevent duplicate package suggestions for same selection
+  const lastPackageSuggestionKeyRef = useRef<string | null>(null)
   
   // Ref to store original packages for re-filtering
   const originalPackagesRef = useRef<Package[]>([])
@@ -2353,7 +2356,10 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
     
     // Update dates if parsed successfully and update estimate
     if (parsedDates.startDate && parsedDates.endDate) {
-      const newDuration = parsedDates.duration || Math.ceil((parsedDates.endDate.getTime() - parsedDates.startDate.getTime()) / (1000 * 60 * 60 * 24))
+      const newDuration =
+        parsedDates.duration ||
+        computeSelectedDuration(parsedDates.startDate, parsedDates.endDate, showPerHourPackages) ||
+        duration
       
       // Update state immediately
       setStartDate(parsedDates.startDate)
@@ -2362,6 +2368,7 @@ export const SmartEstimateBlock: React.FC<SmartEstimateBlockProps> = ({
       
       // Reset package suggestions to allow new suggestions for new dates
       packagesSuggestedRef.current = false
+      lastPackageSuggestionKeyRef.current = null
       
       // IMPORTANT: Check availability BEFORE updating estimate to prevent creating estimates with unavailable dates
       console.log('🔍 Checking availability with parsed dates:', {
@@ -2591,9 +2598,11 @@ ${packages.map((pkg: any, index: number) =>
       // This ensures the AI sees the dates the user just entered
       const effectiveStartDate = parsedDates.startDate || startDate
       const effectiveEndDate = parsedDates.endDate || endDate
-      const effectiveDuration = parsedDates.duration || (effectiveStartDate && effectiveEndDate 
-        ? Math.ceil((effectiveEndDate.getTime() - effectiveStartDate.getTime()) / (1000 * 60 * 60 * 24))
-        : duration)
+      const effectiveDuration =
+        parsedDates.duration ||
+        (effectiveStartDate && effectiveEndDate
+          ? computeSelectedDuration(effectiveStartDate, effectiveEndDate, showPerHourPackages) || duration
+          : duration)
       
       // Format related posts with titles and slugs for better AI reference
       const relatedPostsList = Array.isArray(relatedPosts) && relatedPosts.length > 0
@@ -3263,8 +3272,7 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
   useEffect(() => {
     if (!startDate || !endDate) return
 
-    const msPerDay = 1000 * 60 * 60 * 24
-    const newDuration = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / msPerDay))
+    const newDuration = computeSelectedDuration(startDate, endDate, showPerHourPackages) ?? duration
     if (newDuration !== duration) {
       setDuration(newDuration)
     }
@@ -3280,8 +3288,14 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
     }
 
     if (packagesSuggestedRef.current) {
+      // Don't spam messages, but still allow re-suggesting when the selection changes
+    }
+
+    const selectionKey = `${startDate.toISOString()}|${endDate.toISOString()}|${showPerHourPackages ? 'per_hour' : 'per_night'}`
+    if (lastPackageSuggestionKeyRef.current === selectionKey) {
       return
     }
+    lastPackageSuggestionKeyRef.current = selectionKey
 
     if (latestEstimate && latestEstimate.fromDate && latestEstimate.toDate) {
       const estimateFrom = new Date(latestEstimate.fromDate)
@@ -3316,9 +3330,10 @@ ${parsedDates.startDate && parsedDates.endDate ? `\nIMPORTANT: User just request
       }
     }
 
+    // If user is actively changing dates, re-suggest packages for the new selection
     packagesSuggestedRef.current = true
     suggestPackagesAfterDateSelection()
-  }, [startDate, endDate, latestEstimate, duration]) // Removed messages.length to prevent infinite loop
+  }, [startDate, endDate, latestEstimate, duration, showPerHourPackages, computeSelectedDuration])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
