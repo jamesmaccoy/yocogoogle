@@ -36,7 +36,7 @@ function TabButton({
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = React.useState<Tab>('password')
+  const [mode, setMode] = React.useState<Tab>('email')
   const searchParams = useSearchParams()
   const registered = searchParams.get('registered') === 'true'
 
@@ -125,14 +125,14 @@ export default function LoginPage() {
           {/* Tab Navigation */}
           <div className="relative flex bg-zinc-100/80 p-1 rounded-lg mb-8 border border-zinc-200/50">
             <TabButton
-              isActive={mode === 'password'}
-              onClick={() => setMode('password')}
-              label="Email + Password"
-            />
-            <TabButton
               isActive={mode === 'email'}
               onClick={() => setMode('email')}
               label="Mobile OTP"
+            />
+            <TabButton
+              isActive={mode === 'password'}
+              onClick={() => setMode('password')}
+              label="Password"
             />
           </div>
 

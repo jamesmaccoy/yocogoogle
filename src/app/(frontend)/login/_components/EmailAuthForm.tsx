@@ -9,6 +9,7 @@ import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/comp
 import { useUserContext } from '@/context/UserContext'
 
 type MobileFormValues = {
+  countryCode: string
   mobile: string
 }
 
@@ -70,19 +71,24 @@ export default function EmailAuthForm() {
   const { handleAuthChange } = useUserContext()
 
   const form = useForm<MobileFormValues>({
-    defaultValues: { mobile: '' },
+    defaultValues: { countryCode: '+27', mobile: '' },
   })
 
   const handleSendOtp = async (values: MobileFormValues) => {
     setLoading(true)
     setError(null)
     try {
+      const localMobileDigits = values.mobile.replace(/\D/g, '')
+      const normalizedMobile = `${values.countryCode}${localMobileDigits.replace(/^0+/, '')}`
       const res = await fetch('/api/authRequests/magic', {
         method: 'POST',
-        body: JSON.stringify({ mobile: values.mobile }),
+        body: JSON.stringify({ mobile: normalizedMobile }),
         headers: { 'Content-Type': 'application/json' },
       })
-      if (!res.ok) throw new Error('Failed to send OTP')
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.message || 'Failed to send OTP')
+      }
 
       const data = await res.json()
 
@@ -130,16 +136,25 @@ export default function EmailAuthForm() {
             >
               Mobile Number
             </label>
-            <Input
-              id="mobile"
-              type="tel"
-              placeholder="+27821234567"
-              autoComplete="tel"
-              autoCapitalize="none"
-              autoCorrect="off"
-              {...form.register('mobile', { required: true })}
-              className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
+            <div className="flex gap-2">
+              <select
+                aria-label="Country code"
+                {...form.register('countryCode', { required: true })}
+                className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+              >
+                <option value="+27">South Africa (+27)</option>
+              </select>
+              <Input
+                id="mobile"
+                type="tel"
+                placeholder="82 123 4567"
+                autoComplete="tel-national"
+                autoCapitalize="none"
+                autoCorrect="off"
+                {...form.register('mobile', { required: true })}
+                className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
           </div>
           <Button
             className="w-full mt-2 h-10"

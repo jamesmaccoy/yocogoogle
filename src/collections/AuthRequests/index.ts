@@ -1,7 +1,6 @@
 import { CollectionConfig } from 'payload'
 import { InitiateMagicAuth } from './endpoints/initiate-magic-auth'
 import { VerifyCode } from './endpoints/verify-code'
-import { sendMagicEmail } from './hooks/send-magic-email'
 import { removeAuthRequest } from './hooks/remove-auth-request'
 
 export const AuthRequests: CollectionConfig = {
@@ -10,7 +9,6 @@ export const AuthRequests: CollectionConfig = {
     hidden: true,
   },
   hooks: {
-    afterChange: [sendMagicEmail],
     afterRead: [removeAuthRequest],
   },
   endpoints: [InitiateMagicAuth, VerifyCode],
