@@ -2,6 +2,7 @@ import { APIError, Endpoint } from 'payload'
 import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { cookies } from 'next/headers'
+import { validateRedirect } from '@/utils/validateRedirect'
 
 export const VerifyMagicToken: Endpoint = {
   method: 'get',
@@ -43,6 +44,7 @@ export const VerifyMagicToken: Endpoint = {
       const authRequest = await req.payload.findByID({
         id: authRequestId,
         collection: 'authRequests',
+        overrideAccess: true,
       })
 
       if (
@@ -68,6 +70,7 @@ export const VerifyMagicToken: Endpoint = {
             equals: email,
           },
         },
+        overrideAccess: true,
         pagination: false,
         limit: 1,
       })
@@ -82,6 +85,7 @@ export const VerifyMagicToken: Endpoint = {
             password: crypto.randomBytes(16).toString('hex'), // Generate a random password
             name: email.split('@')[0], // Use email prefix as name
           },
+          overrideAccess: true,
         })
       }
 
@@ -113,12 +117,27 @@ export const VerifyMagicToken: Endpoint = {
             : collectionConfig.auth.cookies.sameSite,
         domain: collectionConfig.auth.cookies.domain,
       })
+      cookieStore.set('payload-token', authToken, {
+        path: '/',
+        httpOnly: true,
+        maxAge: collectionConfig.auth.tokenExpiration,
+        secure: collectionConfig.auth.cookies.secure,
+        sameSite:
+          typeof collectionConfig.auth.cookies.sameSite === 'string'
+            ? (collectionConfig.auth.cookies.sameSite.toLowerCase() as 'lax' | 'strict' | 'none')
+            : collectionConfig.auth.cookies.sameSite,
+        domain: collectionConfig.auth.cookies.domain,
+      })
 
-      // Use production URL in production, localhost in development
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? (process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'https://www.simpleplek.co.za')
-        : (process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000')
-      return Response.redirect(`${baseUrl}/bookings`)
+      const next =
+        typeof decodedPayload === 'object' && decodedPayload && 'next' in decodedPayload
+          ? validateRedirect((decodedPayload as any).next)
+          : null
+
+      const baseUrl =
+        process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+
+      return Response.redirect(`${baseUrl}${next || '/bookings'}`)
     } catch (err) {
       console.error('Error verifying magic token:', err)
 

@@ -64,6 +64,7 @@ export const InitiateMagicAuth: Endpoint = {
           code,
           expiresAt: addMinutes(new Date(), 15).toISOString(), // Code expires in 10 minutes
         },
+        overrideAccess: true,
       })
 
       const twilioClient = Twilio(accountSid, authToken)

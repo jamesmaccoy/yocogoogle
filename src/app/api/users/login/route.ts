@@ -40,14 +40,17 @@ export async function POST(request: NextRequest) {
       user: safeUser
     })
 
-    // Set the authentication cookie
-    response.cookies.set('payload-token', token, {
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 7, // 7 days
-    })
+    } as const
+
+    // Set the authentication cookies (support both legacy + Payload prefix)
+    response.cookies.set(`${payload.config.cookiePrefix}-token`, token, cookieOptions)
+    response.cookies.set('payload-token', token, cookieOptions)
 
     return response
   } catch (error) {

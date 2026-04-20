@@ -16,6 +16,10 @@ type IdentifierFormValues = {
   countryCode: string
 }
 
+function isEmailIdentifier(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
 function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; loading: boolean }) {
   const [value, setValue] = React.useState('')
 
@@ -62,7 +66,9 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
 }
 
 export default function EmailAuthForm() {
-  const [step, setStep] = React.useState<'identifier' | 'password' | 'otp'>('identifier')
+  const [step, setStep] = React.useState<'identifier' | 'password' | 'otp' | 'emailSent'>(
+    'identifier',
+  )
   const [email, setEmail] = React.useState('')
   const [mobile, setMobile] = React.useState('')
   const [authRequestId, setAuthRequestId] = React.useState('')
@@ -82,12 +88,35 @@ export default function EmailAuthForm() {
 
   const handleIdentifier = async (values: IdentifierFormValues) => {
     const identifier = values.identifier.trim()
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)
+    const isEmail = isEmailIdentifier(identifier)
 
     if (isEmail) {
-      setEmail(identifier.toLowerCase())
-      setStep('password')
+      setLoading(true)
       setError(null)
+      try {
+        const normalizedEmail = identifier.toLowerCase()
+        setEmail(normalizedEmail)
+
+        const validatedNext = validateRedirect(next)
+
+        const res = await fetch('/api/authRequests/magic-email', {
+          method: 'POST',
+          body: JSON.stringify({ email: normalizedEmail, next: validatedNext || undefined }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => null)
+          throw new Error(data?.message || 'Failed to send magic link')
+        }
+
+        setStep('emailSent')
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to send magic link')
+      } finally {
+        setLoading(false)
+      }
+
       return
     }
 
@@ -228,6 +257,24 @@ export default function EmailAuthForm() {
             )}
           </Button>
 
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full h-10"
+            onClick={() => {
+              const identifier = String(form.getValues('identifier') || '').trim()
+              if (!isEmailIdentifier(identifier)) {
+                setError('Enter your email above to use password login.')
+                return
+              }
+              setEmail(identifier.toLowerCase())
+              setStep('password')
+              setError(null)
+            }}
+          >
+            Use password instead
+          </Button>
+
           <div className="relative my-1">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t border-zinc-200" />
@@ -256,6 +303,24 @@ export default function EmailAuthForm() {
             Sign in with Google
           </Button>
         </form>
+      )}
+
+      {step === 'emailSent' && (
+        <div className="grid gap-4">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-zinc-900">Check your email</p>
+            <p className="text-sm text-zinc-500">
+              We sent a sign-in link to <span className="font-medium text-zinc-900">{email}</span>.
+            </p>
+            <p className="text-xs text-zinc-400">The link expires in 15 minutes.</p>
+          </div>
+          {error && <div className="bg-red-100 text-red-700 p-3 rounded-md">{error}</div>}
+          <div className="grid gap-2">
+            <Button type="button" variant="outline" onClick={() => setStep('identifier')}>
+              Back
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 'password' && (

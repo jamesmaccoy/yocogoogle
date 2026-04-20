@@ -35,6 +35,7 @@ export const VerifyCode: Endpoint = {
     const authRequest = await req.payload.findByID({
       id: requestId,
       collection: 'authRequests',
+      overrideAccess: true,
     })
 
     if (!authRequest) {
@@ -96,6 +97,7 @@ export const VerifyCode: Endpoint = {
           equals: mobile,
         },
       },
+      overrideAccess: true,
       pagination: false,
       limit: 1,
     })
@@ -129,6 +131,17 @@ export const VerifyCode: Endpoint = {
     const cookieStore = await cookies()
 
     cookieStore.set(`${req.payload.config.cookiePrefix}-token`, token, {
+      path: '/',
+      httpOnly: true,
+      maxAge: collectionConfig.auth.tokenExpiration,
+      secure: collectionConfig.auth.cookies.secure,
+      sameSite:
+        typeof collectionConfig.auth.cookies.sameSite === 'string'
+          ? (collectionConfig.auth.cookies.sameSite.toLowerCase() as 'lax' | 'strict' | 'none')
+          : collectionConfig.auth.cookies.sameSite,
+      domain: collectionConfig.auth.cookies.domain,
+    })
+    cookieStore.set('payload-token', token, {
       path: '/',
       httpOnly: true,
       maxAge: collectionConfig.auth.tokenExpiration,
