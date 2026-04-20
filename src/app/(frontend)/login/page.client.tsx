@@ -1,42 +1,13 @@
 'use client'
 
 import React from 'react'
-import EmailPasswordForm from './_components/EmailPasswordForm'
 import EmailAuthForm from './_components/EmailAuthForm'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { CheckCircle2Icon, Command, Quote } from 'lucide-react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
-type Tab = 'password' | 'email'
-
-function TabButton({
-  isActive,
-  onClick,
-  label,
-}: {
-  isActive: boolean
-  onClick: () => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`
-        flex-1 flex items-center justify-center h-9 text-sm font-medium rounded-md transition-all duration-200
-        ${isActive
-          ? 'bg-primary text-primary-foreground shadow-sm'
-          : 'bg-secondary/50 text-secondary-foreground hover:bg-secondary/70'}
-      `}
-    >
-      {label}
-    </button>
-  )
-}
-
 export default function LoginPage() {
-  const [mode, setMode] = React.useState<Tab>('email')
   const searchParams = useSearchParams()
   const registered = searchParams.get('registered') === 'true'
 
@@ -122,22 +93,7 @@ export default function LoginPage() {
             </Alert>
           )}
 
-          {/* Tab Navigation */}
-          <div className="relative flex bg-zinc-100/80 p-1 rounded-lg mb-8 border border-zinc-200/50">
-            <TabButton
-              isActive={mode === 'email'}
-              onClick={() => setMode('email')}
-              label="Mobile OTP"
-            />
-            <TabButton
-              isActive={mode === 'password'}
-              onClick={() => setMode('password')}
-              label="Password"
-            />
-          </div>
-
-          {/* Form Component */}
-          {mode === 'password' ? <EmailPasswordForm /> : <EmailAuthForm />}
+          <EmailAuthForm />
 
           {/* Footer */}
           <div className="mt-6 space-y-3">
