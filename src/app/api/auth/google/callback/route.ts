@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { google } from 'googleapis'
 import jwt from 'jsonwebtoken'
 import crypto from 'node:crypto'
@@ -96,20 +95,16 @@ export async function GET(request: NextRequest) {
       expiresIn: collectionConfig.auth.tokenExpiration,
     })
 
-    const cookieStore = await cookies()
-    cookieStore.set(`${payload.config.cookiePrefix}-token`, authToken, {
-      path: '/',
+    const response = NextResponse.redirect(`${baseUrl}${state}`)
+    response.cookies.set('payload-token', authToken, {
       httpOnly: true,
-      maxAge: collectionConfig.auth.tokenExpiration,
-      secure: collectionConfig.auth.cookies.secure,
-      sameSite:
-        typeof collectionConfig.auth.cookies.sameSite === 'string'
-          ? (collectionConfig.auth.cookies.sameSite.toLowerCase() as 'lax' | 'strict' | 'none')
-          : collectionConfig.auth.cookies.sameSite,
-      domain: collectionConfig.auth.cookies.domain,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7,
     })
 
-    return NextResponse.redirect(`${baseUrl}${state}`)
+    return response
   } catch (error) {
     console.error('Google auth callback failed:', error)
     return NextResponse.redirect(`${baseUrl}/login?error=google_auth_failed`)
