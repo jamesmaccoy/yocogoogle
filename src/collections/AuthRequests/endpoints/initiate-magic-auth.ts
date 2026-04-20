@@ -5,7 +5,11 @@ import { generateHOTP } from 'oslo/otp'
 import { addMinutes } from 'date-fns'
 
 const bodySchema = z.object({
-  email: z.string().email(),
+  mobile: z
+    .string()
+    .min(8)
+    .max(20)
+    .regex(/^\+[1-9]\d+$/, 'Mobile number must be in E.164 format (e.g. +27821234567)'),
 })
 
 export const InitiateMagicAuth: Endpoint = {
@@ -24,7 +28,7 @@ export const InitiateMagicAuth: Endpoint = {
       )
     }
 
-    const { email } = body.data
+    const { mobile } = body.data
 
     const secret = await new HMAC('SHA-1').generateKey()
 
@@ -33,7 +37,7 @@ export const InitiateMagicAuth: Endpoint = {
     const authRequest = await req.payload.create({
       collection: 'authRequests',
       data: {
-        email,
+        mobile,
         code,
         expiresAt: addMinutes(new Date(), 15).toISOString(), // Code expires in 10 minutes
       },
@@ -41,8 +45,8 @@ export const InitiateMagicAuth: Endpoint = {
 
     return Response.json(
       {
-        message: `Magic auth initiated for ${email}`,
-        email,
+        message: `OTP auth initiated for ${mobile}`,
+        mobile,
         authRequestId: authRequest.id,
       },
       {

@@ -256,6 +256,7 @@ export interface Booking {
 export interface User {
   id: string;
   name: string;
+  mobile: string;
   role: 'guest' | 'customer' | 'host' | 'admin';
   subscriptionStatus?: {
     status?: ('none' | 'trial' | 'active' | 'past_due' | 'canceled') | null;
@@ -1094,7 +1095,7 @@ export interface Estimate {
  */
 export interface AuthRequest {
   id: string;
-  email: string;
+  mobile: string;
   code: string;
   expiresAt: string;
   updatedAt: string;
@@ -1848,6 +1849,7 @@ export interface CategoriesSelect<T extends boolean = true> {
  */
 export interface UsersSelect<T extends boolean = true> {
   name?: T;
+  mobile?: T;
   role?: T;
   subscriptionStatus?:
     | T
@@ -1929,7 +1931,7 @@ export interface PackagesSelect<T extends boolean = true> {
  * via the `definition` "authRequests_select".
  */
 export interface AuthRequestsSelect<T extends boolean = true> {
-  email?: T;
+  mobile?: T;
   code?: T;
   expiresAt?: T;
   updatedAt?: T;

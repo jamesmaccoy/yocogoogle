@@ -127,12 +127,12 @@ export default function LoginPage() {
             <TabButton
               isActive={mode === 'password'}
               onClick={() => setMode('password')}
-              label="Email"
+              label="Email + Password"
             />
             <TabButton
               isActive={mode === 'email'}
               onClick={() => setMode('email')}
-              label="One time pin"
+              label="Mobile OTP"
             />
           </div>
 

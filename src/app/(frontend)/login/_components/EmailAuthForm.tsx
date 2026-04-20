@@ -8,8 +8,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp'
 import { useUserContext } from '@/context/UserContext'
 
-type EmailFormValues = {
-  email: string
+type MobileFormValues = {
+  mobile: string
 }
 
 function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; loading: boolean }) {
@@ -58,8 +58,8 @@ function OtpInput({ onSubmit, loading }: { onSubmit: (otp: string) => void; load
 }
 
 export default function EmailAuthForm() {
-  const [step, setStep] = React.useState<'email' | 'otp'>('email')
-  const [email, setEmail] = React.useState('')
+  const [step, setStep] = React.useState<'mobile' | 'otp'>('mobile')
+  const [mobile, setMobile] = React.useState('')
   const [authRequestId, setAuthRequestId] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -69,28 +69,28 @@ export default function EmailAuthForm() {
 
   const { handleAuthChange } = useUserContext()
 
-  const form = useForm<EmailFormValues>({
-    defaultValues: { email: '' },
+  const form = useForm<MobileFormValues>({
+    defaultValues: { mobile: '' },
   })
 
-  const handleSendEmail = async (values: EmailFormValues) => {
+  const handleSendOtp = async (values: MobileFormValues) => {
     setLoading(true)
     setError(null)
     try {
       const res = await fetch('/api/authRequests/magic', {
         method: 'POST',
-        body: JSON.stringify({ email: values.email }),
+        body: JSON.stringify({ mobile: values.mobile }),
         headers: { 'Content-Type': 'application/json' },
       })
-      if (!res.ok) throw new Error('Failed to send email')
+      if (!res.ok) throw new Error('Failed to send OTP')
 
       const data = await res.json()
 
-      setEmail(data.email)
+      setMobile(data.mobile)
       setAuthRequestId(data.authRequestId)
       setStep('otp')
-    } catch (err: any) {
-      setError(err.message || 'Failed to send email')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send OTP')
     } finally {
       setLoading(false)
     }
@@ -102,7 +102,7 @@ export default function EmailAuthForm() {
     try {
       const res = await fetch('/api/authRequests/verify-code', {
         method: 'POST',
-        body: JSON.stringify({ email, otp, requestId: authRequestId }),
+        body: JSON.stringify({ mobile, otp, requestId: authRequestId }),
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
       })
@@ -111,8 +111,8 @@ export default function EmailAuthForm() {
       // Optionally: validateRedirect
       handleAuthChange()
       router.push(next && typeof next === 'string' ? next : '/bookings')
-    } catch (err: any) {
-      setError(err.message || 'Invalid OTP')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid OTP')
     } finally {
       setLoading(false)
     }
@@ -120,24 +120,24 @@ export default function EmailAuthForm() {
 
   return (
     <div>
-      {step === 'email' && (
-        <form onSubmit={form.handleSubmit(handleSendEmail)} className="grid gap-4">
+      {step === 'mobile' && (
+        <form onSubmit={form.handleSubmit(handleSendOtp)} className="grid gap-4">
           {error && <div className="bg-red-100 text-red-700 p-3 rounded-md">{error}</div>}
           <div className="grid gap-2">
             <label
               className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              htmlFor="email"
+              htmlFor="mobile"
             >
-              Email
+              Mobile Number
             </label>
             <Input
-              id="email"
-              type="email"
-              placeholder="name@example.com"
-              autoComplete="email"
+              id="mobile"
+              type="tel"
+              placeholder="+27821234567"
+              autoComplete="tel"
               autoCapitalize="none"
               autoCorrect="off"
-              {...form.register('email', { required: true })}
+              {...form.register('mobile', { required: true })}
               className="flex h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
@@ -153,7 +153,7 @@ export default function EmailAuthForm() {
                 Sending...
               </span>
             ) : (
-              'Send Login Link'
+              'Send OTP'
             )}
           </Button>
         </form>
@@ -162,11 +162,11 @@ export default function EmailAuthForm() {
         <div className="grid gap-4">
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-zinc-900">
-              We&apos;ve sent a login link and code to:
+              We&apos;ve sent a one time pin to:
             </p>
-            <p className="text-sm font-mono text-primary font-semibold">{email}</p>
+            <p className="text-sm font-mono text-primary font-semibold">{mobile}</p>
             <p className="text-sm text-zinc-500 mt-3">
-              Enter the 6-digit code from your email to continue.
+              Enter the 6-digit code from your SMS to continue.
             </p>
           </div>
           {error && <div className="bg-red-100 text-red-700 p-3 rounded-md">{error}</div>}

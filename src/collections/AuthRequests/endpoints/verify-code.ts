@@ -2,10 +2,14 @@ import { cookies } from 'next/headers'
 import { Endpoint } from 'payload'
 import { z } from 'zod'
 import jwt from 'jsonwebtoken'
-import crypto from 'node:crypto'
+import Twilio from 'twilio'
 
 const bodySchema = z.object({
-  email: z.string().email(),
+  mobile: z
+    .string()
+    .min(8)
+    .max(20)
+    .regex(/^\+[1-9]\d+$/, 'Mobile number must be in E.164 format (e.g. +27821234567)'),
   requestId: z.string(),
   otp: z.string().min(6).max(6),
 })
@@ -26,7 +30,7 @@ export const VerifyCode: Endpoint = {
       )
     }
 
-    const { email, requestId, otp } = body.data
+    const { mobile, requestId, otp } = body.data
 
     const authRequest = await req.payload.findByID({
       id: requestId,
@@ -42,11 +46,12 @@ export const VerifyCode: Endpoint = {
       )
     }
 
-    if (
-      authRequest.code !== otp ||
-      new Date(authRequest.expiresAt) < new Date() ||
-      authRequest.email !== email
-    ) {
+    const authRequestMobile =
+      typeof authRequest === 'object' && authRequest !== null && 'mobile' in authRequest
+        ? authRequest.mobile
+        : undefined
+
+    if (new Date(authRequest.expiresAt) < new Date() || authRequestMobile !== mobile) {
       return Response.json(
         {
           message: 'Invalid or expired OTP',
@@ -55,30 +60,55 @@ export const VerifyCode: Endpoint = {
       )
     }
 
-    // Otp is valid, proceed with authentication
+    const accountSid = process.env.TWILIO_ACCOUNT_SID
+    const authToken = process.env.TWILIO_AUTH_TOKEN
+    const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID
+
+    if (!accountSid || !authToken || !verifyServiceSid) {
+      return Response.json(
+        {
+          message: 'SMS provider is not configured',
+        },
+        { status: 500 },
+      )
+    }
+
+    const twilioClient = Twilio(accountSid, authToken)
+    const verification = await twilioClient.verify.v2
+      .services(verifyServiceSid)
+      .verificationChecks.create({ to: mobile, code: otp })
+
+    if (verification.status !== 'approved') {
+      return Response.json(
+        {
+          message: 'Invalid or expired OTP',
+        },
+        { status: 400 },
+      )
+    }
+
+    // OTP is valid, proceed with authentication
 
     const users = await req.payload.find({
       collection: 'users',
       where: {
-        email: {
-          equals: email,
+        mobile: {
+          equals: mobile,
         },
       },
       pagination: false,
       limit: 1,
     })
 
-    let user = users.docs[0]
+    const user = users.docs[0]
 
     if (!user) {
-      user = await req.payload.create({
-        collection: 'users',
-        data: {
-          email,
-          password: crypto.randomBytes(16).toString('hex'), // Generate a random password
-          name: email.split('@')[0], // Use email prefix as name
+      return Response.json(
+        {
+          message: 'No account found for this mobile number',
         },
-      })
+        { status: 404 },
+      )
     }
 
     const collectionConfig = req.payload.collections['users']?.config
@@ -87,7 +117,7 @@ export const VerifyCode: Endpoint = {
     }
 
     const tokenPayload = {
-      email,
+      email: user.email,
       id: user.id,
       collection: collectionConfig.slug,
     }

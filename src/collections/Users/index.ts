@@ -28,6 +28,12 @@ export const Users: CollectionConfig = {
       unique: true,
     },
     {
+      name: 'mobile',
+      type: 'text',
+      required: true,
+      unique: true,
+    },
+    {
       name: 'role',
       type: 'select',
       options: [
