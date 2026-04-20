@@ -24,6 +24,16 @@ function getBaseUrl(request: NextRequest): string {
   return process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 }
 
+function getCookieDomain(hostname: string): string | undefined {
+  if (hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return undefined
+  }
+
+  const parts = hostname.split('.')
+  if (parts.length < 2) return undefined
+  return `.${parts.slice(-2).join('.')}`
+}
+
 export async function GET(request: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET
@@ -96,13 +106,22 @@ export async function GET(request: NextRequest) {
     })
 
     const response = NextResponse.redirect(`${baseUrl}${state}`)
-    response.cookies.set('payload-token', authToken, {
+    const cookieName = `${payload.config.cookiePrefix}-token`
+    const hostname = new URL(baseUrl).hostname
+    const cookieDomain = getCookieDomain(hostname)
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 7,
-    })
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    } as const
+
+    response.cookies.set(cookieName, authToken, cookieOptions)
+    if (cookieName !== 'payload-token') {
+      response.cookies.set('payload-token', authToken, cookieOptions)
+    }
 
     return response
   } catch (error) {
