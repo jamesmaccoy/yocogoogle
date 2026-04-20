@@ -8,11 +8,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     
     // Validate required fields
-    const { email, password, name, role } = body
+    const { email, password, name, role, mobile } = body
     
-    if (!email || !password || !name) {
+    if (!email || !password || !name || !mobile) {
       return NextResponse.json({ 
-        error: 'Email, password, and name are required' 
+        error: 'Email, mobile, password, and name are required' 
       }, { status: 400 })
     }
 
@@ -22,6 +22,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: 'Invalid email format' 
       }, { status: 400 })
+    }
+
+    // Validate mobile format (E.164)
+    const mobileRegex = /^\+[1-9]\d{7,19}$/
+    if (!mobileRegex.test(mobile)) {
+      return NextResponse.json(
+        { error: 'Invalid mobile format. Use E.164 format, e.g. +27821234567' },
+        { status: 400 },
+      )
     }
 
     // Validate password length
@@ -52,11 +61,29 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    const existingMobileUsers = await payload.find({
+      collection: 'users',
+      where: {
+        mobile: {
+          equals: mobile,
+        },
+      },
+      limit: 1,
+    })
+
+    if (existingMobileUsers.docs.length > 0) {
+      return NextResponse.json(
+        { error: 'An account with this mobile number already exists' },
+        { status: 400 },
+      )
+    }
+
     // Create user - using payload.create bypasses access control when called from an endpoint
     const user = await payload.create({
       collection: 'users',
       data: {
         email,
+        mobile,
         password,
         name,
         role: userRole,
@@ -73,10 +100,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error during registration:', error)
     
-    // Handle duplicate email error
+    // Handle duplicate email/mobile error
     if (error instanceof Error && error.message?.includes('E11000')) {
       return NextResponse.json(
-        { error: 'An account with this email already exists' },
+        { error: 'An account with this email or mobile number already exists' },
         { status: 400 }
       )
     }
