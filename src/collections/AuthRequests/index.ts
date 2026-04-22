@@ -1,6 +1,8 @@
 import { CollectionConfig } from 'payload'
 import { InitiateMagicAuth } from './endpoints/initiate-magic-auth'
 import { VerifyCode } from './endpoints/verify-code'
+import { InitiateMagicEmail } from '@/collections/AuthRequests/endpoints/initiate-magic-email'
+import { VerifyMagicToken } from '@/collections/AuthRequests/endpoints/verify-magic-token'
 import { removeAuthRequest } from './hooks/remove-auth-request'
 
 export const AuthRequests: CollectionConfig = {
@@ -11,17 +13,23 @@ export const AuthRequests: CollectionConfig = {
   hooks: {
     afterRead: [removeAuthRequest],
   },
-  endpoints: [InitiateMagicAuth, VerifyCode],
+  endpoints: [InitiateMagicAuth, InitiateMagicEmail, VerifyCode, VerifyMagicToken],
   fields: [
+    {
+      name: 'email',
+      type: 'email',
+      required: false,
+      index: true,
+    },
     {
       name: 'mobile',
       type: 'text',
-      required: true,
+      required: false,
     },
     {
       name: 'code',
       type: 'text',
-      required: true,
+      required: false,
     },
     {
       name: 'expiresAt',

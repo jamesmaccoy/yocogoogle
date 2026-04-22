@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { validateRedirect } from '@/utils/validateRedirect'
 
+export const runtime = 'nodejs'
+
 function getBaseUrl(request: NextRequest): string {
   const forwardedProto = request.headers.get('x-forwarded-proto')
   const forwardedHost = request.headers.get('x-forwarded-host')
@@ -39,5 +41,5 @@ export async function GET(request: NextRequest) {
     state,
   })
 
-  return NextResponse.redirect(authUrl)
+  return NextResponse.redirect(authUrl, 302)
 }

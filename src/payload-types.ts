@@ -1095,8 +1095,9 @@ export interface Estimate {
  */
 export interface AuthRequest {
   id: string;
-  mobile: string;
-  code: string;
+  email?: string | null;
+  mobile?: string | null;
+  code?: string | null;
   expiresAt: string;
   updatedAt: string;
   createdAt: string;
@@ -1931,6 +1932,7 @@ export interface PackagesSelect<T extends boolean = true> {
  * via the `definition` "authRequests_select".
  */
 export interface AuthRequestsSelect<T extends boolean = true> {
+  email?: T;
   mobile?: T;
   code?: T;
   expiresAt?: T;
