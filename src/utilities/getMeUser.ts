@@ -1,8 +1,9 @@
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import type { User } from '../payload-types'
-import { getClientSideURL } from './getURL'
+import { getPayload } from 'payload'
+import configPromise from '@/payload.config'
 
 export const getMeUser = async (args?: {
   nullUserRedirect?: string
@@ -13,33 +14,29 @@ export const getMeUser = async (args?: {
 }> => {
   const { nullUserRedirect, validUserRedirect } = args || {}
   const cookieStore = await cookies()
-  const token = cookieStore.get('payload-token')?.value
-
-  const meUserReq = await fetch(`${getClientSideURL()}/api/users/me`, {
-    cache: 'no-store',
-    next: { revalidate: 0 },
-    headers: {
-      Authorization: `JWT ${token}`,
-    },
-  })
+  const token =
+    cookieStore.get('payload-token')?.value ||
+    cookieStore.getAll().find((c) => c.name.endsWith('-token'))?.value ||
+    ''
 
   let user: User | null = null
+  let ok = false
 
   try {
-    if (meUserReq.ok) {
-      const response = await meUserReq.json()
-      user = response.user
-    }
+    const payload = await getPayload({ config: configPromise })
+    const requestHeaders = await headers()
+    const authResult = await payload.auth({ headers: requestHeaders })
+    user = (authResult.user as User) || null
+    ok = Boolean(user)
   } catch (error) {
-    console.error('Error parsing user response:', error)
-    // If JSON parsing fails, user remains null
+    console.error('Error getting current user:', error)
   }
 
-  if (validUserRedirect && meUserReq.ok && user) {
+  if (validUserRedirect && ok && user) {
     redirect(validUserRedirect)
   }
 
-  if (nullUserRedirect && (!meUserReq.ok || !user)) {
+  if (nullUserRedirect && (!ok || !user)) {
     redirect(nullUserRedirect)
   }
 

@@ -3,6 +3,8 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import jwt from 'jsonwebtoken'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const payload = await getPayload({ config: configPromise })
@@ -48,7 +50,7 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ 
         error: 'Not authenticated' 
-      }, { status: 401 })
+      }, { status: 401, headers: { 'Cache-Control': 'no-store, max-age=0' } })
     }
 
     // Remove sensitive fields from response
@@ -56,12 +58,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       user: safeUser
-    })
+    }, { headers: { 'Cache-Control': 'no-store, max-age=0' } })
   } catch (error) {
     console.error('Error getting current user:', error)
     return NextResponse.json(
       { error: 'Failed to get current user' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0' } }
     )
   }
 } 

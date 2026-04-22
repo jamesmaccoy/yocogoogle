@@ -6,6 +6,8 @@ import { getPayload } from 'payload'
 import configPromise from '@/payload.config'
 import { validateRedirect } from '@/utils/validateRedirect'
 
+export const runtime = 'nodejs'
+
 type GoogleUserInfo = {
   email?: string
   name?: string
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
       expiresIn: collectionConfig.auth.tokenExpiration,
     })
 
-    const response = NextResponse.redirect(`${baseUrl}${state}`)
+    const response = NextResponse.redirect(`${baseUrl}${state}`, 302)
     const cookieName = `${payload.config.cookiePrefix}-token`
     const hostname = new URL(baseUrl).hostname
     const cookieDomain = getCookieDomain(hostname)
@@ -126,6 +128,6 @@ export async function GET(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Google auth callback failed:', error)
-    return NextResponse.redirect(`${baseUrl}/login?error=google_auth_failed`)
+    return NextResponse.redirect(`${baseUrl}/login?error=google_auth_failed`, 302)
   }
 }
